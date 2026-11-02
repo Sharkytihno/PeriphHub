@@ -185,7 +185,7 @@ for pid, name in {"0501": "Razer Kraken 7.1 Classic", "0506": "Razer Kraken 7.1 
                   "0527": "Razer Kraken Ultimate", "0560": "Razer Kraken Kitty V2"}.items():
     add("1532", pid, name, "casque", "openrazer", "razer-kraken", "experimental")
 
-# ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro ----
+# ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro, Keychron HE ----
 kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
 t = rd(os.path.join(kbv, "wooting", "index.js"))
 for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t[t.index("WOOTING_PRODUCTS"):t.index("WOOTING_PRODUCT_IDS")]):
@@ -196,6 +196,9 @@ for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t[t.in
 t = rd(os.path.join(kbv, "steelseries", "index.js"))
 for pid, name in re.findall(r"\[0x([0-9a-fA-F]{4}), \{ name: \"([^\"]+)\"", t):
     add("1038", pid, "SteelSeries " + name, "clavier", "openmouse", "openmouse-kb", "experimental")
+t = rd(os.path.join(kbv, "keychron", "products.js"))
+for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t):
+    add("3434", pid, name, "clavier", "openmouse", "openmouse-kb", "experimental")
 
 out = sorted(cat.values(), key=lambda e: (e["vid"], e["pid"]))
 for e in out:

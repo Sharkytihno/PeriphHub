@@ -39,7 +39,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 | Claviers VIA / Vial (Keychron, Akko, NuPhy, REKT…) | Protocole VIA | Éclairage enregistré dans le clavier ; REKT : touches, rapid trigger, macros | ✅ REKT · 🧪 autres |
 | Logitech (HID++ 2.0) | D'après Solaar / libratbag | DPI, fréquence, SmartShift, molette, batterie | 🧪 |
 | Souris de ~50 marques : Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE, Ninjutso, Glorious, HyperX, Corsair, SteelSeries, ASUS… | Bibliothèque [OpenMouse](https://github.com/OpenMouse-Project/mouse-protocol) (AGPL-3.0) | DPI, fréquence, LOD, Motion Sync, correction d'angle, lissage, anti-rebond, veille, batterie | 🧪 |
-| Claviers à effet Hall Wooting (ARM) et SteelSeries Apex Pro ; claviers Razer et Logitech en secours | Bibliothèque OpenMouse (`@openmouse/keyboard-protocol`) | Point d'activation, rapid trigger, fréquence, luminosité (réglages globaux) | 🧪 |
+| Claviers à effet Hall Wooting (ARM), SteelSeries Apex Pro et Keychron HE ; claviers Razer et Logitech en secours | Bibliothèque OpenMouse (`@openmouse/keyboard-protocol`) | Point d'activation, rapid trigger, fréquence, luminosité (réglages globaux) | 🧪 |
 | Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
 | Casques Razer Kraken filaires (7.1, V2, Tournament Edition, Ultimate, Kitty V2, Classic) | D'après OpenRazer | Éclairage (fixe, respiration, cycle, éteint) | 🧪 |
 | Casques Razer BlackShark V2 HyperSpeed | Protocole observé | Égaliseur, retour micro, veille, THX | ✅ |
@@ -47,7 +47,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 | RGB carte mère GIGABYTE | Protocole RGB Fusion 2 | Effets, couleurs | ✅ |
 | Tout ce que gère OpenRGB (1 000+ appareils) | Serveur SDK d'OpenRGB | Couleur unie | 🧪 |
 
-Les autres appareils branchés sont tout de même **nommés** grâce à une base de plus de 1 500 modèles
+Les autres appareils branchés sont tout de même **nommés** grâce à une base de plus de 1 700 modèles
 (`data/catalog.json`, tirée d'OpenRGB, OpenRazer, libratbag, Solaar, rivalcfg, HeadsetControl et
 OpenMouse) : PeriphHub dit honnêtement s'il sait les régler, seulement piloter leur éclairage via
 OpenRGB, ou s'ils ont encore besoin de leur logiciel d'origine.
@@ -71,6 +71,7 @@ fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://gi
 | 0.10 | Souris de ~50 marques via **OpenMouse** ; base de 1 400+ appareils nommés avec leur niveau de prise en charge | ✅ |
 | 0.11 | Claviers **Wooting** et **SteelSeries Apex Pro** (point d'activation, rapid trigger) via OpenMouse ; 108 casques reconnus (HeadsetControl) | ✅ |
 | 0.12 | Éclairage des casques **Razer Kraken** filaires (OpenRazer) ; durcissements de sécurité (outils Windows appelés par chemin absolu, DLL THX verrouillée pendant sa vérification, clés FIDO jamais accessibles) ; paquet Microsoft Store (MSIX) | ✅ |
+| 0.13 | Claviers magnétiques **Keychron HE** (169 modèles : point d'activation et rapid trigger communs à toutes les touches, seulement si aucune touche n'a de réglage propre) | 🧪 |
 | 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).

@@ -379,6 +379,7 @@ const I18N_EN = {
   'Le casque oublie son éclairage quand on le débranche : PeriphHub renvoie votre choix à chaque branchement. Le son (égaliseur, son 7.1) reste géré par Windows.': 'The headset forgets its lighting when unplugged: PeriphHub sends your choice again each time it is plugged in. Sound (equalizer, 7.1) stays handled by Windows.',
   'Kraken : pas de réponse': 'Kraken: no response',
   'effet inconnu': 'unknown effect',
+  'valeur hors limites': 'value out of range',
   'Cycle de couleurs': 'Colour cycle',
   'Respiration': 'Breathing',
   'Sensibilité (DPI)': 'Sensitivity (DPI)',

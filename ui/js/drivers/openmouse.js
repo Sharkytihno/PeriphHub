@@ -232,8 +232,11 @@ async function omConnect(group) {
 // ---------- Claviers (@openmouse/keyboard-protocol) ----------
 // Réglages globaux seulement (pas touche par touche) : Wooting (actuation, rapid trigger),
 // SteelSeries Apex (actuation), Razer et Logitech (fréquence, luminosité, rapid trigger).
-// Keychron, Wuque, Kochi, Arbiter : protocoles encore trop partiels pour être exposés sans risque.
-const KB_FAMILIES = new Set(['Wooting', 'SteelSeries', 'Razer', 'Logitech']);
+// Keychron à effet Hall : point d'activation et rapid trigger communs à toutes les touches, seulement
+// quand toutes les touches ont déjà le même réglage (sinon on n'écrase pas un réglage touche par touche :
+// le clavier retombe sur le pilote VIA, éclairage seul).
+// Wuque, Kochi, Arbiter : protocoles encore trop partiels pour être exposés sans risque.
+const KB_FAMILIES = new Set(['Wooting', 'SteelSeries', 'Razer', 'Logitech', 'Keychron']);
 const KB_FIRST = new Set(['Wooting', 'SteelSeries']); // aucun autre pilote dans PeriphHub
 const WOOT_ZERO = 16384, WOOT_PER_MM = 4096;
 
@@ -273,6 +276,20 @@ function kbMap(inst, st) {
       caps.actuation = { min: 0.1, max: 4, step: 0.1 };
       inst.usages = keys.map(k => k.usage);
     }
+  } else if (inst.brand === 'Keychron') {
+    const t = kcUniform(st.keychronProfile);
+    const kc = st.keychron || {};
+    inst.kc = null;
+    if (t && kc.unit > 0) {
+      const mm = x => Math.round(x * kc.unit * 100) / 100;
+      const step = kc.unit >= 0.1 ? 0.1 : 0.05;
+      inst.kc = { unit: kc.unit, step };
+      s.actuation = mm(t.distance);
+      caps.actuation = { min: kc.travel?.min ?? 0.1, max: kc.travel?.max ?? 3.3, step };
+      s.rt = t.mode === KC_QUICK; caps.rt = true;
+      s.rtSens = mm(t.advancePress);
+      caps.rtSens = { min: 0.1, max: 2, step };
+    }
   } else if (inst.brand === 'Razer') {
     const r = st.razer;
     if (r?.pollingRateHz) {
@@ -289,6 +306,46 @@ function kbMap(inst, st) {
   }
   inst.meta = [st.connectionType === 'Wireless' ? 'Sans fil' : st.connectionType === 'Wired' ? 'Filaire' : null,
     st.firmwareVersion ? 'firmware ' + st.firmwareVersion : null].filter(Boolean).join(' · ');
+}
+
+// ----- Keychron : modes de course du Launcher (Static 1, QuickTrigger 2), en pas de `unit` mm
+const KC_STATIC = 1, KC_QUICK = 2, KC_ALL_KEYS = 1;
+
+// Réglage commun à toutes les touches, ou null si une touche a son propre réglage
+// (une touche en mode 0 suit le réglage global du profil).
+function kcUniform(p) {
+  if (!p?.global) return null;
+  let ref = null;
+  for (const row of p.keys) for (const k of row) {
+    const e = k.mode === 0 ? p.global : k;
+    const t = { mode: e.mode, distance: e.distance, advancePress: e.advancePress, advanceRelease: e.advanceRelease };
+    if (!ref) ref = t;
+    else if (t.mode !== ref.mode || t.distance !== ref.distance || t.advancePress !== ref.advancePress
+      || t.advanceRelease !== ref.advanceRelease) return null;
+  }
+  // Seuls les deux modes connus ; relâchement = appui (le seul cas qu'on sait remettre à l'identique)
+  if (!ref || (ref.mode !== KC_STATIC && ref.mode !== KC_QUICK) || ref.advancePress !== ref.advanceRelease || ref.distance < 1) return null;
+  if (ref.mode === KC_QUICK && ref.advancePress < 1) return null;
+  return ref;
+}
+
+// Écrit le réglage complet (mode, activation, sensibilité) sur toutes les touches puis l'enregistre,
+// comme le Launcher. Les valeurs non modifiées viennent de l'état courant.
+async function kcWrite(inst, cap, v) {
+  const c = inst.caps[cap];
+  if (!inst.kc || !c) throw new Error('réglage inconnu : ' + cap);
+  // rtSens à 0 : valeur d'origine possible en mode fixe (sensibilité inutilisée), remise telle quelle
+  const zeroOk = cap === 'rtSens' && v === 0 && !inst.state.rt;
+  if (cap !== 'rt' && !zeroOk && !(Number.isFinite(v) && v >= c.min && v <= c.max)) throw new Error('valeur hors limites');
+  const s = { ...inst.state, [cap]: cap === 'rt' ? !!v : v };
+  const steps = mm => Math.max(1, Math.round(mm / inst.kc.unit));
+  const sens = s.rtSens > 0 ? steps(s.rtSens) : s.rt ? steps(0.3) : 0;
+  await inst.client.setTravel({
+    workMode: s.rt ? KC_QUICK : KC_STATIC, press: steps(s.actuation),
+    sensitivePress: sens, sensitiveRelease: sens, keyMode: KC_ALL_KEYS,
+  });
+  await inst.client.saveProfile();
+  Object.assign(inst.state, s); // la restauration enchaîne plusieurs réglages sans relire entre deux
 }
 
 const KB_SETTERS = {
@@ -333,8 +390,13 @@ async function kbConnect(group) {
     source: 'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. ' +
       'Les réglages sont écrits dans le clavier ; ceux d’origine sont gardés avant la première modification.',
   };
-  inst.refresh = async () => kbMap(inst, await client.readStatus());
+  inst.refresh = async () => {
+    const st = await client.readStatus();
+    if (found.brand === 'Keychron') st.keychronProfile = await client.readProfile();
+    kbMap(inst, st);
+  };
   inst.set = async (cap, v) => {
+    if (found.brand === 'Keychron') return kcWrite(inst, cap, v);
     const f = KB_SETTERS[cap];
     if (!f) throw new Error('réglage inconnu : ' + cap);
     await f(client, v, inst);
@@ -354,6 +416,11 @@ const kbMatch = first => d => {
   } catch { return false; }
 };
 
+const kcMatch = d => {
+  if (d.vendorId !== 0x3434 || OM_SKIP.has(omId(d))) return false;
+  try { return kbFind([d])?.brand === 'Keychron'; } catch { return false; }
+};
+
 window.omApi = {
   vids: OM_VIDS,
   // La page Scyrox (CompX) laisse à OpenMouse les souris qu'il reconnaît
@@ -371,6 +438,8 @@ window.omApi = {
   keyboardDrivers: [
     // Wooting, SteelSeries Apex : passent avant tout le reste
     { id: 'openmouse-kb', priority: 15, match: kbMatch(true), connect: (_dev, group) => kbConnect(group) },
+    // Keychron à effet Hall : avant le pilote VIA (priorité 20), qui reprend la main si on ne peut rien régler
+    { id: 'openmouse-kb-keychron', priority: 25, match: kcMatch, connect: (_dev, group) => kbConnect(group) },
     // Razer, Logitech : nos pilotes d'abord ; OpenMouse en secours (claviers analogiques…)
     { id: 'openmouse-kb2', priority: -5, match: kbMatch(false), connect: (_dev, group) => kbConnect(group) },
   ],
