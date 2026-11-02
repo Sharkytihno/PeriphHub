@@ -5,62 +5,110 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PeriphHub</title>
   <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <script src="js/theme.js"></script>
 </head>
 <body>
-  <header class="top">
+  <nav>
     <div class="brand">
-      <span class="logo" aria-hidden="true">◆</span>
-      <div>
-        <h1>PeriphHub</h1>
-        <p class="sub">Un seul logiciel léger pour tous vos périphériques</p>
-      </div>
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20.5 7.3v9.4L12 21.5l-8.5-4.8V7.3z"/><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6V6.2M14.1 13.2l2.9 1.7M9.9 13.2 7 14.9"/></svg>
+      <span>PeriphHub</span>
     </div>
-    <div class="actions">
-      <button id="copy" class="ghost" disabled>Copier le rapport</button>
-      <button id="rescan">Relancer l'analyse</button>
+    <button data-tab="home">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+      <span class="nl">Accueil<small id="homeSub">Vue d’ensemble</small></span>
+    </button>
+    <button data-tab="slim">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M5 19c9 0 14-6 14-15-9 0-14 5-14 14z"/><path d="M5 19 13 11"/></svg>
+      <span class="nl">Allègement<small id="slimSub">Analyse…</small></span><span class="badge" id="slimBadge" hidden></span>
+    </button>
+
+    <div class="ngroup" id="devGroup" hidden>Mes appareils</div>
+    <button data-tab="mouse" hidden>
+      <svg class="ic" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></svg>
+      <span class="nl">Souris<small id="mouseSub">Non connectée</small></span><span class="dot" data-for="mouseStatus"></span>
+    </button>
+    <button data-tab="keyboard" hidden>
+      <svg class="ic" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/></svg>
+      <span class="nl">Clavier<small id="kbSub">Non connecté</small></span><span class="dot" data-for="kbStatus"></span>
+    </button>
+    <button data-tab="headset" hidden>
+      <svg class="ic" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>
+      <span class="nl">Casque<small id="hsSub">Non connecté</small></span><span class="dot" data-for="hsStatus"></span>
+    </button>
+    <button data-tab="rgb" hidden>
+      <svg class="ic" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
+      <span class="nl">Éclairage<small id="rgbSub">Carte mère</small></span><span class="dot" data-for="rgbStatus"></span>
+    </button>
+
+    <div class="nfoot">
+      <button data-tab="options">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+        <span class="nl">Options<small id="verSub">PeriphHub</small></span>
+      </button>
     </div>
-  </header>
+  </nav>
 
   <main>
-    <section class="summary" id="summary" aria-live="polite">
-      <div class="stat big">
-        <span class="label">Logiciels constructeurs en mémoire</span>
-        <span class="value" id="vendorRam">…</span>
-        <span class="hint" id="vendorHint">Analyse en cours</span>
-      </div>
-      <div class="stat">
-        <span class="label">PeriphHub</span>
-        <span class="value" id="selfRam">…</span>
-        <span class="hint">fenêtre ouverte</span>
-      </div>
-      <div class="stat">
-        <span class="label">Périphériques détectés</span>
-        <span class="value" id="devCount">…</span>
-        <span class="hint" id="devHint"></span>
-      </div>
+    <section class="page" id="home">
+      <header class="phead">
+        <div class="ptitle"><h2 id="homeTitle">Bonjour</h2><div class="muted small" id="homeLead">Tous vos périphériques, d’un coup d’œil.</div></div>
+        <div class="pact"><button class="ghost" id="rescan">Actualiser</button></div>
+      </header>
+      <div id="homeBody"></div>
     </section>
 
-    <p class="notice">Version 0.1 : PeriphHub <strong>analyse sans rien modifier</strong>. La désactivation
-      guidée et les réglages des périphériques arrivent dans les prochaines versions.</p>
-
-    <section>
-      <h2>Logiciels constructeurs</h2>
-      <div id="vendors" class="cards"></div>
+    <section class="page" id="slim">
+      <header class="phead">
+        <div class="ptitle"><h2>Allègement</h2><div class="muted small">Les logiciels constructeurs qui tournent en fond, et ce que vous gagnez à les fermer.</div></div>
+        <div class="pact"><span class="status" id="slimStatus"></span><button class="ghost" id="copyReport" disabled>Copier le rapport</button></div>
+      </header>
+      <div id="slimBody"></div>
     </section>
 
-    <section>
-      <h2>Périphériques branchés</h2>
-      <div class="filters">
-        <label><input type="checkbox" id="showOther"> Afficher aussi les appareils sans réglages (hubs, puces internes…)</label>
-      </div>
-      <div id="devices" class="devlist"></div>
+    <section class="page" id="mouse">
+      <header class="phead">
+        <div class="ptitle"><h2 id="mouseTitle">Souris</h2><div class="muted small" id="mouseMeta"></div></div>
+        <div class="pact"><span class="status" id="mouseStatus">Non connectée</span><button id="mouseConnect">Connecter</button></div>
+      </header>
+      <div id="mouseBody" class="pbody"></div>
+    </section>
+
+    <section class="page" id="keyboard">
+      <header class="phead">
+        <div class="ptitle"><h2 id="keyboardTitle">Clavier</h2><div class="muted small" id="kbMeta"></div></div>
+        <div class="pact"><span class="status" id="kbStatus">Non connecté</span><button id="kbConnect">Connecter</button></div>
+      </header>
+      <div id="kbBody" class="pbody"></div>
+    </section>
+
+    <section class="page" id="headset">
+      <header class="phead">
+        <div class="ptitle"><h2 id="headsetTitle">Casque</h2><div class="muted small" id="hsMeta"></div></div>
+        <div class="pact"><span class="status" id="hsStatus">Non connecté</span><button id="hsConnect">Connecter</button></div>
+      </header>
+      <div id="hsBody" class="pbody"></div>
+    </section>
+
+    <section class="page" id="rgb">
+      <header class="phead">
+        <div class="ptitle"><h2 id="rgbTitle">Éclairage de la carte mère</h2><div class="muted small" id="rgbMeta"></div></div>
+        <div class="pact"><span class="status" id="rgbStatus">Non connecté</span></div>
+      </header>
+      <div id="rgbBody" class="pbody"></div>
+    </section>
+
+    <section class="page" id="options">
+      <header class="phead"><div class="ptitle"><h2>Options</h2></div></header>
+      <div id="optBody" class="pbody"></div>
     </section>
   </main>
-
-  <footer>
-    PeriphHub est un logiciel libre (GPL-3.0). Votre appareil ou votre logiciel n'est pas reconnu ?
-    Copiez le rapport et ouvrez un ticket sur GitHub : c'est comme ça que la liste s'agrandit.
-  </footer>
+  <div id="toasts" aria-live="polite"></div>
+  <script src="js/native-hid.js" defer></script>
+  <script src="js/protocols/scyrox.js" defer></script>
+  <script src="js/protocols/rekt.js" defer></script>
+  <script src="js/protocols/razer.js" defer></script>
+  <script src="js/protocols/fusion2.js" defer></script>
+  <script src="js/devices.js" defer></script>
+  <script src="js/shell.js" defer></script>
 </body>
 </html>

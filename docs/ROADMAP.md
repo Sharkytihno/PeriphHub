@@ -14,7 +14,14 @@ utilisateur (avant / après), jamais estimé.
 - Périphériques HID branchés, type deviné, fabricant, statut de prise en charge.
 - Rapport anonymisé à copier pour les tickets.
 
-## 0.2 — Allègement guidé
+## 0.2 — Nouvelle interface et premiers appareils ✅
+
+- Souris Scyrox (puce CompX) : DPI, fréquence, LOD, boutons, macros.
+- Claviers VIA / Vial, dont les claviers à effet Hall (course, rapid trigger par touche, éclairage, macros).
+- Casques Razer sans fil (égaliseur matériel, retour micro, veille) + effets THX si présents.
+- RGB des cartes mères GIGABYTE (ITE Fusion 2).
+
+## 0.3 — Allègement guidé
 
 Pour chaque logiciel constructeur, un parcours en étapes :
 
@@ -26,13 +33,6 @@ Pour chaque logiciel constructeur, un parcours en étapes :
 5. Mesure de la mémoire gagnée.
 
 Jamais de désinstallation automatique.
-
-## 0.3 — Premiers plugins (appareils déjà décodés dans le prototype)
-
-- Souris Scyrox (puce CompX) : DPI, fréquence, LOD, boutons, macros.
-- Claviers VIA / Vial, dont les claviers à effet Hall (course, rapid trigger par touche, éclairage, macros).
-- Casques Razer sans fil (égaliseur matériel, retour micro, veille) + effets THX si présents.
-- RGB des cartes mères GIGABYTE (ITE Fusion 2).
 
 ## 0.4+ — Grandes marques, en portant les protocoles libres existants
 
