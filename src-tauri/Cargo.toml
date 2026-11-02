@@ -1,6 +1,6 @@
 [package]
 name = "periphhub"
-version = "0.4.0"
+version = "0.5.0"
 description = "Un seul logiciel léger pour tous vos périphériques"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Sharkytihno/PeriphHub"
@@ -15,6 +15,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hidapi = { version = "2", default-features = false, features = ["windows-native"] }
 libloading = "0.8"
+sha2 = "0.10"
 winreg = "0.56"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",

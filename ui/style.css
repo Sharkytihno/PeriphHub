@@ -504,3 +504,4 @@ nav button[hidden], .ngroup[hidden] { display: none; }
 .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line2); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .overlay, .dialog, .htrack > i { animation: none; transition: none; } }
+.stack { display: grid; gap: 14px; width: 100%; }

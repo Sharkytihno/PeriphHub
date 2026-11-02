@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod devices;
+mod headset;
 mod hid;
 mod procs;
 mod scan;
@@ -57,6 +58,17 @@ async fn slim_close(vendor: String) -> Result<Value, String> {
 #[tauri::command]
 fn slim_journal() -> Vec<slim::VendorLog> {
     slim::journal()
+}
+
+// Casques via HeadsetControl (module vérifié par empreinte, options en liste blanche)
+#[tauri::command]
+async fn headset_list(app: tauri::AppHandle) -> Result<Value, String> {
+    blocking(move || headset::list(&app)).await
+}
+
+#[tauri::command]
+async fn headset_set(app: tauri::AppHandle, vid: u16, pid: u16, setting: String, value: Value) -> Result<Value, String> {
+    blocking(move || headset::set(&app, vid, pid, &setting, &value)).await
 }
 
 // Effets THX des casques Razer (DLL Razer signée, facultative)
@@ -125,6 +137,8 @@ fn main() {
             hid::hid_send,
             hid::hid_send_feature,
             hid::hid_get_feature,
+            headset_list,
+            headset_set,
             thx_state,
             thx_set,
             ui_theme,

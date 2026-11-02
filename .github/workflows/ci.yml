@@ -19,6 +19,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+      - name: Module casques (HeadsetControl, empreinte vérifiée)
+        shell: pwsh
+        run: ./scripts/fetch-headsetcontrol.ps1
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy -- -D warnings

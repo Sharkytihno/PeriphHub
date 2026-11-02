@@ -24,7 +24,8 @@ PeriphHub vise à les remplacer par une seule petite application :
 | 0.2 | Nouvelle interface, premiers appareils réglables : souris Scyrox, clavier REKT (VIA, effet Hall), casque Razer BlackShark V2 HyperSpeed (+ THX), RGB GIGABYTE | ✅ |
 | 0.3 | Allègement guidé et réversible (interrupteurs officiels de Windows, services en manuel, tâches), journal d'annulation, ouverture à la demande, gain mesuré | ✅ |
 | 0.4 | Pilotes génériques **expérimentaux** : Logitech HID++ 2.0 (DPI, fréquence, molette SmartShift / haute résolution, batterie) et Razer (DPI, fréquence, éclairage, batterie). Page de réglages construite automatiquement, réglages d'origine gardés | ✅ |
-| 0.5+ | SteelSeries, Corsair, HyperX, HeadsetControl, claviers VIA/Vial, souris chinoises (Sinowealth, Compx, ATK), passerelle OpenRGB | 🗺️ |
+| 0.5 | Casques SteelSeries Arctis, Corsair Void / Virtuoso, HyperX Cloud, Logitech G / Astro, Audeze, Sony INZONE… via [HeadsetControl](https://github.com/Sapd/HeadsetControl) : batterie, retour micro, égaliseur, extinction auto, éclairage (**expérimental**) | ✅ |
+| 0.6+ | Claviers VIA/Vial, souris chinoises (Sinowealth, Compx, ATK), passerelle OpenRGB | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
 

@@ -201,14 +201,15 @@ function drvRender(inst) {
         h('input', { type: 'color', value: l.color || '#ffffff', onchange: e => drvSet(inst, 'Couleur', 'light', { ...l, color: e.target.value }) })) : null,
       c.light.brightness && l.brightness != null ? slider(0, 100, 1, l.brightness, ' %', v => drvSet(inst, 'Luminosité', 'light', { ...l, brightness: v })) : null));
   }
+  if (inst.rows) rows.push(...inst.rows().filter(Boolean));
   if (!rows.length) rows.push(h('p', { class: 'muted' }, 'Aucun réglage reconnu sur ce modèle pour l’instant. Ouvrez un ticket sur GitHub avec le rapport (page Allègement) : c’est comme ça que la prise en charge s’étend.'));
   const o = drvOrigin(inst);
   box.replaceChildren(...rows,
     inst.note ? h('div', { class: 'notice' }, h('p', { class: 'muted small' }, inst.note)) : null,
     h('div', { class: 'field' }, h('div', { class: 'flabel' }, 'Sécurité'), h('div', { class: 'fctl' },
-      h('div', { class: 'muted small' }, 'Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
-        'Les réglages d’origine sont gardés avant la première modification.'),
-      o ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString('fr-FR')}`) : null)));
+      h('div', { class: 'muted small' }, inst.source || ('Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
+        'Les réglages d’origine sont gardés avant la première modification.')),
+      o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString('fr-FR')}`) : null)));
 }
 
 // ---------- Accueil ----------
@@ -237,4 +238,5 @@ function driversStart() {
   navigator.hid?.addEventListener('connect', driversScan);
   navigator.hid?.addEventListener('disconnect', e => drvRelease(e.device));
   driversScan();
+  if (typeof headsetsPoll === 'function') headsetsPoll();
 }

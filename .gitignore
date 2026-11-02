@@ -7,3 +7,6 @@ Thumbs.db
 # sauvegardes et rapports personnels
 backups/
 *.local.json
+
+# module casques téléchargé par scripts/fetch-headsetcontrol.ps1 (empreinte vérifiée)
+src-tauri/resources/headsetcontrol.exe
