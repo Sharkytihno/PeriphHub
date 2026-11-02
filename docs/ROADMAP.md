@@ -34,7 +34,23 @@ Pour chaque logiciel constructeur, un parcours en étapes :
 
 Jamais de désinstallation automatique.
 
-## 0.4+ — Grandes marques, en portant les protocoles libres existants
+## 0.4 — Pilotes génériques ✅
+
+`ui/js/drivers/` : un pilote décrit les capacités de l'appareil (DPI, fréquence, molette, éclairage,
+batterie) et PeriphHub construit la page tout seul. Avant la première modification, les réglages
+d'origine sont gardés (« Remettre les réglages du … »). Les réglages choisis sont réappliqués au
+branchement pour les appareils qui les oublient à l'extinction.
+
+- `logitech.js` — HID++ 2.0 (d'après Solaar / libratbag) : direct (index 0xFF) ou derrière un récepteur
+  Unifying / Bolt / Lightspeed (index 1 à 6, réveil détecté). Fonctionnalités 0x0005, 0x0003, 0x1000,
+  0x1004, 0x2201, 0x8060, 0x8061, 0x2110, 0x2111, 0x2121.
+- `razer-chroma.js` — protocole OpenRazer (feature report de 90 octets, CRC XOR), id de transaction
+  0x1F / 0x3F / 0xFF essayés tour à tour. DPI, fréquence 125 / 500 / 1000 Hz, luminosité, effets
+  fixe / respiration / cycle / éteint, batterie.
+
+Statut « expérimental » tant qu'un modèle n'a pas été confirmé par un utilisateur.
+
+## 0.5+ — Autres marques, en portant les protocoles libres existants
 
 | Famille | Source | Couverture attendue |
 |---|---|---|

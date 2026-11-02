@@ -13,6 +13,8 @@ const NATIVE_REPORTS = {
   0xff06: { input: [9], output: [9], feature: [] },   // Scyrox
   0xff04: { input: [], output: [], feature: [6] },    // Scyrox
   0xff89: { input: [], output: [], feature: [0xcc] }, // Gigabyte RGB Fusion 2
+  0xff00: { input: [0x10, 0x11], output: [0x10, 0x11], feature: [] }, // Logitech HID++ (récepteurs, filaire)
+  0xff43: { input: [0x10, 0x11], output: [0x10, 0x11], feature: [] }, // Logitech HID++ (souris récentes)
 };
 
 class NativeHIDDevice extends EventTarget {
@@ -46,8 +48,9 @@ class NativeHIDDevice extends EventTarget {
   async sendFeatureReport(reportId, data) {
     await nativeInvoke('hid_send_feature', { handle: this.handle, reportId, data: Array.from(toBytes(data)) });
   }
-  async receiveFeatureReport(reportId) {
-    const bytes = await nativeInvoke('hid_get_feature', { handle: this.handle, reportId, len: 64 });
+  // `len` : extension de PeriphHub (WebHID connaît la taille par le descripteur, hidapi non)
+  async receiveFeatureReport(reportId, len = 64) {
+    const bytes = await nativeInvoke('hid_get_feature', { handle: this.handle, reportId, len });
     return new DataView(Uint8Array.from(bytes).buffer);
   }
 }

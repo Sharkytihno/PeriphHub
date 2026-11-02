@@ -1,8 +1,64 @@
 [
-  { "vid": "3554", "pid": "F5F7", "name": "Scyrox V6 (dongle 8K)", "kind": "souris", "status": "supported", "plugin": "scyrox" },
-  { "vid": "3554", "pid": "F5F6", "name": "Scyrox V6 (filaire)", "kind": "souris", "status": "supported", "plugin": "scyrox" },
-  { "vid": "373B", "pid": "1194", "name": "REKT Shogun68 HE", "kind": "clavier", "status": "supported", "plugin": "via-he" },
-  { "vid": "1532", "pid": "0565", "name": "Razer BlackShark V2 HyperSpeed (dongle)", "kind": "casque", "status": "supported", "plugin": "razer-audio" },
-  { "vid": "1532", "pid": "056E", "name": "Razer BlackShark V2 HyperSpeed", "kind": "casque", "status": "supported", "plugin": "razer-audio" },
-  { "vid": "048D", "pid": "5702", "name": "GIGABYTE RGB Fusion 2", "kind": "rgb", "status": "supported", "plugin": "gigabyte-fusion2" }
+  {
+    "vid": "3554",
+    "pid": "F5F7",
+    "name": "Scyrox V6 (dongle 8K)",
+    "kind": "souris",
+    "status": "supported",
+    "plugin": "scyrox"
+  },
+  {
+    "vid": "3554",
+    "pid": "F5F6",
+    "name": "Scyrox V6 (filaire)",
+    "kind": "souris",
+    "status": "supported",
+    "plugin": "scyrox"
+  },
+  {
+    "vid": "373B",
+    "pid": "1194",
+    "name": "REKT Shogun68 HE",
+    "kind": "clavier",
+    "status": "supported",
+    "plugin": "via-he"
+  },
+  {
+    "vid": "1532",
+    "pid": "0565",
+    "name": "Razer BlackShark V2 HyperSpeed (dongle)",
+    "kind": "casque",
+    "status": "supported",
+    "plugin": "razer-audio"
+  },
+  {
+    "vid": "1532",
+    "pid": "056E",
+    "name": "Razer BlackShark V2 HyperSpeed",
+    "kind": "casque",
+    "status": "supported",
+    "plugin": "razer-audio"
+  },
+  {
+    "vid": "048D",
+    "pid": "5702",
+    "name": "GIGABYTE RGB Fusion 2",
+    "kind": "rgb",
+    "status": "supported",
+    "plugin": "gigabyte-fusion2"
+  },
+  {
+    "vid": "046D",
+    "pid": "*",
+    "name": "Logitech (HID++ 2.0)",
+    "status": "experimental",
+    "plugin": "logitech-hidpp"
+  },
+  {
+    "vid": "1532",
+    "pid": "*",
+    "name": "Razer (protocole Chroma)",
+    "status": "experimental",
+    "plugin": "razer-chroma"
+  }
 ]

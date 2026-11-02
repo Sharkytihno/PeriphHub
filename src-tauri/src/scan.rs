@@ -125,11 +125,15 @@ pub fn run() -> Value {
     let out_devices: Vec<Value> = devs
         .iter()
         .map(|d| {
-            let s = support.iter().find(|s| hex(&s.vid) == Some(d.vid) && hex(&s.pid) == Some(d.pid));
+            // entrée exacte, sinon pilote générique de la marque (pid « * »)
+            let s = support
+                .iter()
+                .find(|s| hex(&s.vid) == Some(d.vid) && hex(&s.pid) == Some(d.pid))
+                .or_else(|| support.iter().find(|s| hex(&s.vid) == Some(d.vid) && s.pid == "*"));
             let maker = usb.get(&d.vid);
             json!({
                 "vid": format!("{:04X}", d.vid), "pid": format!("{:04X}", d.pid),
-                "product": if d.product.is_empty() { s.map(|s| s.name.clone()).unwrap_or_default() } else { d.product.clone() },
+                "product": if d.product.is_empty() { s.filter(|s| s.pid != "*").map(|s| s.name.clone()).unwrap_or_default() } else { d.product.clone() },
                 "manufacturer": d.manufacturer, "interfaces": d.interfaces,
                 "kind": s.and_then(|s| s.kind.clone()).unwrap_or_else(|| d.kind.to_string()),
                 "brand": maker.map(|m| m.name.clone()),

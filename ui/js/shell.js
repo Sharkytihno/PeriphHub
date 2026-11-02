@@ -133,7 +133,7 @@ function deviceTiles() {
     hs ? [['Batterie', hb != null ? hb + ' %' : '—'], ['Retour micro', hs.state?.sidetone ? 'activé' : 'coupé'], ['Firmware', hs.state?.fw || '—']] : null,
     hb != null ? meter(hb) : null));
   if (rgb || shown('rgb')) tiles.push(tile('rgb', title('rgb'), !!rgb, rgb ? 'Connecté' : waiting('rgbStatus')));
-  return tiles;
+  return tiles.concat(driverTiles());
 }
 
 // Mémoire libérée : mesurée juste avant et juste après chaque allègement
@@ -162,11 +162,11 @@ function ramHero() {
       h('div', { class: 'muted small' }, 'Mémoire privée, mesurée comme dans le Gestionnaire des tâches.')));
 }
 
-const STATUS = { supported: 'Pris en charge', partial: 'En partie', planned: 'Bientôt', unknown: 'Pas encore pris en charge' };
+const STATUS = { supported: 'Pris en charge', experimental: 'Expérimental', partial: 'En partie', planned: 'Bientôt', unknown: 'Pas encore pris en charge' };
 
 function otherDevices() {
   if (!report) return null;
-  const others = report.devices.filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown'));
+  const others = report.devices.filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown') && !driverHas(d.vid, d.pid));
   if (!others.length) return null;
   return h('section', { class: 'block' },
     h('div', { class: 'bhead' }, h('h3', {}, 'Autres appareils détectés'),
@@ -188,7 +188,7 @@ function refreshHome() {
   const hb = hs?.state?.battery;
   sub('hsSub', hs ? (hb != null ? hb + ' %' + (hs.state.charging ? ' · en charge' : '') : 'Connecté') : 'Non connecté');
   sub('rgbSub', rgb ? 'Connecté' : 'Carte mère');
-  $('devGroup').hidden = ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
+  $('devGroup').hidden = !drvLive.size && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
   if (report) {
     sub('slimSub', report.vendor_bytes ? mo(report.vendor_bytes) + ' en fond' : 'Rien à alléger');
     const n = report.vendors.filter(v => v.bytes > 0).length;
@@ -200,7 +200,7 @@ function refreshHome() {
   const hour = new Date().getHours();
   $('homeTitle').textContent = hour < 6 || hour >= 18 ? 'Bonsoir' : 'Bonjour';
   const tiles = deviceTiles();
-  const live = [mouse, kb, hs, rgb].filter(Boolean).length;
+  const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvLive.size;
   $('homeLead').textContent = live ? `${plural(live, 'appareil connecté', 'appareils connectés')} · réglages enregistrés dans les appareils eux-mêmes`
     : 'Tous vos périphériques, d’un coup d’œil.';
   $('homeBody').replaceChildren(...[
@@ -411,5 +411,6 @@ function renderOptions() {
 
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
 rescan();
+driversStart();
 // Batterie et état relus régulièrement sur l'accueil (fenêtre visible seulement)
 setInterval(() => { if (!document.hidden && !$('home').hidden) refreshHome(); }, 30000);

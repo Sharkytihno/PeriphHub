@@ -19,7 +19,8 @@ let mouse = null;
 const catalog = NATIVE ? nativeInvoke('catalog').catch(() => []) : Promise.resolve([]);
 async function deviceName(dev) {
   const hex = n => n.toString(16).toUpperCase().padStart(4, '0');
-  const c = (await catalog).find(d => d.vid === hex(dev.vendorId) && (d.pid === '*' || d.pid === hex(dev.productId)));
+  // les entrées génériques (pid « * », ex. « Logitech (HID++ 2.0) ») ne donnent pas de nom
+  const c = (await catalog).find(d => d.vid === hex(dev.vendorId) && d.pid === hex(dev.productId));
   return (c?.name || dev.productName || '').replace(/\s*\((dongle|filaire)[^)]*\)/i, '');
 }
 async function setTitle(tab, dev) {

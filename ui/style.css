@@ -446,6 +446,7 @@ nav button[hidden], .ngroup[hidden] { display: none; }
 .dname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip.supported { color: var(--ok); background: var(--okbg); }
 .chip.partial, .chip.planned { color: var(--info); background: color-mix(in srgb, var(--info) 13%, transparent); }
+.chip.experimental { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
 .chip.unknown { color: var(--muted); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line); font-weight: 550; }
 
 /* Cartes des logiciels constructeurs */
