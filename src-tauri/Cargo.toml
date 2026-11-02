@@ -1,6 +1,6 @@
 [package]
 name = "periphhub"
-version = "0.13.0"
+version = "0.14.0"
 description = "Un seul logiciel léger pour tous vos périphériques"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Sharkytihno/PeriphHub"
@@ -11,6 +11,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hidapi = { version = "2", default-features = false, features = ["windows-native"] }
@@ -23,6 +24,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_ProcessStatus",
   "Win32_System_SystemInformation",
+  "Win32_Storage_Packaging_Appx",
   "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",

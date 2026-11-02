@@ -12,6 +12,7 @@ mod sign;
 mod slim;
 mod startup;
 mod thx;
+mod update;
 mod vendors;
 mod watchdog;
 
@@ -147,6 +148,7 @@ fn main() {
         return;
     }
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(hid::Hid::default())
         .manage(ThxWorker::new())
         .invoke_handler(tauri::generate_handler![
@@ -172,7 +174,9 @@ fn main() {
             slim_close,
             slim_journal,
             ui_log,
-            report_device
+            report_device,
+            update::update_check,
+            update::update_install
         ])
         .run(tauri::generate_context!())
         .expect("PeriphHub n'a pas pu démarrer");

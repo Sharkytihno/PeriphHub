@@ -579,6 +579,18 @@ const I18N_EN = {
   'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. Les réglages sont écrits dans le clavier ; ceux d’origine sont gardés avant la première modification.': 'OpenMouse protocol (open-source project, AGPL-3.0), not yet confirmed on this model in PeriphHub. Settings are written to the keyboard; the original ones are saved before the first change.',
   // Startup entry modes
   'manuel': 'manual', 'actif': 'enabled',
+  'Mises à jour assurées par le Microsoft Store': 'Updates are handled by the Microsoft Store',
+  'PeriphHub est à jour': 'PeriphHub is up to date',
+  'Téléchargement…': 'Downloading…',
+  'Mettre à jour': 'Update',
+  'Téléchargement et installation en un clic, vos réglages sont conservés. PeriphHub redémarre tout seul.': 'Download and install in one click, your settings are kept. PeriphHub restarts on its own.',
+  'Mises à jour': 'Updates',
+  'Assurées par le Microsoft Store.': 'Handled by the Microsoft Store.',
+  'Automatiques': 'Automatic',
+  'Désactivées': 'Off',
+  'Vérification…': 'Checking…',
+  'Vérifier maintenant': 'Check now',
+  'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.': 'PeriphHub checks GitHub for a new version and offers it in one click. Nothing about your computer or devices is sent; updates are signed and verified before installing.',
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -678,6 +690,9 @@ const I18N_EN_T = {
 
 // Plurals and sentences assembled from pieces
 const I18N_EN_RE = [
+  [/^PeriphHub (\S+) est disponible$/, (m, v) => `PeriphHub ${v} is available`],
+  [/^Vérification impossible : (.+)$/, (m, e) => `Check failed: ${e}`],
+  [/^Mise à jour impossible : (.+)$/, (m, e) => `Update failed: ${e}`],
   [/^(\d+) appareils? connectés?$/, (m, n) => `${n} device${n > 1 ? 's' : ''} connected`],
   [/^(\d+) logiciels? ouverts? en arrière-plan : (.+)\.$/, (m, n, l) => `${n} program${n > 1 ? 's' : ''} open in the background: ${l}.`],
   [/^(\d+) processus en cours$/, (m, n) => `${n} process${n > 1 ? 'es' : ''} running`],

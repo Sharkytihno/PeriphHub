@@ -18,6 +18,8 @@ env:
   SIGNPATH_PROJECT: periphhub
   SIGNPATH_POLICY: release-signing
   SIGNPATH_CONFIG: exe-in-zip
+  # Clé de signature des mises à jour intégrées (docs/MISES-A-JOUR.md) ; sans elle, pas de latest.json
+  HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
 
 jobs:
   windows:
@@ -124,7 +126,20 @@ jobs:
           $f = Get-ChildItem src-tauri/target/release/*.msix | Select-Object -First 1
           "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
 
-      # 6. Release (brouillon) avec l'installeur et son empreinte
+      # 6. Mise à jour intégrée : installeur signé avec la clé du projet + latest.json, que PeriphHub
+      #    lit sur la dernière release publiée (un brouillon n'est proposé à personne)
+      - name: Fichier de mise à jour (latest.json)
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_UPDATER_KEY == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SETUP: ${{ steps.setup.outputs.path }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          npx tauri signer sign -p "" "$SETUP" < /dev/null > /dev/null
+          node scripts/updater-manifest.js "$SETUP" "$TAG"
+
+      # 7. Release (brouillon) avec l'installeur et son empreinte
       - name: Installeur (lancement manuel, sans release)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
@@ -165,4 +180,7 @@ jobs:
           $body = $body.Replace('{NAME}', '${{ steps.setup.outputs.name }}').Replace('{WARN}', $warn).Replace('{HASH}', $hash)
           $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           Set-Content -Path $notes -Value $body -Encoding utf8
-          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" '${{ steps.msix.outputs.path }}' --draft --title 'PeriphHub ${{ github.ref_name }}' --notes-file $notes
+          $files = @($setup, "$setup.sha256", '${{ steps.msix.outputs.path }}')
+          $latest = Join-Path (Split-Path $setup) 'latest.json'
+          if (Test-Path $latest) { $files += $latest } else { Write-Host '::warning::pas de latest.json : mise à jour intégrée indisponible pour cette version' }
+          gh release create '${{ github.ref_name }}' @files --draft --title 'PeriphHub ${{ github.ref_name }}' --notes-file $notes

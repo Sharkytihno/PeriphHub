@@ -252,6 +252,7 @@ function refreshHome() {
   $('homeLead').textContent = live ? `${plural(live, 'appareil connecté', 'appareils connectés')} · réglages enregistrés dans les appareils eux-mêmes`
     : 'Tous vos périphériques, d’un coup d’œil.';
   $('homeBody').replaceChildren(...[
+    updateNotice(),
     hidBlockedNotice(),
     ramHero(),
     h('section', { class: 'block' },
@@ -271,6 +272,56 @@ function hidBlockedNotice() {
       + 'Débranchez vos appareils un par un (dongles sans fil, manettes, casques, hubs) jusqu’à ce que ce message disparaisse : '
       + 'le dernier débranché est le coupable. Un redémarrage du PC règle souvent le problème.'),
     h('p', { class: 'muted small' }, 'PeriphHub réessaie tout seul toutes les 30 secondes.'));
+}
+
+// ---------- Mises à jour (version GitHub ; celle du Store est mise à jour par le Store) ----------
+
+let upd = null; // dernier résultat de update_check
+let updBusy = false;
+const autoUpdate = () => { try { return localStorage.getItem('autoUpdate') !== 'off'; } catch { return true; } };
+
+async function checkUpdate(manual = false) {
+  if (!NATIVE || updBusy) return;
+  updBusy = true;
+  if (manual) renderOptions();
+  try {
+    upd = await nativeInvoke('update_check');
+    if (manual) toast(upd.store ? 'Mises à jour assurées par le Microsoft Store'
+      : upd.available ? `PeriphHub ${upd.version} est disponible` : 'PeriphHub est à jour');
+  } catch (e) {
+    if (manual) toast('Vérification impossible : ' + e, 'err');
+  } finally {
+    updBusy = false;
+  }
+  refreshHome();
+  if (!$('options').hidden) renderOptions();
+}
+
+async function installUpdate(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Téléchargement…';
+  try {
+    // PeriphHub se ferme : l'installeur le relance une fois la mise à jour faite
+    await nativeInvoke('update_install');
+  } catch (e) {
+    toast('Mise à jour impossible : ' + e, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Mettre à jour';
+  }
+}
+
+function updateNotice() {
+  if (!upd?.available) return null;
+  const btn = h('button', { onclick: () => installUpdate(btn) }, 'Mettre à jour');
+  return h('div', { class: 'notice warn upd' },
+    h('strong', {}, `PeriphHub ${upd.version} est disponible`),
+    h('p', { class: 'muted small' }, 'Téléchargement et installation en un clic, vos réglages sont conservés. PeriphHub redémarre tout seul.'),
+    btn);
+}
+
+if (NATIVE && autoUpdate()) {
+  setTimeout(checkUpdate, 5000);
+  setInterval(() => autoUpdate() && checkUpdate(), 6 * 3600 * 1000);
 }
 
 // ---------- Allègement ----------
@@ -460,6 +511,18 @@ function renderOptions() {
         v => { setTheme(v); renderOptions(); })),
     field('Langue',
       segmented(Object.entries(LANGS).map(([v, label]) => ({ v, label })), LANG, v => { if (v !== LANG) setLang(v); })),
+    NATIVE ? field('Mises à jour', ...(upd?.store
+      ? [h('div', { class: 'muted small' }, 'Assurées par le Microsoft Store.')]
+      : [segmented([{ v: 'on', label: 'Automatiques' }, { v: 'off', label: 'Désactivées' }], autoUpdate() ? 'on' : 'off', v => {
+          try { localStorage.setItem('autoUpdate', v); } catch {}
+          if (v === 'off') upd = null;
+          renderOptions();
+          refreshHome();
+        }),
+        h('div', { class: 'row-inline' },
+          h('button', { class: 'ghost', disabled: updBusy, onclick: () => checkUpdate(true) }, updBusy ? 'Vérification…' : 'Vérifier maintenant')),
+        h('div', { class: 'muted small' }, 'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. '
+          + 'Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.')])) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),

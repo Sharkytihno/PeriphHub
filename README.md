@@ -72,6 +72,7 @@ fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://gi
 | 0.11 | Claviers **Wooting** et **SteelSeries Apex Pro** (point d'activation, rapid trigger) via OpenMouse ; 108 casques reconnus (HeadsetControl) | ✅ |
 | 0.12 | Éclairage des casques **Razer Kraken** filaires (OpenRazer) ; durcissements de sécurité (outils Windows appelés par chemin absolu, DLL THX verrouillée pendant sa vérification, clés FIDO jamais accessibles) ; paquet Microsoft Store (MSIX) | ✅ |
 | 0.13 | **Plus jamais de blocage** : un périphérique USB qui ne répond pas à Windows ne fige plus l'appli ni l'analyse (délais partout, message clair) ; souris **SteelSeries Rival 3** corrigée (bonne interface USB) ; éclairage des claviers **SteelSeries Apex 3 / 3 TKL** ; claviers magnétiques **Keychron HE** (169 modèles) ; bouton **Signaler** qui ouvre un ticket GitHub prérempli avec le diagnostic | 🧪 |
+| 0.14 | **Mises à jour intégrées** : PeriphHub propose les nouvelles versions et s'installe en un clic (signées, vérifiées, désactivables) | 🧪 |
 | 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
@@ -81,6 +82,11 @@ Voir la [feuille de route](docs/ROADMAP.md).
 Téléchargez `PeriphHub_x.y.z_x64-setup.exe` dans les
 [Releases](https://github.com/Sharkytihno/PeriphHub/releases). L'installation se fait pour votre
 compte seul et ne demande pas de droits administrateur.
+
+**Mises à jour** : une fois installé, PeriphHub propose lui-même les nouvelles versions (bandeau
+« Mettre à jour » sur l'accueil, installation en un clic, réglages conservés). Il vérifie sur GitHub
+au lancement puis toutes les 6 heures ; chaque mise à jour est signée et vérifiée avant installation.
+Désactivable dans **Options ▸ Mises à jour**. La version du Microsoft Store est mise à jour par le Store.
 
 L'interface est en français ou en anglais (*English available*) : choix dans **Options ▸ Langue**.
 
@@ -106,7 +112,8 @@ Les données sont dans de simples fichiers JSON :
 
 - **Flasher un firmware.** Les mises à jour passent par les outils officiels des fabricants.
 - **Toucher aux anti-triche** (Vanguard, FACEIT, EasyAntiCheat…) ni installer de pilote noyau non signé.
-- **Envoyer des données** sans action explicite de votre part.
+- **Envoyer des données** sans action explicite de votre part (la vérification des mises à jour ne
+  fait que lire un fichier public sur GitHub, et se désactive dans les Options).
 
 ## Compiler
 
