@@ -65,6 +65,7 @@ pub fn run() -> Value {
     let vendors = vendors::all();
     let usb = vendors::usb();
     let support = vendors::support();
+    let known = vendors::catalog();
     let list = procs::list();
     let me = procs::current_pid();
     let by_pid: HashMap<u32, usize> = list.iter().enumerate().map(|(i, p)| (p.pid, i)).collect();
@@ -131,15 +132,41 @@ pub fn run() -> Value {
                 .find(|s| hex(&s.vid) == Some(d.vid) && hex(&s.pid) == Some(d.pid))
                 .or_else(|| support.iter().find(|s| hex(&s.vid) == Some(d.vid) && s.pid == "*"));
             let maker = usb.get(&d.vid);
+            let exact = s.filter(|s| s.pid != "*");
+            // Pas d'entrée précise dans devices.json : le catalogue des projets libres prend le relais
+            let k = if exact.is_none() {
+                known.iter().find(|k| hex(&k.vid) == Some(d.vid) && hex(&k.pid) == Some(d.pid))
+            } else {
+                None
+            };
+            let name = if !d.product.is_empty() {
+                d.product.clone()
+            } else if let Some(e) = exact {
+                e.name.clone()
+            } else {
+                k.map(|k| k.name.clone()).unwrap_or_default()
+            };
+            let kind = s
+                .and_then(|s| s.kind.clone())
+                .or_else(|| k.filter(|k| k.kind != "autre").map(|k| k.kind.clone()))
+                .unwrap_or_else(|| d.kind.to_string());
+            let (status, plugin) = match (exact, s, k) {
+                (Some(e), _, _) => (e.status.clone(), Some(e.plugin.clone())),
+                (None, _, Some(k)) if k.status != "known" => (k.status.clone(), Some(k.via.clone())),
+                (None, Some(g), _) => (g.status.clone(), Some(g.plugin.clone())),
+                (None, None, Some(_)) => ("known".into(), None),
+                _ => ("unknown".into(), None),
+            };
             json!({
                 "vid": format!("{:04X}", d.vid), "pid": format!("{:04X}", d.pid),
-                "product": if d.product.is_empty() { s.filter(|s| s.pid != "*").map(|s| s.name.clone()).unwrap_or_default() } else { d.product.clone() },
+                "product": name, "catalog_name": k.map(|k| k.name.clone()),
                 "manufacturer": d.manufacturer, "interfaces": d.interfaces,
-                "kind": s.and_then(|s| s.kind.clone()).unwrap_or_else(|| d.kind.to_string()),
+                "kind": kind,
                 "brand": maker.map(|m| m.name.clone()),
                 "brand_note": maker.map(|m| m.note.clone()).filter(|n| !n.is_empty()),
-                "status": s.map(|s| s.status.clone()).unwrap_or_else(|| "unknown".into()),
-                "plugin": s.map(|s| s.plugin.clone()),
+                "status": status,
+                "plugin": plugin,
+                "sources": k.map(|k| k.src.clone()).unwrap_or_default(),
                 "missing": s.map(|s| s.missing.clone()).unwrap_or_default(),
             })
         })

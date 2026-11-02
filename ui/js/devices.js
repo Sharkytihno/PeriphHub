@@ -1209,7 +1209,8 @@ async function connectRgb(dev) {
 async function autoConnect() {
   if (!('hid' in navigator)) return;
   const granted = await navigator.hid.getDevices();
-  const m = ScyroxMouse.pick(granted.filter(d => d.vendorId === 0x3554));
+  // Les autres souris à puce CompX que reconnaît OpenMouse ont leur page générique (drivers/openmouse.js)
+  const m = ScyroxMouse.pick(granted.filter(d => d.vendorId === 0x3554 && !window.omApi?.claims(d, granted)));
   if (m && !mouse) connectMouse(m);
   const k = RektKeyboard.pick(granted);
   if (k && !kb) connectKeyboard(k);

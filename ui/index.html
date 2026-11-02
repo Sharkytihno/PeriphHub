@@ -114,11 +114,14 @@
     </section>
   </main>
   <div id="toasts" aria-live="polite"></div>
+  <script src="js/hid-descriptor.js" defer></script>
   <script src="js/native-hid.js" defer></script>
   <script src="js/protocols/scyrox.js" defer></script>
   <script src="js/protocols/rekt.js" defer></script>
   <script src="js/protocols/razer.js" defer></script>
   <script src="js/protocols/fusion2.js" defer></script>
+  <!-- Module ES : exécuté à son tour, comme les scripts defer (avant devices.js qui s'en sert) -->
+  <script type="module" src="js/drivers/openmouse.js"></script>
   <script src="js/devices.js" defer></script>
   <script src="js/drivers/core.js" defer></script>
   <script src="js/drivers/logitech.js" defer></script>

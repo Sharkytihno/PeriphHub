@@ -1,0 +1,1591 @@
+import { WE_CMD_READ_EEPROM, WE_CMD_WRITE_EEPROM, WE_REPORT_ID, weBuildCmdPayload, wePackScalarPair, weReportChecksum, weUnpackScalarPair, } from "../../endgame-gear/wireless.js";
+import { VENDOR_ID } from "../vendors.js";
+import { ATK_COMPX_COMMAND, ATK_R1_BUTTONS, ATK_R1_PROFILE_COUNT, ATK_SENSOR_PERFORMANCE_REGISTER, ATK_ANTI_MISTOUCH_OFFSET, ATK_VXE_R1_ANGLE_SELECTOR, ATK_VXE_R1_DEBOUNCE_SELECTOR, ATK_VXE_R1_LOD_SELECTOR, ATK_VXE_R1_POLLING_RATES, ATK_VXE_R1_SETTINGS_REGISTER, ATK_SENSORS, ATK_LIFT_OFF_MIN_CODE, ATK_LIFT_OFF_MAX_CODE, atkBuildReceiverPairRequest, atkBuildSetCurrentProfile, atkBuildDongleLight, atkDecodeAntiMistouch, atkDecodeLiftOff, atkDecodeSensorMode, atkDecodeButtonAssignment, atkDecodeCurrentProfile, atkDecodePairingStatus, atkDecodeReceiverStatus, atkDecodeVxeR1PollingCode, atkDpiOptionsForSensor, atkDpiStageLength, atkPackDpiStage, atkPackDpiStageForSensor, atkPackSensorMode, atkPackAntiMistouch, atkPackVxeR1LiveSetting, atkPackVxeR1PollingSetting, atkUnpackDpiStage, atkUnpackDpiStageForSensor, } from "../../atk/index.js";
+import { ATK_COMPX_PRODUCT_IDS, ATK_PRODUCTS, atkCatalogDevice, atkCatalogSensorToSensor } from "./products.js";
+// ATK mice (A9 family and siblings) use the same OEM framing as the Endgame
+// Gear WE series — 16-byte EEPROM commands on report 0x08 — but carry them on
+// output/input reports rather than feature reports.
+const BATTERY_COMMAND = 0x04;
+const VERSION_COMMAND = 0x12;
+const CIDMID_COMMAND = 0x10;
+const SET_LONG_RANGE_COMMAND = 0x16;
+const GET_LONG_RANGE_COMMAND = 0x17;
+const FRAME_LENGTH = 16;
+const DATA_OFFSET = 5;
+const MAX_DATA_LENGTH = 10;
+const REPLY_TIMEOUT_MS = 500;
+const WRITE_SETTLE_MS = 10;
+const R1_LIVE_WRITE_SETTLE_MS = 250;
+const R1_PROFILE_SWITCH_SETTLE_MS = 100;
+const MAX_IDENTIFY_ATTEMPTS = 3;
+// The VXE R1 SE/SE+ ships its "Wireless mouse -1k dongle" under 0x373b:0x1085
+// (Beken MCU). It shares the A9 EEPROM map for DPI/advanced/lod, but the poll
+// rate lives in the live-settings row; see the codec for the full story.
+const VXE_R1_RECEIVER_PID = 0x1085;
+const VXE_R1_PRO_MAX_RECEIVER_PID = 0xf58a;
+const VXE_R1_PRO_MAX_MOUSE_PID = 0xf58c;
+const VXE_R1_COMPX_RECEIVER_PID = 0xf58e;
+const VXE_R1_COMPX_MOUSE_PID = 0xf58f;
+// ATK HUB's generic "NK Mouse Dongle". Its product string changed from
+// "Nearlink Mouse Dongle" to "NK mouse NANO dongle" with a receiver update.
+const NEARLINK_RECEIVER_PID = 0x10c9;
+const R1_SETTINGS_LENGTH = 4;
+// Byte addresses in the mouse's configuration EEPROM.
+const REGISTER = {
+    // 0x0000: polling rate, DPI stage count, active DPI stage (value/checksum pairs).
+    system: 0x0000,
+    liftOffDistance: 0x000a,
+    // Four bytes per DPI stage.
+    dpiBase: 0x000c,
+    paw3955DpiBase: 0x1b00,
+    dpiColorBase: 0x002c,
+    dpiLighting: 0x004c,
+    // 0x00a9: debounce, motion sync, sleep timer, linear correction, ripple control.
+    advanced: 0x00a9,
+    // 0x00bd: angle tuning degrees, then the angle-snapping enable flag.
+    angle: 0x00bd,
+    sensorPerformance: 0x00b5,
+};
+const SYSTEM_LENGTH = 6;
+const R1_SYSTEM_ROW_LENGTH = 10;
+const ADVANCED_LENGTH = 10;
+const ANGLE_LENGTH = 4;
+const DPI_STAGE_LENGTH = 4;
+const MAX_DPI_STAGES = 6;
+const R1_MAX_DPI_STAGES = 8;
+const DPI_MIN = 50;
+const DPI_MAX = 42000;
+const DEBOUNCE_MAX_MS = 15;
+// The R1 accepts 1-20 ms in its live-settings debounce entry (per OpenVXE).
+const R1_DEBOUNCE_MAX_MS = 20;
+const SLEEP_STEP_SECONDS = 10;
+const SLEEP_SECONDS = [30, 60, 120, 300, 600, 1800];
+const R1_SLEEP_SECONDS = [30, 60, 120, 180, 300, 1200, 1500, 1800];
+const R1_DEBOUNCE_MILLISECONDS = [0, 1, 2, 4, 8, 15, 20];
+const R1_SENSOR_PERFORMANCE_LENGTH = 6;
+const R1_DPI_LIGHTING_LENGTH = 8;
+const R1_DPI_COLOR_GROUP_LENGTH = 8;
+const R1_DPI_BRIGHTNESS = [0x10, 0x80, 0xff];
+const R1_DPI_SPEED = [1, 3, 5];
+const POLLING_RATES = [
+    [0x08, 125],
+    [0x04, 250],
+    [0x02, 500],
+    [0x01, 1000],
+    [0x10, 2000],
+    [0x20, 4000],
+    [0x40, 8000],
+];
+/** Register codes are tenths of a millimetre offset by 6 (1 = 0.7 mm). */
+const LIFT_OFF_CODES = [
+    [1, "Low"],
+    [4, "Medium"],
+    [11, "High"],
+];
+/** R1 lift-off levels are 1 mm and 2 mm in the live-settings entry. */
+const R1_LIFT_OFF_CODES = [
+    [1, "Low"],
+    [2, "High"],
+];
+/** X1 Pro Max / PAW3950: 3 = 0.7 mm, 1 = 1 mm, 2 = 2 mm (ATK HUB). */
+const X1_LIFT_OFF_CODES = [
+    [3, "Low"], [1, "Medium"], [2, "High"],
+];
+export class AtkHidClient {
+    // Sleep is stored in 10-second units with no "never" value.
+    canDisableSleep = false;
+    // Written out rather than a parameter property so node --test can strip types.
+    device;
+    queue = Promise.resolve();
+    lastStatus = null;
+    product = null;
+    identified = false;
+    identifyAttempts = 0;
+    /** Runtime CID/MID from command 0x10, e.g. "1,8". Null until identified. */
+    cidMid = null;
+    /** Vendor catalog entry for this USB id, resolved lazily. */
+    catalog = null;
+    /** Whether the catalog lookup has run at least once. */
+    catalogResolved = false;
+    /** CID/MID key the catalog entry was resolved for (null = USB id only). */
+    catalogResolvedFor = null;
+    /** Last dongle-light mode written; no read command is known. */
+    dongleLightCache = null;
+    constructor(device) {
+        this.device = device;
+    }
+    /**
+     * Claims ATK/VXE config interfaces. The 0x55-framed transport was captured
+     * on the 0xFF02:0x02 collection; the vendor HUB prefers 0xFF04:0x02 (and
+     * 0xFF05:0x01 on NearLink) on the same composite device and never lists
+     * 0xFF02, so the two are believed to coexist. Widening this to the vendor's
+     * pages needs a collection dump to confirm the framing carries over.
+     */
+    static isSupported(device) {
+        const search = (collection) => (collection.usagePage === 0xff02 && collection.usage === 0x0002)
+            || collection.children.some(search);
+        if (!device.collections.some(search))
+            return false;
+        if (device.vendorId === VENDOR_ID.atk)
+            return true;
+        return device.vendorId === VENDOR_ID.vgn && ATK_COMPX_PRODUCT_IDS.includes(device.productId);
+    }
+    async open() {
+        if (!this.device.opened)
+            await this.device.open();
+    }
+    async close() {
+        this.lastStatus = null;
+        this.product = null;
+        this.dongleLightCache = null;
+        this.identified = false;
+        this.identifyAttempts = 0;
+        this.cidMid = null;
+        this.catalog = null;
+        this.catalogResolved = false;
+        this.catalogResolvedFor = null;
+        if (this.device.opened)
+            await this.device.close();
+    }
+    /** ATK broadcasts are undocumented; the panel falls back to polling. */
+    async startNotifications() {
+        return false;
+    }
+    displayName() {
+        if (this.product)
+            return `${this.product.brand} ${this.product.model}`;
+        // Catalog-only mice show their real model name instead of the USB string.
+        const catalog = this.catalogEntry();
+        if (catalog)
+            return catalog.model;
+        const name = this.device.productName?.trim();
+        if (!name)
+            return "ATK";
+        return /^atk/i.test(name) ? name : `ATK ${name}`;
+    }
+    deviceBrand() {
+        return this.product?.brand
+            ?? this.catalogEntry()?.brand
+            ?? (/^vxe\b/i.test(this.device.productName || "") ? "VXE" : "ATK");
+    }
+    /**
+     * A wired A9 still reports a battery level, so the receiver is identified by
+     * its own product string instead: "ATK Nearlink Mouse Dongle" against the
+     * mouse's own "ATK A9 PLUS 2.0 NK".
+     */
+    isWireless() {
+        return this.device.productId === VXE_R1_RECEIVER_PID
+            || (this.device.vendorId === VENDOR_ID.vgn
+                && (this.device.productId === VXE_R1_PRO_MAX_RECEIVER_PID
+                    || this.device.productId === VXE_R1_COMPX_RECEIVER_PID))
+            || /receiver|dongle/i.test(this.device.productName || "");
+    }
+    /** NearLink dongles: catalog-flagged models, HUB's generic NK receiver, or a product string naming the radio. */
+    receiverDetail() {
+        const nearlink = this.features().isNearlink === true
+            || (this.device.vendorId === VENDOR_ID.atk && this.device.productId === NEARLINK_RECEIVER_PID)
+            || /\b(?:nearlink|nk)\b/i.test(this.device.productName || "");
+        return nearlink ? "NearLink receiver" : "2.4 GHz receiver";
+    }
+    /** VXE R1-family devices using the shared EEPROM command framing. */
+    isR1() {
+        return this.product?.family === "r1"
+            || this.usesSharedR1Transport();
+    }
+    maxDpi() {
+        const sensor = this.sensorKey();
+        return sensor ? ATK_SENSORS[sensor].maxDpi : DPI_MAX;
+    }
+    isX1ProMax() {
+        return this.product === ATK_PRODUCTS["2,39"];
+    }
+    /** A9 Plus Nearlink (CID 2, MID 83): PAW3395 under the same ATK HUB controller as the R1. */
+    isA9PlusNearlink() {
+        return this.product === ATK_PRODUCTS["2,83"];
+    }
+    /** Lift-off stored as 1 = 1 mm and 2 = 2 mm rather than the continuous 0.7 mm scale. */
+    usesR1LiftOffCodes() {
+        return this.isR1() || this.isA9PlusNearlink();
+    }
+    /** ATK HUB's wired-R1 debounce and sleep lists, and straight-line correction at advanced offset 6. */
+    sharesR1Settings() {
+        return this.isX1ProMax() || this.isA9PlusNearlink();
+    }
+    getSleepOptions() {
+        return (this.isR1() && !this.usesR1LiveSettings()) || this.sharesR1Settings() ? R1_SLEEP_SECONDS : SLEEP_SECONDS;
+    }
+    getDebounceMaxMs() {
+        return this.isR1() || this.sharesR1Settings() || this.isF1Ultimate() ? R1_DEBOUNCE_MAX_MS : DEBOUNCE_MAX_MS;
+    }
+    getDebounceOptions() {
+        if ((this.isR1() && !this.usesR1LiveSettings()) || this.sharesR1Settings()) {
+            return R1_DEBOUNCE_MILLISECONDS;
+        }
+        // Devices flagged noZeroKeyDebounce start at 1 ms; the rest offer 0.
+        const startAtOne = this.usesR1LiveSettings() || this.features().noZeroKeyDebounce === true;
+        return Array.from({ length: this.getDebounceMaxMs() + (startAtOne ? 0 : 1) }, (_, index) => index + (startAtOne ? 1 : 0));
+    }
+    getSupportedPollingRates() {
+        const ceiling = this.product?.maxPollingHz ?? Infinity;
+        return this.transportPollingRates().filter((hertz) => hertz <= ceiling);
+    }
+    transportPollingRates() {
+        if (this.usesAtk1kReceiver())
+            return POLLING_RATES.map(([, hertz]) => hertz).filter((hertz) => hertz <= 1000);
+        return this.usesR1LiveSettings()
+            ? [...ATK_VXE_R1_POLLING_RATES]
+            : this.isR1()
+                ? POLLING_RATES.map(([, hertz]) => hertz).filter((hertz) => hertz <= 1000)
+                : POLLING_RATES.map(([, hertz]) => hertz);
+    }
+    /**
+     * The encoding steps by 10 DPI, then 50 above 10,000 and 100 above 30,000.
+     * Models top out below 42,000; writes are confirmed by reading back.
+     */
+    getDpiOptions() {
+        const sensor = this.sensorKey();
+        if (sensor)
+            return atkDpiOptionsForSensor(sensor);
+        const options = [];
+        for (let dpi = DPI_MIN; dpi <= 10000; dpi += 10)
+            options.push(dpi);
+        for (let dpi = 10050; dpi <= 30000; dpi += 50)
+            options.push(dpi);
+        for (let dpi = 30100; dpi <= DPI_MAX; dpi += 100)
+            options.push(dpi);
+        return options;
+    }
+    async readStatus(live = false) {
+        await this.open();
+        await this.identify();
+        const battery = await this.readBattery();
+        const system = await this.read(REGISTER.system, SYSTEM_LENGTH);
+        const stageCount = this.stageCount(system);
+        const activeDpiStage = this.stageIndex(system);
+        const dpiStages = [];
+        for (let index = 0; index < stageCount; index += 1)
+            dpiStages.push(await this.readDpiStage(index));
+        const stage = dpiStages[activeDpiStage];
+        if (live && this.lastStatus) {
+            return this.lastStatus = {
+                ...this.lastStatus,
+                batteryPercent: battery?.percent ?? null,
+                batteryState: batteryState(battery),
+                batteryVoltageMv: battery?.millivolts ?? null,
+                pollingRateHz: await this.readPollingRate(system),
+                dpi: stage.x,
+                dpiY: stage.y,
+                dpiStages: dpiStages.map(({ x }) => x),
+                activeDpiStage,
+            };
+        }
+        const firmware = await this.readFirmware();
+        const liftOffDistance = await this.read(REGISTER.liftOffDistance, 2);
+        const advanced = await this.read(REGISTER.advanced, ADVANCED_LENGTH);
+        const f1Extras = this.isF1Ultimate()
+            ? await this.readF1Extras().catch(() => null)
+            : null;
+        const angle = await this.read(REGISTER.angle, ANGLE_LENGTH).catch(() => null);
+        const r1Extras = this.usesR1ProMaxUiTransport()
+            ? await this.readR1Extras(stageCount)
+            : null;
+        const stored = this.usesR1ProMaxUiTransport()
+            ? await this.readR1StoredConfiguration().catch(() => null)
+            : null;
+        const a9PerformanceMode = this.isA9PlusNearlink()
+            ? await this.readPerformanceMode()
+            : undefined;
+        const receiver = this.usesR1LiveSettings()
+            ? await this.readR1ReceiverInfo().catch(() => null)
+            : null;
+        const angleTuning = angle ? weUnpackScalarPair(angle[0], angle[1]) : null;
+        const angleSnapping = angle ? weUnpackScalarPair(angle[2], angle[3]) : null;
+        const sensor = this.sensorKey();
+        const sensorProfile = sensor ? ATK_SENSORS[sensor] : null;
+        return this.lastStatus = {
+            brand: this.deviceBrand(),
+            name: this.displayName(),
+            ui: {
+                family: "atk",
+                hideUnsupportedPollingRates: true,
+                forceShowBattery: battery !== null && this.features().noShowPower !== true,
+                // A catalog-only model (no hand-verified identity) is read/written with
+                // the generic protocol, so be explicit that it is unverified.
+                statusNote: this.product === null && this.catalogEntry() !== null
+                    ? "Model identified from the ATK catalog; settings use the generic protocol and are not yet verified on this exact model."
+                    : undefined,
+                // Vendor catalog: models flagged noSensorAngle have no angle control.
+                hideAngleSnapping: this.features().noSensorAngle === true ? true : undefined,
+                dpiStageEditor: this.usesR1ProMaxUiTransport() ? {
+                    maxStages: R1_MAX_DPI_STAGES,
+                    countEditable: true,
+                    minDpi: sensorProfile?.minDpi ?? DPI_MIN,
+                    maxDpi: sensorProfile?.maxDpi ?? DPI_MAX,
+                    stepDpi: 50,
+                } : undefined,
+                // Vendor catalog: noDpiRGB models have no DPI-indicator LED control.
+                dpiLighting: r1Extras && this.features().noDpiRGB !== true ? {
+                    modes: [0, 1, 2],
+                    brightness: [0, 1, 2],
+                    speed: [0, 1, 2],
+                } : undefined,
+            },
+            batteryPercent: battery?.percent ?? null,
+            batteryState: batteryState(battery),
+            batteryVoltageMv: battery?.millivolts ?? null,
+            dpi: stage.x,
+            dpiY: stage.y,
+            dpiStages: dpiStages.map(({ x }) => x),
+            dpiStageColors: r1Extras?.dpiStageColors,
+            activeDpiStage,
+            supportsSeparateDpiAxes: this.isR1ProMax() && this.features().noXyDpi !== true,
+            pollingRateHz: await this.readPollingRate(system),
+            supportedPollingRates: this.getSupportedPollingRates(),
+            activeProfile: stored?.activeProfile ?? null,
+            atkProfileCount: stored ? ATK_R1_PROFILE_COUNT : undefined,
+            atkButtonMappings: stored?.buttons,
+            atkReceiver: receiver ?? undefined,
+            connectionType: this.isWireless() ? "Wireless" : "Wired",
+            connectionDetail: this.isWireless() ? this.receiverDetail() : "Wired USB",
+            atkCatalogFeatures: this.catalogEntry()?.features,
+            debounceMs: advanced[0],
+            motionSync: advanced[2] === 1,
+            sleepTimeout: advanced[4] * SLEEP_STEP_SECONDS || null,
+            rippleControl: advanced[8] === 1,
+            performanceMode: r1Extras?.performanceMode ?? a9PerformanceMode,
+            longRangeMode: r1Extras?.longRangeMode,
+            atkSensorMode: f1Extras?.sensorMode ?? null,
+            atkAntiMistouchMs: f1Extras?.antiMistouchMs ?? null,
+            atkDongleLight: this.dongleLightCache,
+            dpiLedMode: r1Extras?.dpiLedMode,
+            dpiLedBrightness: r1Extras?.dpiLedBrightness,
+            dpiLedSpeed: r1Extras?.dpiLedSpeed,
+            angleSnapping: this.isR1() || this.sharesR1Settings() || this.isF1Ultimate()
+                ? advanced[6] === 1
+                : angleSnapping === null ? null : angleSnapping === 1,
+            angleTuning: angleTuning === null ? null : this.decodeAngle(angleTuning),
+            liftOffDistance: this.decodeLiftOffDistance(liftOffDistance[0]),
+            supportedLiftOffDistances: this.usesR1LiftOffCodes() ? ["Low", "High"] : undefined,
+            liftOffScale: this.supportsLiftOffScale() ? this.liftOffScale(liftOffDistance[0]) : undefined,
+            firmware,
+        };
+    }
+    /** Read the active R1 profile and its six button records without changing either. */
+    async readR1StoredConfiguration() {
+        await this.identify();
+        if (!this.usesR1ProMaxUiTransport()) {
+            throw new Error("Stored R1 configuration inspection is not available on this connection.");
+        }
+        const activeProfile = await this.readR1CurrentProfile();
+        const buttons = [];
+        for (let group = 0; group < ATK_R1_BUTTONS.length; group += 2) {
+            const first = ATK_R1_BUTTONS[group];
+            const data = await this.read(first.address, 8);
+            for (let offset = 0; offset < 2; offset += 1) {
+                const button = ATK_R1_BUTTONS[group + offset];
+                if (!button)
+                    continue;
+                const assignment = atkDecodeButtonAssignment(data.subarray(offset * 4, offset * 4 + 4));
+                if (!assignment)
+                    throw new Error(`The ${button.label.toLowerCase()} assignment is truncated.`);
+                buttons.push({
+                    id: button.id,
+                    name: button.label,
+                    address: button.address,
+                    keyClass: assignment.keyClass,
+                    value1: assignment.value1,
+                    value2: assignment.value2,
+                    checksumValid: assignment.checksumValid,
+                    action: assignment.label,
+                    raw: assignment.raw,
+                });
+            }
+        }
+        return { activeProfile: activeProfile + 1, buttons };
+    }
+    /** Select one of the four verified R1 banks and require readback. */
+    async setR1ActiveProfile(profile) {
+        await this.identify();
+        const receiver = this.usesVerifiedR1ProMaxReceiverTransport();
+        if (!this.usesVerifiedR1WiredTransport() && !receiver) {
+            throw new Error("R1 profile switching is not available on this connection.");
+        }
+        if (!Number.isInteger(profile) || profile < 1 || profile > ATK_R1_PROFILE_COUNT) {
+            throw new Error(`R1 profile must be between 1 and ${ATK_R1_PROFILE_COUNT}.`);
+        }
+        const frame = atkBuildSetCurrentProfile(profile - 1);
+        if (receiver) {
+            await this.exchange(frame, (reply) => reply.length === frame.length
+                && reply.every((byte, index) => byte === frame[index]));
+        }
+        else {
+            await this.send(frame);
+        }
+        await delay(R1_PROFILE_SWITCH_SETTLE_MS);
+        const confirmed = (await this.readR1CurrentProfile()) + 1;
+        if (confirmed !== profile) {
+            throw new Error(`The mouse kept profile ${confirmed} instead of ${profile}.`);
+        }
+        this.lastStatus = null;
+        return confirmed;
+    }
+    /** Read receiver online/RF identity and pairing countdown; this never starts pairing. */
+    async readR1ReceiverInfo() {
+        await this.identify();
+        if (!this.isR1() || !this.usesR1LiveSettings()) {
+            throw new Error("R1 receiver telemetry is available only through the receiver transport.");
+        }
+        const onlineReply = await this.exchange(weBuildCmdPayload(ATK_COMPX_COMMAND.getWirelessMouseOnline), (frame) => frame[0] === ATK_COMPX_COMMAND.getWirelessMouseOnline
+            && frame[1] === 0 && frame[4] >= 1 && this.hasValidChecksum(frame));
+        const online = atkDecodeReceiverStatus(onlineReply.subarray(DATA_OFFSET));
+        if (!online)
+            throw new Error("The receiver returned a truncated online-status reply.");
+        const pairingReply = await this.exchange(weBuildCmdPayload(ATK_COMPX_COMMAND.getWirelessDonglePairResult), (frame) => frame[0] === ATK_COMPX_COMMAND.getWirelessDonglePairResult
+            && frame[1] === 0 && frame[4] >= 2 && this.hasValidChecksum(frame)).catch(() => null);
+        const pairing = pairingReply ? atkDecodePairingStatus(pairingReply.subarray(DATA_OFFSET)) : null;
+        return {
+            ...online,
+            pairingStatus: pairing?.status ?? null,
+            pairingSecondsRemaining: pairing?.secondsRemaining ?? null,
+        };
+    }
+    /** Start receiver pairing for one exact CID/MID; callers must poll telemetry for completion. */
+    async startR1ReceiverPairing(cid, mid) {
+        await this.identify();
+        if (this.device.vendorId !== VENDOR_ID.vgn || this.device.productId !== VXE_R1_COMPX_RECEIVER_PID) {
+            throw new Error("R1 receiver pairing is available only through the verified VXE Mouse 1K Dongle.");
+        }
+        await this.exchange(atkBuildReceiverPairRequest(cid, mid), (frame) => frame[0] === ATK_COMPX_COMMAND.setWirelessDonglePair
+            && frame[1] === 0 && this.hasValidChecksum(frame));
+    }
+    async setPollingRate(pollingRateHz) {
+        if (this.usesAtk1kReceiver() && !this.getSupportedPollingRates().includes(pollingRateHz)) {
+            throw new Error(`This receiver does not support ${pollingRateHz} Hz.`);
+        }
+        if (!this.usesR1LiveSettings())
+            await this.identify();
+        if (pollingRateHz > (this.product?.maxPollingHz ?? Infinity)) {
+            throw new Error(`This mouse does not support ${pollingRateHz} Hz.`);
+        }
+        if (this.usesR1LiveSettings())
+            return await this.setR1PollingRate(pollingRateHz);
+        const encoded = POLLING_RATES.find(([, hertz]) => hertz === pollingRateHz);
+        if (!encoded)
+            throw new Error(`This mouse does not support ${pollingRateHz} Hz.`);
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            // ATK Hub writes the complete 10-byte system row through the F58A
+            // receiver. Preserve stage count, active stage, and the unknown tail.
+            const system = Array.from(await this.read(REGISTER.system, R1_SYSTEM_ROW_LENGTH));
+            system.splice(0, 2, ...wePackScalarPair(encoded[0]));
+            await this.writeR1ProMaxReceiverSystem(system);
+        }
+        else {
+            await this.write(REGISTER.system, wePackScalarPair(encoded[0]));
+        }
+        if (this.isR1())
+            await delay(R1_LIVE_WRITE_SETTLE_MS);
+        const confirmed = this.decodePollingRate((await this.read(REGISTER.system, SYSTEM_LENGTH))[0]);
+        if (confirmed !== pollingRateHz) {
+            throw new Error(`The mouse kept ${confirmed} Hz instead of ${pollingRateHz} Hz.`);
+        }
+        this.patch({ pollingRateHz: confirmed });
+        return confirmed;
+    }
+    async setDpi(dpi, dpiY = dpi) {
+        await this.identify();
+        const sensor = this.sensorKey();
+        const options = sensor ? atkDpiOptionsForSensor(sensor) : null;
+        for (const value of [dpi, dpiY]) {
+            if (!Number.isInteger(value) || (options ? !options.includes(value) : value < DPI_MIN || value > DPI_MAX)) {
+                throw new Error(`${value.toLocaleString()} is not a supported DPI value.`);
+            }
+        }
+        const index = this.stageIndex(await this.read(REGISTER.system, SYSTEM_LENGTH));
+        const stage = sensor ? atkPackDpiStageForSensor(sensor, dpi, dpiY) : atkPackDpiStage(dpi, dpiY);
+        if (!stage)
+            throw new Error(`${dpi.toLocaleString()} DPI is not representable by this sensor.`);
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverDpiStage(index, stage);
+        }
+        else {
+            await this.write(this.dpiAddress(index), stage);
+        }
+        const confirmed = await this.readDpiStage(index);
+        if (confirmed.x !== dpi || confirmed.y !== dpiY) {
+            throw new Error(`The mouse kept ${confirmed.x.toLocaleString()} DPI instead of ${dpi.toLocaleString()}.`);
+        }
+        this.patch({ dpi: confirmed.x, dpiY: confirmed.y });
+        return confirmed.x;
+    }
+    async setDpiStageCount(count) {
+        await this.identify();
+        if (!this.usesVerifiedR1WiredTransport()
+            && !this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 DPI stage count editing is not available on this connection.");
+        }
+        if (!Number.isInteger(count) || count < 1 || count > R1_MAX_DPI_STAGES) {
+            throw new Error(`DPI stage count must be between 1 and ${R1_MAX_DPI_STAGES}.`);
+        }
+        // The vendor writes the complete 10-byte system row when changing the
+        // stage count. Preserve the unknown tail and clamp the active stage in the
+        // same transaction so the row can never temporarily point past the end.
+        const system = Array.from(await this.read(REGISTER.system, 10));
+        const previousActive = Math.min(system[4], Math.max(system[2], 1) - 1);
+        const active = Math.min(previousActive, count - 1);
+        system.splice(2, 2, ...wePackScalarPair(count));
+        system.splice(4, 2, ...wePackScalarPair(active));
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverSystem(system);
+        }
+        else {
+            await this.write(REGISTER.system, system);
+        }
+        const confirmedSystem = await this.read(REGISTER.system, 10);
+        const confirmedCount = this.stageCount(confirmedSystem);
+        const confirmedActive = this.stageIndex(confirmedSystem);
+        if (confirmedCount !== count || confirmedActive !== active) {
+            throw new Error(`The mouse kept ${confirmedCount} DPI stages with stage ${confirmedActive + 1} active instead of ${count}.`);
+        }
+        const stages = [];
+        let activeStage = null;
+        for (let index = 0; index < confirmedCount; index += 1) {
+            const stage = await this.readDpiStage(index);
+            stages.push(stage.x);
+            if (index === confirmedActive)
+                activeStage = stage;
+        }
+        if (!activeStage)
+            throw new Error("The active DPI stage could not be read back.");
+        this.patch({
+            dpiStages: stages,
+            activeDpiStage: confirmedActive,
+            dpi: activeStage.x,
+            dpiY: activeStage.y,
+        });
+        return confirmedCount;
+    }
+    async setActiveDpiStage(index) {
+        await this.identify();
+        if (this.isR1()
+            && !this.usesVerifiedR1WiredTransport()
+            && !this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 DPI stage selection is not available on this connection.");
+        }
+        const receiver = this.usesVerifiedR1ProMaxReceiverTransport();
+        const system = await this.read(REGISTER.system, receiver ? R1_SYSTEM_ROW_LENGTH : SYSTEM_LENGTH);
+        const count = this.stageCount(system);
+        if (!Number.isInteger(index) || index < 0 || index >= count) {
+            throw new Error(`DPI stage must be between 1 and ${count}.`);
+        }
+        let confirmed;
+        if (receiver) {
+            const row = Array.from(system);
+            row.splice(4, 2, ...wePackScalarPair(index));
+            await this.writeR1ProMaxReceiverSystem(row);
+            const confirmedSystem = await this.read(REGISTER.system, R1_SYSTEM_ROW_LENGTH);
+            confirmed = weUnpackScalarPair(confirmedSystem[4], confirmedSystem[5]);
+        }
+        else {
+            await this.write(REGISTER.system + 4, wePackScalarPair(index));
+            const pair = await this.read(REGISTER.system + 4, 2);
+            confirmed = weUnpackScalarPair(pair[0], pair[1]);
+        }
+        if (confirmed !== index) {
+            throw new Error(`The mouse kept DPI stage ${(confirmed ?? 0) + 1} instead of ${index + 1}.`);
+        }
+        const stage = await this.readDpiStage(index);
+        this.patch({
+            activeDpiStage: confirmed,
+            dpi: stage.x,
+            dpiY: stage.y,
+        });
+        return confirmed;
+    }
+    async setDpiStageValue(index, dpi) {
+        await this.identify();
+        if (this.isR1()
+            && !this.usesVerifiedR1WiredTransport()
+            && !this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 DPI stage editing is not available on this connection.");
+        }
+        const system = await this.read(REGISTER.system, SYSTEM_LENGTH);
+        const count = this.stageCount(system);
+        if (!Number.isInteger(index) || index < 0 || index >= count) {
+            throw new Error(`DPI stage must be between 1 and ${count}.`);
+        }
+        const sensor = this.sensorKey();
+        const options = sensor ? atkDpiOptionsForSensor(sensor) : this.getDpiOptions();
+        if (!Number.isInteger(dpi) || !options.includes(dpi)) {
+            throw new Error(`${dpi.toLocaleString()} is not a supported DPI value.`);
+        }
+        const packed = sensor ? atkPackDpiStageForSensor(sensor, dpi, dpi) : atkPackDpiStage(dpi, dpi);
+        if (!packed)
+            throw new Error(`${dpi.toLocaleString()} DPI is not representable by this sensor.`);
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverDpiStage(index, packed);
+        }
+        else {
+            await this.write(this.dpiAddress(index), packed);
+        }
+        const confirmed = await this.readDpiStage(index);
+        if (confirmed.x !== dpi || confirmed.y !== dpi) {
+            throw new Error(`The mouse kept ${confirmed.x.toLocaleString()} DPI instead of ${dpi.toLocaleString()}.`);
+        }
+        const dpiStages = this.lastStatus?.dpiStages?.slice() ?? [];
+        while (dpiStages.length < count)
+            dpiStages.push(dpiStages.at(-1) ?? dpi);
+        dpiStages[index] = confirmed.x;
+        const active = this.lastStatus?.activeDpiStage ?? this.stageIndex(system);
+        this.patch({
+            dpiStages,
+            ...(active === index ? { dpi: confirmed.x, dpiY: confirmed.y } : {}),
+        });
+        return confirmed.x;
+    }
+    async setDpiStageColor(index, color) {
+        await this.identify();
+        if (!this.usesVerifiedR1WiredTransport()
+            && !this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("DPI stage colors are not available on this connection.");
+        }
+        const rgb = parseHexColor(color);
+        const count = this.stageCount(await this.read(REGISTER.system, SYSTEM_LENGTH));
+        if (!rgb || !Number.isInteger(index) || index < 0 || index >= count) {
+            throw new Error("The DPI stage or colour is invalid.");
+        }
+        const groupAddress = REGISTER.dpiColorBase + Math.floor(index / 2) * R1_DPI_COLOR_GROUP_LENGTH;
+        const group = Array.from(await this.read(groupAddress, R1_DPI_COLOR_GROUP_LENGTH));
+        group.splice((index % 2) * 4, 4, ...packRgb(rgb));
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverDpiColorGroup(groupAddress, group);
+        }
+        else {
+            await this.write(groupAddress, group);
+        }
+        const confirmedGroup = await this.read(groupAddress, R1_DPI_COLOR_GROUP_LENGTH);
+        const confirmed = unpackRgb(confirmedGroup.subarray((index % 2) * 4, (index % 2 + 1) * 4));
+        if (confirmed !== color.toLowerCase())
+            throw new Error(`The mouse kept ${confirmed ?? "an invalid colour"} instead of ${color}.`);
+        const dpiStageColors = this.lastStatus?.dpiStageColors?.slice() ?? [];
+        while (dpiStageColors.length < count)
+            dpiStageColors.push("#000000");
+        dpiStageColors[index] = confirmed;
+        this.patch({ dpiStageColors });
+        return confirmed;
+    }
+    async setPerformanceMode(enabled) {
+        await this.identify();
+        const change = (block) => {
+            block.splice(4, 2, ...wePackScalarPair(enabled ? 1 : 0));
+        };
+        const confirmed = this.usesVerifiedR1ProMaxReceiverTransport()
+            ? await this.writeR1ProMaxReceiverPerformanceBlock(change)
+            : await this.writePerformanceBlock(change);
+        const value = weUnpackScalarPair(confirmed[4], confirmed[5]) === 1;
+        if (value !== enabled)
+            throw new Error(`The mouse left performance mode ${value ? "on" : "off"}.`);
+        this.patch({ performanceMode: value });
+        return value;
+    }
+    async setLongRangeMode(enabled) {
+        await this.identify();
+        if (this.features().noFarDistance === true) {
+            throw new Error("This mouse does not support long-range mode.");
+        }
+        const receiver = this.usesVerifiedR1ProMaxReceiverTransport();
+        if (!this.usesVerifiedR1WiredTransport() && !receiver) {
+            throw new Error("Long-range mode is not available on this connection.");
+        }
+        const frame = weBuildCmdPayload(SET_LONG_RANGE_COMMAND, [0, 0, 0, 10, enabled ? 1 : 0]);
+        if (receiver) {
+            await this.exchange(frame, (reply) => reply.length === frame.length
+                && reply.every((byte, index) => byte === frame[index]));
+        }
+        else {
+            await this.send(frame);
+        }
+        await delay(WRITE_SETTLE_MS);
+        const confirmed = await this.readLongRangeMode();
+        if (confirmed !== enabled) {
+            throw new Error(`The mouse left long-range mode ${confirmed ? "on" : "off"}.`);
+        }
+        this.patch({ longRangeMode: confirmed });
+        return confirmed;
+    }
+    /** F1 Ultimate 2.0 (CID 1, MID 8): the verified PAW3950Ultra transport. */
+    isF1Ultimate() {
+        return this.product === ATK_PRODUCTS["1,8"];
+    }
+    /**
+     * Sensor mode (@0x00b5) and anti-mistouch (system row bytes 6-7), read
+     * independently so one unreadable row never hides the other.
+     */
+    async readF1Extras() {
+        const performance = await this.read(ATK_SENSOR_PERFORMANCE_REGISTER, 6).catch(() => null);
+        const system = await this.read(REGISTER.system, 10).catch(() => null);
+        return {
+            sensorMode: performance ? atkDecodeSensorMode(performance) : null,
+            antiMistouchMs: system
+                ? atkDecodeAntiMistouch(system[ATK_ANTI_MISTOUCH_OFFSET], system[ATK_ANTI_MISTOUCH_OFFSET + 1])
+                : null,
+        };
+    }
+    /** Write one sensor mode and require readback; F1 Ultimate only. */
+    async setAtkSensorMode(mode) {
+        await this.identify();
+        if (!this.isF1Ultimate()) {
+            throw new Error("Sensor modes are not available on this connection.");
+        }
+        const row = atkPackSensorMode(mode);
+        if (!row)
+            throw new Error("Sensor mode must be 0, 1, or 2.");
+        await this.write(ATK_SENSOR_PERFORMANCE_REGISTER, row);
+        const confirmed = atkDecodeSensorMode(await this.read(ATK_SENSOR_PERFORMANCE_REGISTER, 6));
+        if (confirmed !== mode) {
+            throw new Error(`The mouse kept sensor mode ${confirmed} instead of ${mode}.`);
+        }
+        this.patch({ atkSensorMode: confirmed });
+        return confirmed;
+    }
+    /**
+     * Write the anti-mistouch window (0 = off) as one scalar pair inside the
+     * complete 10-byte system row; F1 Ultimate only.
+     */
+    async setAntiMistouchMs(milliseconds) {
+        await this.identify();
+        if (!this.isF1Ultimate()) {
+            throw new Error("Anti-mistouch is not available on this connection.");
+        }
+        const pair = atkPackAntiMistouch(milliseconds);
+        if (!pair)
+            throw new Error("Anti-mistouch must be 0 or a multiple of 10 ms up to 2550 ms.");
+        const system = Array.from(await this.read(REGISTER.system, 10));
+        system.splice(ATK_ANTI_MISTOUCH_OFFSET, 2, ...pair);
+        await this.write(REGISTER.system, system);
+        const reread = await this.read(REGISTER.system, 10);
+        const confirmed = atkDecodeAntiMistouch(reread[ATK_ANTI_MISTOUCH_OFFSET], reread[ATK_ANTI_MISTOUCH_OFFSET + 1]);
+        if (confirmed !== milliseconds) {
+            throw new Error(`The mouse kept a ${confirmed} ms anti-mistouch window instead of ${milliseconds} ms.`);
+        }
+        this.patch({ atkAntiMistouchMs: confirmed });
+        return confirmed;
+    }
+    /**
+     * Dongle LED effect (0 off, 1 polling, 2 battery, 3 low battery). No read
+     * command is known, so confirmation stays optimistic and the last write is
+     * mirrored for the UI; F1 Ultimate receiver only.
+     */
+    async setDongleLight(mode) {
+        await this.identify();
+        if (!this.isF1Ultimate()) {
+            throw new Error("Dongle lighting is not available on this connection.");
+        }
+        const frame = atkBuildDongleLight(mode);
+        if (!frame)
+            throw new Error("Dongle light mode must be between 0 and 3.");
+        await this.send(frame);
+        await delay(WRITE_SETTLE_MS);
+        this.dongleLightCache = mode;
+        this.patch({ atkDongleLight: mode });
+        return mode;
+    }
+    async setDpiLighting(mode, brightness, speed) {
+        await this.identify();
+        if (!this.usesVerifiedR1WiredTransport()
+            && !this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("DPI lighting is not available on this connection.");
+        }
+        if (![0, 1, 2].includes(mode) || ![0, 1, 2].includes(brightness) || ![0, 1, 2].includes(speed)) {
+            throw new Error("The DPI lighting setting is invalid.");
+        }
+        // R1 Pro Max uses its own DPI-lighting row encoding:
+        // Off       = 00 00 | 00 00 | speed | 00 55
+        // Always On = 01 54 | brightness | speed | 01 54
+        // Breathing = 02 53 | preserve brightness | speed | 01 54
+        const block = Array.from(await this.read(REGISTER.dpiLighting, R1_DPI_LIGHTING_LENGTH));
+        const proMax = this.isR1ProMax();
+        const expectedEffect = proMax && mode === 0
+            ? [0, 0]
+            : wePackScalarPair(mode === 2 ? 2 : 1);
+        const expectedBrightness = proMax && mode === 2
+            ? [block[2], block[3]]
+            : mode === 0
+                ? [0, 0]
+                : wePackScalarPair(R1_DPI_BRIGHTNESS[brightness]);
+        block.splice(0, 2, ...expectedEffect);
+        block.splice(2, 2, ...expectedBrightness);
+        block.splice(4, 2, ...wePackScalarPair(R1_DPI_SPEED[speed]));
+        block.splice(6, 2, ...wePackScalarPair(mode === 0 ? 0 : 1));
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverDpiLighting(block);
+        }
+        else {
+            await this.write(REGISTER.dpiLighting, block);
+        }
+        const raw = await this.read(REGISTER.dpiLighting, R1_DPI_LIGHTING_LENGTH);
+        const expectedSpeed = wePackScalarPair(R1_DPI_SPEED[speed]);
+        const expectedEnabled = wePackScalarPair(mode === 0 ? 0 : 1);
+        const expected = [...expectedEffect, ...expectedBrightness, ...expectedSpeed, ...expectedEnabled];
+        if (!expected.every((byte, index) => raw[index] === byte)) {
+            throw new Error("The mouse did not retain its DPI lighting settings.");
+        }
+        const confirmed = this.decodeR1DpiLighting(raw);
+        if (!confirmed || confirmed.dpiLedMode !== mode || confirmed.dpiLedSpeed !== speed
+            || (mode === 1 && confirmed.dpiLedBrightness !== brightness)) {
+            throw new Error("The mouse returned an invalid DPI lighting state.");
+        }
+        this.patch(confirmed);
+    }
+    async setLiftOffDistance(value) {
+        if (!this.usesR1LiveSettings())
+            await this.identify();
+        if (this.usesR1LiveSettings())
+            return await this.setR1LiftOffDistance(value);
+        const codes = this.isX1ProMax() ? X1_LIFT_OFF_CODES : this.usesR1LiftOffCodes() ? R1_LIFT_OFF_CODES : LIFT_OFF_CODES;
+        const encoded = codes.find(([, name]) => name === value);
+        if (!encoded)
+            throw new Error(`This mouse does not support a ${value.toLowerCase()} lift-off distance.`);
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            await this.writeR1ProMaxReceiverLiftOffDistance(encoded[0]);
+        }
+        else {
+            await this.write(REGISTER.liftOffDistance, wePackScalarPair(encoded[0]));
+        }
+        const confirmed = this.decodeLiftOffDistance((await this.read(REGISTER.liftOffDistance, 2))[0]);
+        if (confirmed !== value) {
+            throw new Error(`The mouse kept a ${String(confirmed).toLowerCase()} lift-off distance instead of ${value.toLowerCase()}.`);
+        }
+        this.patch({ liftOffDistance: confirmed });
+        return confirmed;
+    }
+    async setLiftOffScale(code) {
+        await this.identify();
+        if (!this.supportsLiftOffScale()) {
+            throw new Error("This mouse does not support a continuous lift-off range.");
+        }
+        if (!Number.isInteger(code) || code < ATK_LIFT_OFF_MIN_CODE || code > ATK_LIFT_OFF_MAX_CODE) {
+            throw new Error(`A lift-off code runs ${ATK_LIFT_OFF_MIN_CODE} to ${ATK_LIFT_OFF_MAX_CODE}.`);
+        }
+        await this.write(REGISTER.liftOffDistance, wePackScalarPair(code));
+        const confirmed = (await this.read(REGISTER.liftOffDistance, 2))[0];
+        if (confirmed !== code) {
+            throw new Error(`The mouse kept lift-off code ${confirmed} instead of ${code}.`);
+        }
+        this.patch({ liftOffDistance: this.decodeLiftOffDistance(confirmed), liftOffScale: this.liftOffScale(confirmed) });
+        return confirmed;
+    }
+    async setMotionSync(enabled) {
+        await this.identify();
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            const confirmed = await this.writeR1ProMaxReceiverAdvanced(2, enabled ? 1 : 0) === 1;
+            if (confirmed !== enabled) {
+                throw new Error(`The mouse left Motion Sync ${confirmed ? "on" : "off"}.`);
+            }
+            this.patch({ motionSync: confirmed });
+            return confirmed;
+        }
+        return await this.setAdvancedFlag(2, enabled, "motionSync", "Motion Sync");
+    }
+    async setRippleControl(enabled) {
+        await this.identify();
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            const confirmed = await this.writeR1ProMaxReceiverAdvanced(8, enabled ? 1 : 0) === 1;
+            if (confirmed !== enabled) {
+                throw new Error(`The mouse left ripple control ${confirmed ? "on" : "off"}.`);
+            }
+            this.patch({ rippleControl: confirmed });
+            return confirmed;
+        }
+        return await this.setAdvancedFlag(8, enabled, "rippleControl", "ripple control");
+    }
+    async setAngleSnapping(enabled) {
+        if (!this.usesR1LiveSettings())
+            await this.identify();
+        if (this.usesR1LiveSettings())
+            return await this.setR1AngleSnapping(enabled);
+        if (this.usesVerifiedR1ProMaxReceiverTransport()) {
+            const confirmed = await this.writeR1ProMaxReceiverAdvanced(6, enabled ? 1 : 0) === 1;
+            if (confirmed !== enabled) {
+                throw new Error(`The mouse left angle snapping ${confirmed ? "on" : "off"}.`);
+            }
+            this.patch({ angleSnapping: confirmed });
+            return confirmed;
+        }
+        if (this.isR1() || this.sharesR1Settings() || this.isF1Ultimate()) {
+            return await this.setAdvancedFlag(6, enabled, "angleSnapping", "straight-line correction");
+        }
+        const group = await this.read(REGISTER.angle, ANGLE_LENGTH);
+        await this.write(REGISTER.angle, [group[0], enabled ? 1 : 0].flatMap((value) => wePackScalarPair(value)));
+        const confirmed = (await this.read(REGISTER.angle, ANGLE_LENGTH))[2] === 1;
+        if (confirmed !== enabled)
+            throw new Error(`The mouse left angle snapping ${confirmed ? "on" : "off"}.`);
+        this.patch({ angleSnapping: confirmed });
+        return confirmed;
+    }
+    async setDebounceTime(milliseconds) {
+        if (!this.usesR1LiveSettings())
+            await this.identify();
+        if (this.usesR1LiveSettings())
+            return await this.setR1DebounceTime(milliseconds);
+        const options = this.getDebounceOptions();
+        if (!Number.isInteger(milliseconds) || !options.includes(milliseconds)) {
+            throw new Error(`This mouse does not support ${milliseconds} ms debounce.`);
+        }
+        const confirmed = this.usesVerifiedR1ProMaxReceiverTransport()
+            ? await this.writeR1ProMaxReceiverAdvanced(0, milliseconds)
+            : await this.writeAdvanced(0, milliseconds);
+        if (confirmed !== milliseconds) {
+            throw new Error(`The mouse kept ${confirmed} ms of debounce instead of ${milliseconds} ms.`);
+        }
+        this.patch({ debounceMs: confirmed });
+        return confirmed;
+    }
+    async setSleepTimeout(seconds) {
+        if (!this.usesR1LiveSettings())
+            await this.identify();
+        const valid = this.isR1() || this.sharesR1Settings()
+            ? this.getSleepOptions().includes(seconds)
+            : Number.isInteger(seconds) && seconds >= SLEEP_STEP_SECONDS
+                && seconds <= 0xff * SLEEP_STEP_SECONDS && seconds % SLEEP_STEP_SECONDS === 0;
+        if (!valid) {
+            throw new Error(`This mouse does not support a ${seconds} second sleep timeout.`);
+        }
+        const units = Math.round(seconds / SLEEP_STEP_SECONDS);
+        const confirmedUnits = this.usesVerifiedR1ProMaxReceiverTransport()
+            ? await this.writeR1ProMaxReceiverAdvanced(4, units)
+            : await this.writeAdvanced(4, units);
+        const confirmed = confirmedUnits * SLEEP_STEP_SECONDS;
+        if (confirmed !== units * SLEEP_STEP_SECONDS) {
+            throw new Error(`The mouse kept a ${confirmed} second sleep timeout instead of ${seconds} seconds.`);
+        }
+        this.patch({ sleepTimeout: confirmed });
+        return confirmed;
+    }
+    async setAdvancedFlag(offset, enabled, field, label) {
+        const confirmed = await this.writeAdvanced(offset, enabled ? 1 : 0) === 1;
+        if (confirmed !== enabled)
+            throw new Error(`The mouse left ${label} ${confirmed ? "on" : "off"}.`);
+        this.patch({ [field]: confirmed });
+        return confirmed;
+    }
+    /** The advanced block is written whole, so read it back, patch one pair, write. */
+    async writeAdvanced(offset, value) {
+        const group = Array.from(await this.read(REGISTER.advanced, ADVANCED_LENGTH));
+        group.splice(offset, 2, ...wePackScalarPair(value));
+        await this.write(REGISTER.advanced, group);
+        return (await this.read(REGISTER.advanced, ADVANCED_LENGTH))[offset];
+    }
+    /**
+     * F58A DPI stage colours are stored as two 4-byte colour records per
+     * 8-byte EEPROM group, matching the captured receiver write/echo path.
+     */
+    async writeR1ProMaxReceiverDpiColorGroup(address, block) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("DPI stage colors are not available on this connection.");
+        }
+        if (block.length !== R1_DPI_COLOR_GROUP_LENGTH) {
+            throw new Error("The DPI stage colour block has an invalid length.");
+        }
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            block.length,
+            ...block,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === block.length
+            && this.hasValidChecksum(frame)
+            && block.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+    }
+    /**
+     * F58A DPI lighting uses the same complete 8-byte 0x004c row as wired.
+     */
+    async writeR1ProMaxReceiverDpiLighting(block) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("DPI lighting is not available on this connection.");
+        }
+        const address = REGISTER.dpiLighting;
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            block.length,
+            ...block,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === block.length
+            && this.hasValidChecksum(frame)
+            && block.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+    }
+    async readR1Extras(stageCount) {
+        try {
+            const performance = await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH);
+            const lighting = this.decodeR1DpiLighting(await this.read(REGISTER.dpiLighting, R1_DPI_LIGHTING_LENGTH));
+            const dpiStageColors = [];
+            for (let groupIndex = 0; groupIndex < Math.ceil(stageCount / 2); groupIndex += 1) {
+                const group = await this.read(REGISTER.dpiColorBase + groupIndex * R1_DPI_COLOR_GROUP_LENGTH, R1_DPI_COLOR_GROUP_LENGTH);
+                for (let slot = 0; slot < 2 && dpiStageColors.length < stageCount; slot += 1) {
+                    const color = unpackRgb(group.subarray(slot * 4, slot * 4 + 4));
+                    if (!color)
+                        throw new Error("The mouse reported a DPI stage color that failed its checksum.");
+                    dpiStageColors.push(color);
+                }
+            }
+            const performanceMode = weUnpackScalarPair(performance[4], performance[5]);
+            if ((performanceMode !== 0 && performanceMode !== 1) || !lighting) {
+                throw new Error("The mouse reported invalid R1 extended settings.");
+            }
+            return {
+                dpiStageColors,
+                performanceMode: performanceMode === 1,
+                longRangeMode: await this.readLongRangeMode(),
+                ...lighting,
+            };
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * ATK HUB's "Basic Mode" (0) or "ATK Shard Competitive Firmware" (1): the
+     * pair at bytes 4-5 of the 0x00b5 row; null when unreadable or out of range.
+     */
+    async readPerformanceMode() {
+        const row = await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH).catch(() => null);
+        const mode = row ? weUnpackScalarPair(row[4], row[5]) : null;
+        return mode === 0 || mode === 1 ? mode === 1 : null;
+    }
+    decodeR1DpiLighting(block) {
+        if (block.length < R1_DPI_LIGHTING_LENGTH)
+            return null;
+        const effectIsZero = block[0] === 0 && block[1] === 0;
+        const brightnessIsZero = block[2] === 0 && block[3] === 0;
+        const effect = effectIsZero ? 0 : weUnpackScalarPair(block[0], block[1]);
+        const brightness = brightnessIsZero ? null : weUnpackScalarPair(block[2], block[3]);
+        const speed = weUnpackScalarPair(block[4], block[5]);
+        const enabled = weUnpackScalarPair(block[6], block[7]);
+        const brightnessIndex = brightness === null
+            ? 1 // inactive brightness is not persisted; vendor UI defaults it to Medium
+            : R1_DPI_BRIGHTNESS.indexOf(brightness);
+        const speedIndex = R1_DPI_SPEED.indexOf(speed);
+        if (brightnessIndex < 0 || speedIndex < 0 || (enabled !== 0 && enabled !== 1))
+            return null;
+        // R1 Pro Max may report the trailing flag as 0 after reconnect even when
+        // the stored effect is Breathing. Treat the effect field as authoritative.
+        // Keep effect=1 + enabled=0 as the legacy Off encoding used by other R1s.
+        if (effect === 0) {
+            return { dpiLedMode: 0, dpiLedBrightness: brightnessIndex, dpiLedSpeed: speedIndex };
+        }
+        if (effect === 2) {
+            return { dpiLedMode: 2, dpiLedBrightness: brightnessIndex, dpiLedSpeed: speedIndex };
+        }
+        if (effect === 1) {
+            return {
+                dpiLedMode: enabled === 0 ? 0 : 1,
+                dpiLedBrightness: brightnessIndex,
+                dpiLedSpeed: speedIndex,
+            };
+        }
+        return null;
+    }
+    async readLongRangeMode() {
+        const reply = await this.exchange(weBuildCmdPayload(GET_LONG_RANGE_COMMAND), (frame) => frame[0] === GET_LONG_RANGE_COMMAND && frame[1] === 0
+            && frame[4] >= 1 && frame[DATA_OFFSET] <= 1 && this.hasValidChecksum(frame));
+        return reply[DATA_OFFSET] === 1;
+    }
+    /**
+     * F58A Performance Mode uses the same 6-byte 0x00b5 row as wired, but
+     * receiver writes are enabled only after their write/echo path was captured.
+     */
+    async writeR1ProMaxReceiverPerformanceBlock(change) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("Performance mode is not available on this connection.");
+        }
+        const address = REGISTER.sensorPerformance;
+        const block = Array.from(await this.read(address, R1_SENSOR_PERFORMANCE_LENGTH));
+        change(block);
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            block.length,
+            ...block,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === block.length
+            && this.hasValidChecksum(frame)
+            && block.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+        return await this.read(address, R1_SENSOR_PERFORMANCE_LENGTH);
+    }
+    /** Wired R1s, and the A9 Plus Nearlink over its cable or NearLink receiver. */
+    async writePerformanceBlock(change) {
+        await this.identify();
+        if (!this.usesVerifiedR1WiredTransport() && !this.isA9PlusNearlink()) {
+            throw new Error("Performance mode is not available on this connection.");
+        }
+        const block = Array.from(await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH));
+        change(block);
+        await this.write(REGISTER.sensorPerformance, block);
+        return await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH);
+    }
+    dpiAddress(index) {
+        const sensor = this.sensorKey();
+        if (sensor && ATK_SENSORS[sensor].family === "paw3955master") {
+            return REGISTER.paw3955DpiBase + index * atkDpiStageLength(sensor);
+        }
+        return REGISTER.dpiBase + index * DPI_STAGE_LENGTH;
+    }
+    async readDpiStage(index) {
+        const sensor = this.sensorKey();
+        const data = await this.read(this.dpiAddress(index), atkDpiStageLength(sensor));
+        const stage = sensor
+            ? atkUnpackDpiStageForSensor(sensor, data)
+            : atkUnpackDpiStage(data);
+        if (!stage)
+            throw new Error("The mouse reported a DPI stage that failed its checksum.");
+        return stage;
+    }
+    stageIndex(system) {
+        const stages = this.stageCount(system);
+        return Math.min(system[4], stages - 1);
+    }
+    stageCount(system) {
+        const max = this.isR1() ? R1_MAX_DPI_STAGES : MAX_DPI_STAGES;
+        return Math.min(Math.max(system[2], 1), max);
+    }
+    decodePollingRate(value) {
+        const match = POLLING_RATES.find(([code]) => code === value);
+        if (!match)
+            throw new Error(`The mouse reported an unknown polling-rate value 0x${value.toString(16)}.`);
+        return match[1];
+    }
+    decodeLiftOffDistance(code) {
+        if (this.isX1ProMax())
+            return X1_LIFT_OFF_CODES.find(([value]) => value === code)?.[1] ?? null;
+        if (this.usesR1LiftOffCodes())
+            return R1_LIFT_OFF_CODES.find(([value]) => value === code)?.[1] ?? null;
+        const millimetres = atkDecodeLiftOff(code);
+        if (millimetres === null)
+            return null;
+        if (millimetres < 1)
+            return "Low";
+        return millimetres < 1.5 ? "Medium" : "High";
+    }
+    supportsLiftOffScale() {
+        const sensor = this.sensorKey();
+        return sensor === "PAW3950Ultra" || sensor === "PAW3955Master";
+    }
+    liftOffScale(code) {
+        const millimetres = atkDecodeLiftOff(code);
+        if (millimetres === null)
+            return null;
+        return {
+            value: code,
+            min: ATK_LIFT_OFF_MIN_CODE,
+            max: ATK_LIFT_OFF_MAX_CODE,
+            millimetres,
+            minMillimetres: atkDecodeLiftOff(ATK_LIFT_OFF_MIN_CODE),
+            maxMillimetres: atkDecodeLiftOff(ATK_LIFT_OFF_MAX_CODE),
+        };
+    }
+    decodeAngle(byte) {
+        return byte > 0x80 ? byte - 0x100 : byte;
+    }
+    /**
+     * R1 polling comes from the live-settings row at 0x0070, not the A9 system
+     * block (whose first pair is a link-mode byte on this family). A stock row
+     * may be unpopulated, so fall back to the receiver's ceiling when unknown.
+     */
+    async readPollingRate(system) {
+        if (this.usesR1LiveSettings()) {
+            const settings = await this.read(ATK_VXE_R1_SETTINGS_REGISTER, R1_SETTINGS_LENGTH).catch(() => null);
+            const decoded = settings ? atkDecodeVxeR1PollingCode(settings[1]) : null;
+            return decoded ?? 1000;
+        }
+        const rate = this.decodePollingRate((system ?? await this.read(REGISTER.system, SYSTEM_LENGTH))[0]);
+        // The mouse can retain its 8K setting when moved to the 1K receiver.
+        // Report the transport ceiling, not an impossible rate from stored settings.
+        return this.usesAtk1kReceiver() ? Math.min(rate, 1000) : rate;
+    }
+    usesAtk1kReceiver() {
+        return this.device.vendorId === VENDOR_ID.atk && this.device.productId === 0x101a;
+    }
+    /**
+     * The R1 applies the write through its live-settings row (OpenVXE sends it
+     * fire-and-forget), so confirmation stays optimistic rather than erroring on
+     * a register that may not echo what was applied.
+     */
+    async setR1PollingRate(pollingRateHz) {
+        const data = atkPackVxeR1PollingSetting(pollingRateHz);
+        if (!data)
+            throw new Error(`This mouse does not support ${pollingRateHz} Hz.`);
+        await this.write(ATK_VXE_R1_SETTINGS_REGISTER, data);
+        const confirmed = await this.readPollingRate();
+        await delay(R1_LIVE_WRITE_SETTLE_MS);
+        this.patch({ pollingRateHz: confirmed });
+        return confirmed;
+    }
+    /** The R1's lift-off levels are 1 mm and 2 mm, applied through the live-settings row. */
+    async setR1LiftOffDistance(value) {
+        const encoded = R1_LIFT_OFF_CODES.find(([, name]) => name === value);
+        if (!encoded)
+            throw new Error(`This mouse does not support a ${value.toLowerCase()} lift-off distance.`);
+        await this.write(ATK_VXE_R1_SETTINGS_REGISTER, atkPackVxeR1LiveSetting(ATK_VXE_R1_LOD_SELECTOR, encoded[0]));
+        await delay(R1_LIVE_WRITE_SETTLE_MS);
+        this.patch({ liftOffDistance: value });
+        return value;
+    }
+    async setR1DebounceTime(milliseconds) {
+        if (!Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > R1_DEBOUNCE_MAX_MS) {
+            throw new Error(`Debounce must be a whole number of milliseconds between 1 and ${R1_DEBOUNCE_MAX_MS}.`);
+        }
+        await this.write(ATK_VXE_R1_SETTINGS_REGISTER, atkPackVxeR1LiveSetting(ATK_VXE_R1_DEBOUNCE_SELECTOR, milliseconds));
+        await delay(R1_LIVE_WRITE_SETTLE_MS);
+        this.patch({ debounceMs: milliseconds });
+        return milliseconds;
+    }
+    async setR1AngleSnapping(enabled) {
+        await this.write(ATK_VXE_R1_SETTINGS_REGISTER, atkPackVxeR1LiveSetting(ATK_VXE_R1_ANGLE_SELECTOR, enabled ? 0x10 : 0x00));
+        await delay(R1_LIVE_WRITE_SETTLE_MS);
+        this.patch({ angleSnapping: enabled });
+        return enabled;
+    }
+    patch(changes) {
+        if (this.lastStatus)
+            this.lastStatus = { ...this.lastStatus, ...changes };
+    }
+    hasValidChecksum(frame) {
+        return frame.length === FRAME_LENGTH
+            && frame[15] === weReportChecksum(WE_REPORT_ID, [...frame.subarray(0, 15)]);
+    }
+    async readR1CurrentProfile() {
+        const reply = await this.exchange(weBuildCmdPayload(ATK_COMPX_COMMAND.getCurrentConfig), (frame) => frame[0] === ATK_COMPX_COMMAND.getCurrentConfig
+            && frame[1] === 0 && frame[4] >= 1 && this.hasValidChecksum(frame));
+        const profile = atkDecodeCurrentProfile(reply.subarray(DATA_OFFSET));
+        if (profile === null)
+            throw new Error("The mouse reported an invalid active configuration bank.");
+        return profile;
+    }
+    async identify() {
+        if (this.identified)
+            return;
+        if (this.identifyAttempts >= MAX_IDENTIFY_ATTEMPTS) {
+            if (this.usesSharedR1Transport()) {
+                throw new Error("The VXE R1 did not answer CID/MID; refusing to use the fallback DPI codec.");
+            }
+            return;
+        }
+        this.identifyAttempts += 1;
+        const reply = await this.exchange(weBuildCmdPayload(CIDMID_COMMAND), (frame) => frame[0] === CIDMID_COMMAND && frame[4] >= 2).catch(() => null);
+        if (!reply) {
+            if (this.usesSharedR1Transport()) {
+                throw new Error("The VXE R1 did not answer CID/MID; refusing to use the fallback DPI codec.");
+            }
+            return;
+        }
+        this.identified = true;
+        this.cidMid = `${reply[DATA_OFFSET]},${reply[DATA_OFFSET + 1]}`;
+        this.product = ATK_PRODUCTS[this.cidMid] ?? null;
+    }
+    /**
+     * Resolve the vendor catalog entry for this device, caching per CID/MID key
+     * so a later identification refreshes a USB-id-only lookup. Works without a
+     * CID/MID reply, so USB-id-only devices still get their feature set.
+     */
+    resolveCatalog() {
+        if (this.catalogResolved && this.catalogResolvedFor === this.cidMid)
+            return;
+        this.catalogResolved = true;
+        this.catalogResolvedFor = this.cidMid;
+        this.catalog = atkCatalogDevice(this.device.vendorId, this.device.productId, this.cidMid) ?? null;
+    }
+    /** Vendor catalog entry for this device, or null when it is unlisted. */
+    catalogEntry() {
+        this.resolveCatalog();
+        return this.catalog;
+    }
+    /** Vendor capability flags for this device; empty when unlisted. */
+    features() {
+        return this.catalogEntry()?.features ?? {};
+    }
+    /**
+     * Sensor driving DPI limits and encoding: the verified hand-built product
+     * sensor wins, otherwise the catalog sensor fills in for newly covered mice.
+     */
+    sensorKey() {
+        if (this.product)
+            return this.product.sensor;
+        return atkCatalogSensorToSensor(this.catalogEntry()?.sensor ?? null);
+    }
+    usesSharedR1Transport() {
+        return this.device.productId === VXE_R1_RECEIVER_PID
+            || (this.device.vendorId === VENDOR_ID.vgn && ATK_COMPX_PRODUCT_IDS.includes(this.device.productId))
+            || /\bvxe\s+r1(?:\s*(?:se\+?|pro\s+max))?\b/i.test(this.device.productName || "");
+    }
+    /** Only the SE/SE+ receiver family uses the selector-based 0x0070 live row. */
+    usesR1LiveSettings() {
+        return this.isR1()
+            && (this.device.productId === VXE_R1_RECEIVER_PID
+                || (this.device.vendorId === VENDOR_ID.vgn && this.device.productId === VXE_R1_COMPX_RECEIVER_PID));
+    }
+    isR1ProMax() {
+        return this.product === ATK_PRODUCTS["2,27"];
+    }
+    usesVerifiedR1ProMaxReceiverTransport() {
+        return this.device.vendorId === VENDOR_ID.vgn
+            && this.device.productId === VXE_R1_PRO_MAX_RECEIVER_PID
+            && this.isR1ProMax();
+    }
+    /**
+     * Wired F58C and receiver F58A expose the same R1 Pro Max settings surface.
+     * This predicate is for reads/UI only; write paths remain individually gated.
+     */
+    usesR1ProMaxUiTransport() {
+        return this.usesVerifiedR1WiredTransport()
+            || this.usesVerifiedR1ProMaxReceiverTransport();
+    }
+    usesVerifiedR1WiredTransport() {
+        if (this.device.vendorId !== VENDOR_ID.vgn || this.isWireless())
+            return false;
+        return (this.device.productId === VXE_R1_COMPX_MOUSE_PID && this.product === ATK_PRODUCTS["2,32"])
+            || (this.device.productId === VXE_R1_PRO_MAX_MOUSE_PID && this.isR1ProMax());
+    }
+    /**
+     * Command 0x12 (GetMouseVersion) reports the version as BCD, matching the
+     * Endgame Gear siblings: an A9 Nearlink dongle answering 0x01 0x23 is 1.23.
+     */
+    async readFirmware() {
+        const reply = await this.exchange(weBuildCmdPayload(VERSION_COMMAND), (frame) => frame[0] === VERSION_COMMAND).catch(() => null);
+        if (!reply)
+            return [];
+        const data = reply.subarray(DATA_OFFSET, DATA_OFFSET + Math.min(reply[4], MAX_DATA_LENGTH));
+        if (data.length < 2)
+            return [];
+        const bcd = (byte) => byte.toString(16).padStart(2, "0");
+        return [`Mouse ${Number(bcd(data[0]))}.${bcd(data[1])}`];
+    }
+    async readBattery() {
+        const reply = await this.exchange(weBuildCmdPayload(BATTERY_COMMAND), (frame) => frame[0] === BATTERY_COMMAND).catch(() => null);
+        if (!reply)
+            return null;
+        const length = Math.min(reply[4], MAX_DATA_LENGTH);
+        const millivolts = length >= 4 ? (reply[DATA_OFFSET + 2] << 8) | reply[DATA_OFFSET + 3] : 0;
+        return {
+            percent: length >= 1 ? Math.min(reply[DATA_OFFSET], 100) : null,
+            charging: length >= 2 ? reply[DATA_OFFSET + 1] !== 0 : null,
+            millivolts: millivolts > 0 ? millivolts : null,
+        };
+    }
+    async read(address, length) {
+        const reply = await this.exchange(weBuildCmdPayload(WE_CMD_READ_EEPROM, [0, (address >> 8) & 0xff, address & 0xff, length]), 
+        // Some firmware answers a read with the write command id.
+        (frame) => (frame[0] === WE_CMD_READ_EEPROM || frame[0] === WE_CMD_WRITE_EEPROM)
+            && frame[1] === 0 && this.hasValidChecksum(frame)
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] >= length);
+        return reply.subarray(DATA_OFFSET, DATA_OFFSET + length);
+    }
+    async write(address, data) {
+        if (this.isR1() && !this.usesR1LiveSettings() && !this.usesVerifiedR1WiredTransport()) {
+            throw new Error("Persistent R1 EEPROM writes are available only over a verified wired transport.");
+        }
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [0, (address >> 8) & 0xff, address & 0xff, data.length, ...data]);
+        await this.run(async () => {
+            await this.open();
+            // Copy for an ArrayBuffer-backed view, as the WebHID typings require.
+            await this.device.sendReport(WE_REPORT_ID, new Uint8Array(payload).buffer);
+            await delay(WRITE_SETTLE_MS);
+        });
+    }
+    /**
+     * F58A advanced settings are written as the complete 10-byte EEPROM row.
+     * Callers remain individually gated until each field is hardware-verified.
+     */
+    async writeR1ProMaxReceiverAdvanced(offset, value) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 Pro Max receiver advanced writes are not available on this connection.");
+        }
+        const address = REGISTER.advanced;
+        const block = Array.from(await this.read(address, ADVANCED_LENGTH));
+        block.splice(offset, 2, ...wePackScalarPair(value));
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            block.length,
+            ...block,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === block.length
+            && this.hasValidChecksum(frame)
+            && block.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+        return (await this.read(address, ADVANCED_LENGTH))[offset];
+    }
+    /**
+     * The F58A vendor path writes LOD as one checksum-protected scalar pair at
+     * EEPROM 0x000a and echoes the committed pair back on report 0x08.
+     */
+    async writeR1ProMaxReceiverLiftOffDistance(code) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 Pro Max receiver lift-off writes are not available on this connection.");
+        }
+        const data = wePackScalarPair(code);
+        const address = REGISTER.liftOffDistance;
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            data.length,
+            ...data,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === data.length
+            && this.hasValidChecksum(frame)
+            && data.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+    }
+    /**
+     * ATK Hub writes F58A DPI records as an 8-byte pair of adjacent stages.
+     * Preserve the neighbouring stage and require the receiver to echo the
+     * complete group before the normal DPI readback confirms the active stage.
+     */
+    async writeR1ProMaxReceiverDpiStage(index, stage) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 Pro Max receiver DPI writes are not available on this connection.");
+        }
+        if (stage.length !== DPI_STAGE_LENGTH) {
+            throw new Error("R1 Pro Max receiver DPI records must contain four bytes.");
+        }
+        const groupLength = DPI_STAGE_LENGTH * 2;
+        const groupIndex = Math.floor(index / 2);
+        const address = REGISTER.dpiBase + groupIndex * groupLength;
+        const group = Array.from(await this.read(address, groupLength));
+        group.splice((index % 2) * DPI_STAGE_LENGTH, DPI_STAGE_LENGTH, ...stage);
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [
+            0,
+            (address >> 8) & 0xff,
+            address & 0xff,
+            group.length,
+            ...group,
+        ]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === ((address >> 8) & 0xff)
+            && frame[3] === (address & 0xff)
+            && frame[4] === group.length
+            && this.hasValidChecksum(frame)
+            && group.every((byte, offset) => frame[DATA_OFFSET + offset] === byte));
+    }
+    /**
+     * The verified F58A polling path writes the complete system row and echoes
+     * the committed row back on report 0x08. No other receiver EEPROM writes
+     * are enabled through this helper.
+     */
+    async writeR1ProMaxReceiverSystem(data) {
+        await this.identify();
+        if (!this.usesVerifiedR1ProMaxReceiverTransport()) {
+            throw new Error("R1 Pro Max receiver system writes are not available on this connection.");
+        }
+        if (data.length !== R1_SYSTEM_ROW_LENGTH) {
+            throw new Error(`R1 Pro Max receiver system writes must preserve the complete ${R1_SYSTEM_ROW_LENGTH}-byte row.`);
+        }
+        const payload = weBuildCmdPayload(WE_CMD_WRITE_EEPROM, [0, 0x00, 0x00, data.length, ...data]);
+        await this.exchange(payload, (frame) => frame[0] === WE_CMD_WRITE_EEPROM
+            && frame[1] === 0
+            && frame[2] === 0
+            && frame[3] === 0
+            && frame[4] === data.length
+            && this.hasValidChecksum(frame)
+            && data.every((byte, index) => frame[DATA_OFFSET + index] === byte));
+    }
+    async send(frame) {
+        await this.run(async () => {
+            await this.open();
+            await this.device.sendReport(WE_REPORT_ID, new Uint8Array(frame).buffer);
+        });
+    }
+    /** Send a frame and resolve with the first input report the matcher accepts. */
+    async exchange(frame, matches) {
+        return await this.run(async () => {
+            await this.open();
+            return await new Promise((resolve, reject) => {
+                const finish = () => {
+                    clearTimeout(timer);
+                    this.device.removeEventListener("inputreport", listener);
+                };
+                const timer = setTimeout(() => {
+                    finish();
+                    reject(new Error("The mouse did not answer — it may be asleep or out of range."));
+                }, REPLY_TIMEOUT_MS);
+                const listener = (event) => {
+                    if (event.reportId !== WE_REPORT_ID)
+                        return;
+                    const reply = copyDataView(event.data);
+                    if (reply.length < FRAME_LENGTH || !matches(reply))
+                        return;
+                    finish();
+                    resolve(reply);
+                };
+                this.device.addEventListener("inputreport", listener);
+                this.device.sendReport(WE_REPORT_ID, new Uint8Array(frame).buffer).catch((error) => {
+                    finish();
+                    reject(error);
+                });
+            });
+        });
+    }
+    async run(task) {
+        const started = this.queue.then(task, task);
+        this.queue = started.catch(() => undefined);
+        return await started;
+    }
+}
+function copyDataView(view) {
+    return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+}
+function batteryState(battery) {
+    if (!battery || battery.charging === null)
+        return "Unknown";
+    return battery.charging ? "Charging" : "Discharging";
+}
+function delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+function parseHexColor(color) {
+    const match = /^#([0-9a-f]{6})$/i.exec(color);
+    if (!match)
+        return null;
+    const value = Number.parseInt(match[1], 16);
+    return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+}
+function packRgb(rgb) {
+    const sum = (rgb[0] + rgb[1] + rgb[2]) & 0xff;
+    return [...rgb, (0x55 - sum) & 0xff];
+}
+function unpackRgb(record) {
+    if (record.length < 4 || (record[0] + record[1] + record[2] + record[3]) % 0x100 !== 0x55)
+        return null;
+    return `#${[record[0], record[1], record[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}

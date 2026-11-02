@@ -27,12 +27,18 @@ class NativeHIDDevice extends EventTarget {
     this.handle = 0;
     const r = NATIVE_REPORTS[info.usage_page] || { input: [], output: [], feature: [] };
     const rep = ids => ids.map(reportId => ({ reportId, items: [] }));
-    this.collections = [{ usagePage: info.usage_page, usage: info.usage,
+    this.collections = [{ usagePage: info.usage_page, usage: info.usage, children: [],
       inputReports: rep(r.input), outputReports: rep(r.output), featureReports: rep(r.feature) }];
+    // Collections réelles, lues dans le descripteur (pilotes OpenMouse : voir drivers/openmouse.js).
+    // Les modules historiques gardent la table ci-dessus, avec laquelle ils ont été vérifiés.
+    this.parsed = info.descriptor?.length ? hidParseDescriptor(info.descriptor) : null;
+    this.known = !!NATIVE_REPORTS[info.usage_page];
+    if (!this.known && this.parsed?.length) this.collections = this.parsed;
   }
   get opened() { return this.handle !== 0; }
   async open() {
-    const unnumbered = this.collections[0].inputReports.some(r => r.reportId === 0);
+    const unnumbered = !this.known && this.parsed ? !hidHasReportIds(this.parsed)
+      : this.collections[0].inputReports.some(r => r.reportId === 0);
     if (!this.handle) this.handle = await nativeInvoke('hid_open', { path: this.info.path, unnumbered });
     nativeHid.byHandle.set(this.handle, this);
   }

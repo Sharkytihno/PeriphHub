@@ -1,0 +1,586 @@
+import { VENDOR_ID } from "../vendors.js";
+import { TEEVOLUTION_BUTTON_OPTIONS, TEEVOLUTION_COMMAND, TEEVOLUTION_FLASH, TEEVOLUTION_PROFILE_COUNT, TEEVOLUTION_LCD_REPORT_ID, TEEVOLUTION_LCD_USAGE, TEEVOLUTION_LCD_USAGE_PAGE, TEEVOLUTION_PRODUCT_IDS, TEEVOLUTION_REPORT_ID, TEEVOLUTION_TYPE_MAX_POLL, teevolutionBuildLcdTimePacket, teevolutionBuildOnlinePayload, teevolutionBuildReadPayload, teevolutionBuildSetCurrentProfile, teevolutionBuildSimplePayload, teevolutionBuildWritePayload, teevolutionDecodeButtonMappings, teevolutionDecodeCurrentProfile, teevolutionDecodeDpiLightBrightness, teevolutionDecodeDpiLightMode, teevolutionDecodeDpi, teevolutionDecodeFirmwareVersion, teevolutionDecodeLiftOff, teevolutionDecodePollingRate, teevolutionDecodeSensorModeStored, teevolutionDpiOptions, teevolutionEncodeDpiLightBrightness, teevolutionEncodeDpi, teevolutionEncodeLiftOff, teevolutionEncodePollingRate, teevolutionEncodeSensorMode, teevolutionPacketChecksum, teevolutionParseBattery, teevolutionParseReadResponse, teevolutionRemapButton, teevolutionProfileForCid, teevolutionSensorModeUi, } from "../../teevolution/index.js";
+const PROFILE_SETTLE_MS = 100;
+function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+export class TeevolutionHidClient {
+    static RAPIDSYNC_OFFLINE_ERROR = "The RapidSync 8K dongle is connected, but the mouse is offline. Wake the mouse or pair it to this dongle, then retry.";
+    static MOUSE_OFFLINE_ERROR = "The Teevolution mouse is offline. Move it or click a button, then retry.";
+    static mouseOfflineMessage(rapidSyncDongle) {
+        return rapidSyncDongle
+            ? TeevolutionHidClient.RAPIDSYNC_OFFLINE_ERROR
+            : TeevolutionHidClient.MOUSE_OFFLINE_ERROR;
+    }
+    deviceInfo = null;
+    lcdClockSynced = false;
+    lcdDevice = null;
+    responseWaiter = null;
+    onInputReport = (event) => {
+        const bytes = new Uint8Array(event.data.buffer.slice(event.data.byteOffset, event.data.byteOffset + event.data.byteLength));
+        if (event.reportId === TEEVOLUTION_REPORT_ID && bytes[0] === this.responseWaiter?.command) {
+            const waiter = this.responseWaiter;
+            this.responseWaiter = null;
+            waiter.resolve(bytes);
+        }
+    };
+    device;
+    constructor(device) {
+        this.device = device;
+    }
+    static isSupported(device) {
+        return device.vendorId === VENDOR_ID.teevolution
+            && TEEVOLUTION_PRODUCT_IDS.has(device.productId)
+            && device.collections.some((collection) => collection.inputReports.length === 1
+                && collection.outputReports.length === 1
+                && collection.inputReports[0]?.reportId === TEEVOLUTION_REPORT_ID
+                && collection.outputReports[0]?.reportId === TEEVOLUTION_REPORT_ID);
+    }
+    async open() {
+        if (!this.device.opened)
+            await this.device.open();
+        this.device.addEventListener("inputreport", this.onInputReport);
+    }
+    describeCollections() {
+        return this.device.collections.map((collection) => {
+            const inputIds = collection.inputReports.map((report) => report.reportId);
+            const outputIds = collection.outputReports.map((report) => report.reportId);
+            const featureIds = collection.featureReports.map((report) => report.reportId);
+            return [
+                `usage 0x${collection.usagePage.toString(16)}:${collection.usage.toString(16)}`,
+                `in [${inputIds.join(", ") || "none"}]`,
+                `out [${outputIds.join(", ") || "none"}]`,
+                `feature [${featureIds.join(", ") || "none"}]`,
+            ].join(" · ");
+        }).join(" | ") || "No HID collections reported";
+    }
+    async readDeviceInfo() {
+        await this.open();
+        const challenge = new Uint8Array(8);
+        crypto.getRandomValues(challenge);
+        challenge.fill(0, 4);
+        const response = await this.query(TEEVOLUTION_COMMAND.encryptionData, challenge);
+        this.assertAccepted(response, "identification");
+        const cid = response[9] ?? 0;
+        const profile = teevolutionProfileForCid(cid);
+        if (!profile) {
+            throw new Error(`Unsupported Teevolution model (CID 0x${cid.toString(16).padStart(2, "0")}). No flash settings were read or written.`);
+        }
+        const type = response[11] ?? 0xff;
+        this.deviceInfo = {
+            cid,
+            mid: response[10] ?? 0,
+            type,
+            dongleType: response[12] ?? 0,
+            connection: type === 2 || type === 3 ? "Wired" : "Wireless",
+            maximumPollingRateHz: TEEVOLUTION_TYPE_MAX_POLL[type] ?? 1000,
+            profile,
+        };
+        await this.syncDongleClock().catch(() => undefined);
+        return this.deviceInfo;
+    }
+    /**
+     * Pushes host local time to a RapidSync LCD once per connection. Missing LCD
+     * collections (wired Terra, unauthorized sibling) are skipped.
+     */
+    async syncDongleClock(now = new Date()) {
+        if (this.lcdClockSynced)
+            return true;
+        const lcd = await this.findLcdClockDevice();
+        if (!lcd)
+            return false;
+        const packet = teevolutionBuildLcdTimePacket(now);
+        const alreadyOpen = lcd.opened;
+        if (!alreadyOpen)
+            await lcd.open();
+        this.lcdDevice = lcd;
+        await lcd.sendReport(TEEVOLUTION_LCD_REPORT_ID, new Uint8Array(packet.subarray(1)));
+        this.lcdClockSynced = true;
+        return true;
+    }
+    async readStatus() {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        return await this.withDeviceControl(async () => {
+            const flash = await this.readFlash(TEEVOLUTION_FLASH.reportRate, TEEVOLUTION_FLASH.sensorMode + 2);
+            const batteryResponse = await this.query(TEEVOLUTION_COMMAND.batteryLevel);
+            const deviceVersion = await this.query(TEEVOLUTION_COMMAND.readVersionId);
+            const dongleVersion = await this.query(TEEVOLUTION_COMMAND.getDongleVersion).catch(() => null);
+            const profile = await this.query(TEEVOLUTION_COMMAND.getCurrentConfig).catch(() => null);
+            const rssi = await this.query(TEEVOLUTION_COMMAND.getRssi).catch(() => null);
+            const currentBank = profile ? teevolutionDecodeCurrentProfile(profile) : null;
+            const stageCount = this.decodeDpiStageCount(flash[TEEVOLUTION_FLASH.maxDpiStage], info.profile);
+            const activeDpiStage = Math.min(flash[TEEVOLUTION_FLASH.currentDpi] ?? 0, stageCount - 1);
+            const dpiStages = Array.from({ length: stageCount }, (_, stage) => {
+                const offset = TEEVOLUTION_FLASH.dpiValues + stage * 4;
+                return teevolutionDecodeDpi(flash.slice(offset, offset + 4));
+            });
+            const dpi = dpiStages[activeDpiStage] ?? dpiStages[0] ?? 0;
+            const battery = teevolutionParseBattery(batteryResponse);
+            const pollingRateHz = teevolutionDecodePollingRate(flash[TEEVOLUTION_FLASH.reportRate] ?? 1);
+            const sensorModeUi = teevolutionSensorModeUi({
+                storedMode: flash[TEEVOLUTION_FLASH.sensorMode] ?? 0,
+                pollingRateHz,
+                connection: info.connection,
+            });
+            return {
+                brand: "Teevolution",
+                name: this.displayName(info),
+                ui: {
+                    defaultDisplayName: info.profile.name,
+                    hideUnsupportedPollingRates: true,
+                    hideSignalCard: true,
+                    dpiStageEditor: {
+                        maxStages: info.profile.dpiStageCount,
+                        countEditable: true,
+                        minDpi: info.profile.dpi.min,
+                        maxDpi: info.profile.dpi.max,
+                        stepDpi: info.profile.dpi.standardStep,
+                    },
+                },
+                batteryPercent: battery?.percent ?? null,
+                batteryState: battery?.charging ? "Charging" : "Discharging",
+                dpi,
+                dpiStages,
+                activeDpiStage,
+                pollingRateHz,
+                supportedPollingRates: info.profile.pollingRates.filter((rate) => rate <= info.maximumPollingRateHz),
+                activeProfile: currentBank !== null ? currentBank + 1 : null,
+                profileCount: currentBank !== null ? TEEVOLUTION_PROFILE_COUNT : undefined,
+                connectionType: info.connection,
+                connectionDetail: `CID ${info.cid} · MID ${info.mid} · Type ${info.type}`,
+                signalStrength: rssi && rssi[1] === 0 ? Math.min(rssi[5] ?? 0, 4) : null,
+                dpiLedMode: teevolutionDecodeDpiLightMode(flash[TEEVOLUTION_FLASH.dpiLightMode] ?? 1, flash[TEEVOLUTION_FLASH.dpiLightState] ?? 0),
+                dpiLedBrightness: teevolutionDecodeDpiLightBrightness(flash[TEEVOLUTION_FLASH.dpiLightBrightness] ?? 0x80),
+                dpiLedSpeed: Math.min(Math.max(flash[TEEVOLUTION_FLASH.dpiLightSpeed] ?? 3, 1), 5),
+                debounceMs: flash[TEEVOLUTION_FLASH.debounceTime] ?? null,
+                motionSync: flash[TEEVOLUTION_FLASH.motionSync] === 1,
+                sleepTimeout: flash[TEEVOLUTION_FLASH.sleepTime] ?? null,
+                angleSnapping: flash[TEEVOLUTION_FLASH.angleSnapping] === 1,
+                rippleControl: flash[TEEVOLUTION_FLASH.rippleControl] === 1,
+                performanceMode: flash[TEEVOLUTION_FLASH.performanceState] === 1,
+                performanceDuration: flash[TEEVOLUTION_FLASH.performanceTime] ?? null,
+                sensorMode: sensorModeUi.mode,
+                sensorModeStored: sensorModeUi.storedValue,
+                sensorModeEditable: sensorModeUi.editable,
+                liftOffDistance: teevolutionDecodeLiftOff(flash[TEEVOLUTION_FLASH.liftOffDistance] ?? -1),
+                supportedLiftOffDistances: [...info.profile.liftOffDistances],
+                buttonMappings: teevolutionDecodeButtonMappings(flash),
+                buttonOptions: TEEVOLUTION_BUTTON_OPTIONS,
+                firmware: [
+                    this.decodeVersionOptional("Mouse", deviceVersion) ?? "Mouse firmware unavailable",
+                    this.decodeVersionOptional("Dongle", dongleVersion) ?? "Dongle firmware unavailable",
+                ],
+            };
+        });
+    }
+    getDpiOptions() {
+        return teevolutionDpiOptions(this.profile());
+    }
+    getModelProfile() {
+        return this.profile();
+    }
+    getButtonOptions() {
+        return [...TEEVOLUTION_BUTTON_OPTIONS];
+    }
+    async setButtonMapping(button, action) {
+        await this.open();
+        await this.withDeviceControl(() => teevolutionRemapButton((address, length) => this.readFlash(address, length), (address, data) => this.writeFlash(address, data), button, action));
+    }
+    /**
+     * Switch the active onboard bank. `profile` is 1-based to match the shell;
+     * TeevoLink / firmware use 0–3. DPI, buttons, and the rest of flash belong
+     * to that bank, so the panel re-reads status after this returns.
+     */
+    async setProfile(profile) {
+        if (!Number.isInteger(profile) || profile < 1 || profile > TEEVOLUTION_PROFILE_COUNT) {
+            throw new Error(`Profile must be 1-${TEEVOLUTION_PROFILE_COUNT}.`);
+        }
+        await this.open();
+        await this.withDeviceControl(async () => {
+            this.assertAccepted(await this.exchange(teevolutionBuildSetCurrentProfile(profile - 1)), "profile switch");
+            await delay(PROFILE_SETTLE_MS);
+            const confirmed = teevolutionDecodeCurrentProfile(await this.query(TEEVOLUTION_COMMAND.getCurrentConfig));
+            if (confirmed !== profile - 1) {
+                throw new Error(confirmed === null
+                    ? "The mouse did not confirm the profile change."
+                    : `The mouse kept profile ${confirmed + 1} instead of ${profile}.`);
+            }
+        });
+    }
+    async setPollingRate(pollingRateHz) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        if (!info.profile.pollingRates.includes(pollingRateHz)) {
+            throw new Error(`${pollingRateHz} Hz is not supported by the ${info.profile.name}.`);
+        }
+        const encoded = teevolutionEncodePollingRate(pollingRateHz);
+        if (pollingRateHz > info.maximumPollingRateHz) {
+            throw new Error(`This connection supports at most ${info.maximumPollingRateHz} Hz.`);
+        }
+        return await this.withDeviceControl(async () => {
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.reportRate, encoded);
+            const confirmed = teevolutionDecodePollingRate((await this.readFlash(TEEVOLUTION_FLASH.reportRate, 2))[0] ?? 1);
+            if (confirmed !== pollingRateHz)
+                throw new Error(`The mouse kept ${confirmed} Hz instead of ${pollingRateHz} Hz.`);
+            return confirmed;
+        });
+    }
+    async setDpi(dpi) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        if (!teevolutionDpiOptions(info.profile).includes(dpi)) {
+            throw new Error(`${dpi} DPI is not supported by the ${info.profile.name}.`);
+        }
+        return await this.withDeviceControl(async () => {
+            const stageCount = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+            const currentDpi = Math.min((await this.readFlash(TEEVOLUTION_FLASH.currentDpi, 2))[0] ?? 0, stageCount - 1);
+            return await this.writeDpiStageValue(currentDpi, dpi);
+        });
+    }
+    /** Selects the active DPI stage index (0-based), matching Teevolink Set_MS_CurrentDPI. */
+    async setActiveDpiStage(stage) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        if (!Number.isInteger(stage) || stage < 0 || stage >= info.profile.dpiStageCount) {
+            throw new Error(`DPI stage must be between 1 and ${info.profile.dpiStageCount}.`);
+        }
+        return await this.withDeviceControl(async () => {
+            const stageCount = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+            if (stage >= stageCount) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.maxDpiStage, stage + 1);
+                const enabled = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+                if (enabled <= stage) {
+                    throw new Error(`The mouse kept ${enabled} DPI stages; stage ${stage + 1} is unavailable.`);
+                }
+            }
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.currentDpi, stage);
+            const confirmed = (await this.readFlash(TEEVOLUTION_FLASH.currentDpi, 2))[0] ?? 0;
+            if (confirmed !== stage)
+                throw new Error(`The mouse kept DPI stage ${confirmed + 1}.`);
+            return confirmed;
+        });
+    }
+    /** Writes one stage's DPI value without changing the active stage index. */
+    async setDpiStageValue(stage, dpi) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        if (!teevolutionDpiOptions(info.profile).includes(dpi)) {
+            throw new Error(`${dpi} DPI is not supported by the ${info.profile.name}.`);
+        }
+        if (!Number.isInteger(stage) || stage < 0 || stage >= info.profile.dpiStageCount) {
+            throw new Error(`DPI stage must be between 1 and ${info.profile.dpiStageCount}.`);
+        }
+        return await this.withDeviceControl(async () => {
+            const stageCount = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+            // A staged count increase may not have been flashed yet; enable the slot
+            // before writing it so the UI can edit newly added stages immediately.
+            if (stage >= stageCount) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.maxDpiStage, stage + 1);
+                const enabled = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+                if (enabled <= stage) {
+                    throw new Error(`The mouse kept ${enabled} DPI stages; stage ${stage + 1} is unavailable.`);
+                }
+            }
+            return await this.writeDpiStageValue(stage, dpi);
+        });
+    }
+    /** Sets how many DPI stages are enabled (1…dpiStageCount), matching Teevolink Set_MS_MaxDPI. */
+    async setDpiStageCount(count) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        const max = info.profile.dpiStageCount;
+        if (!Number.isInteger(count) || count < 1 || count > max) {
+            throw new Error(`This Teevolution model supports 1–${max} DPI stages.`);
+        }
+        return await this.withDeviceControl(async () => {
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.maxDpiStage, count);
+            const confirmed = this.decodeDpiStageCount((await this.readFlash(TEEVOLUTION_FLASH.maxDpiStage, 2))[0], info.profile);
+            if (confirmed !== count)
+                throw new Error(`The mouse kept ${confirmed} DPI stages instead of ${count}.`);
+            const active = (await this.readFlash(TEEVOLUTION_FLASH.currentDpi, 2))[0] ?? 0;
+            if (active >= confirmed) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.currentDpi, confirmed - 1);
+            }
+            return confirmed;
+        });
+    }
+    async setLiftOffDistance(liftOffDistance) {
+        const profile = this.profile();
+        if (!profile.liftOffDistances.includes(liftOffDistance)) {
+            throw new Error(`${liftOffDistance} lift-off distance is not supported by the ${profile.name}.`);
+        }
+        const encoded = teevolutionEncodeLiftOff(liftOffDistance);
+        return await this.withDeviceControl(async () => {
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.liftOffDistance, encoded);
+            const confirmed = teevolutionDecodeLiftOff((await this.readFlash(TEEVOLUTION_FLASH.liftOffDistance, 2))[0] ?? -1);
+            if (confirmed !== liftOffDistance)
+                throw new Error(`The mouse kept ${confirmed ?? "an unknown LOD"} instead of ${liftOffDistance}.`);
+            return confirmed;
+        });
+    }
+    async setMotionSync(enabled) {
+        return await this.setVerifiedBoolean(TEEVOLUTION_FLASH.motionSync, enabled, "Motion Sync");
+    }
+    async setAngleSnapping(enabled) {
+        return await this.setVerifiedBoolean(TEEVOLUTION_FLASH.angleSnapping, enabled, "angle snapping");
+    }
+    async setRippleControl(enabled) {
+        return await this.setVerifiedBoolean(TEEVOLUTION_FLASH.rippleControl, enabled, "ripple control");
+    }
+    getPerformanceDurationOptions() {
+        return [...this.profile().performanceTimeOptions];
+    }
+    async setSensorMode(mode) {
+        const info = this.deviceInfo ?? await this.readDeviceInfo();
+        if (mode === "Ultra" || !info.profile.sensorModes.includes(mode)) {
+            throw new Error(`${mode} sensor mode cannot be written on the ${info.profile.name}.`);
+        }
+        const pollingRateHz = teevolutionDecodePollingRate((await this.readFlash(TEEVOLUTION_FLASH.reportRate, 2))[0] ?? 1);
+        const ui = teevolutionSensorModeUi({
+            storedMode: teevolutionEncodeSensorMode(mode),
+            pollingRateHz,
+            connection: info.connection,
+        });
+        if (!ui.editable) {
+            throw new Error(`Sensor mode cannot be changed at ${pollingRateHz.toLocaleString()} Hz over ${info.connection.toLowerCase()}.`);
+        }
+        return await this.withDeviceControl(async () => {
+            const encoded = teevolutionEncodeSensorMode(mode);
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.sensorMode, encoded);
+            const confirmed = teevolutionDecodeSensorModeStored((await this.readFlash(TEEVOLUTION_FLASH.sensorMode, 2))[0] ?? -1);
+            if (confirmed !== mode)
+                throw new Error(`The mouse kept ${confirmed} sensor mode instead of ${mode}.`);
+            return confirmed;
+        });
+    }
+    async setPerformanceDuration(duration) {
+        if (!this.profile().performanceTimeOptions.includes(duration)) {
+            throw new Error("Unsupported Teevolution highest-performance duration.");
+        }
+        return await this.setVerifiedByte(TEEVOLUTION_FLASH.performanceTime, duration, "highest-performance duration");
+    }
+    async setPerformanceMode(enabled) {
+        return await this.setVerifiedBoolean(TEEVOLUTION_FLASH.performanceState, enabled, "performance mode");
+    }
+    async setDpiLighting(mode, brightness, speed) {
+        const lighting = this.profile().dpiLighting;
+        if (!lighting.modes.includes(mode)) {
+            throw new Error("Unsupported Teevolution DPI light effect.");
+        }
+        if (brightness < lighting.brightness.min || brightness > lighting.brightness.max) {
+            throw new Error(`Teevolution DPI light brightness must be from ${lighting.brightness.min} to ${lighting.brightness.max}.`);
+        }
+        const encodedBrightness = teevolutionEncodeDpiLightBrightness(brightness);
+        if (!Number.isInteger(speed) || speed < lighting.speed.min || speed > lighting.speed.max) {
+            throw new Error(`Teevolution DPI light speed must be from ${lighting.speed.min} to ${lighting.speed.max}.`);
+        }
+        await this.withDeviceControl(async () => {
+            const current = await this.readFlash(TEEVOLUTION_FLASH.dpiLightMode, 8);
+            if (mode !== 0 && current[0] !== mode) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.dpiLightMode, mode);
+            }
+            if (current[2] !== encodedBrightness) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.dpiLightBrightness, encodedBrightness);
+            }
+            if (current[4] !== speed) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.dpiLightSpeed, speed);
+            }
+            const state = mode === 0 ? 0 : 1;
+            if (current[6] !== state) {
+                await this.writeCheckedByte(TEEVOLUTION_FLASH.dpiLightState, state);
+            }
+            const confirmed = await this.readFlash(TEEVOLUTION_FLASH.dpiLightMode, 8);
+            const confirmedMode = teevolutionDecodeDpiLightMode(confirmed[0] ?? 1, confirmed[6] ?? 0);
+            const confirmedBrightness = teevolutionDecodeDpiLightBrightness(confirmed[2] ?? 0x80);
+            if (confirmedMode !== mode || confirmedBrightness !== brightness || confirmed[4] !== speed) {
+                throw new Error("The mouse did not confirm the requested DPI lighting settings.");
+            }
+        });
+    }
+    async setDebounceTime(debounceMs) {
+        const { min, max } = this.profile().debounce;
+        if (!Number.isInteger(debounceMs) || debounceMs < min || debounceMs > max) {
+            throw new Error(`This Teevolution model supports a debounce time from ${min} to ${max} ms.`);
+        }
+        return await this.setVerifiedByte(TEEVOLUTION_FLASH.debounceTime, debounceMs, "debounce time");
+    }
+    async setSleepTimeout(timeout) {
+        if (!this.profile().sleepOptions.includes(timeout)) {
+            throw new Error("Unsupported Teevolution sleep timeout.");
+        }
+        return await this.withDeviceControl(async () => {
+            await this.writeCheckedByte(TEEVOLUTION_FLASH.sleepTime, timeout);
+            const sleepConfirmed = (await this.readFlash(TEEVOLUTION_FLASH.sleepTime, 2))[0];
+            if (sleepConfirmed !== timeout) {
+                throw new Error("The mouse did not confirm the requested sleep timeout.");
+            }
+            return sleepConfirmed;
+        });
+    }
+    async close() {
+        this.device.removeEventListener("inputreport", this.onInputReport);
+        this.responseWaiter?.reject(new Error("The Teevolution device was closed."));
+        this.responseWaiter = null;
+        this.lcdClockSynced = false;
+        if (this.lcdDevice && this.lcdDevice !== this.device && this.lcdDevice.opened) {
+            await this.lcdDevice.close().catch(() => undefined);
+        }
+        this.lcdDevice = null;
+        if (this.device.opened)
+            await this.device.close();
+    }
+    displayName(info) {
+        return info.profile.name;
+    }
+    profile() {
+        if (!this.deviceInfo) {
+            throw new Error("Read the Teevolution device identity before requesting model capabilities.");
+        }
+        return this.deviceInfo.profile;
+    }
+    static isLcdClockInterface(device) {
+        return device.vendorId === VENDOR_ID.teevolution
+            && TEEVOLUTION_PRODUCT_IDS.has(device.productId)
+            && device.collections.some((collection) => collection.usagePage === TEEVOLUTION_LCD_USAGE_PAGE
+                && collection.usage === TEEVOLUTION_LCD_USAGE
+                && collection.outputReports.some((report) => report.reportId === TEEVOLUTION_LCD_REPORT_ID));
+    }
+    async findLcdClockDevice() {
+        if (TeevolutionHidClient.isLcdClockInterface(this.device))
+            return this.device;
+        const granted = typeof navigator !== "undefined" && navigator.hid
+            ? await navigator.hid.getDevices()
+            : [];
+        return granted.find((candidate) => candidate !== this.device
+            && candidate.vendorId === this.device.vendorId
+            && candidate.productId === this.device.productId
+            && TeevolutionHidClient.isLcdClockInterface(candidate)) ?? null;
+    }
+    decodeDpiStageCount(raw, profile) {
+        return Math.min(Math.max(raw ?? profile.dpiStageCount, 1), profile.dpiStageCount);
+    }
+    async writeDpiStageValue(stage, dpi) {
+        const address = TEEVOLUTION_FLASH.dpiValues + stage * 4;
+        await this.writeFlash(address, teevolutionEncodeDpi(dpi));
+        const confirmed = teevolutionDecodeDpi(await this.readFlash(address, 4));
+        if (confirmed !== dpi)
+            throw new Error(`The mouse kept ${confirmed} DPI instead of ${dpi} DPI.`);
+        return confirmed;
+    }
+    async withDeviceControl(operation) {
+        await this.setDeviceOnline(true);
+        try {
+            return await operation();
+        }
+        finally {
+            await this.setDeviceOnline(false).catch(() => undefined);
+        }
+    }
+    async setDeviceOnline(enabled) {
+        let response = null;
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            response = await this.exchange(teevolutionBuildOnlinePayload(enabled));
+            this.assertAccepted(response, enabled ? "host-control entry" : "host-control exit");
+            if (response[9] !== 1)
+                break;
+            await new Promise((resolve) => window.setTimeout(resolve, 10));
+        }
+        if (!response || response[9] === 1)
+            throw new Error("The Teevolution receiver stayed busy.");
+        if (enabled && response[5] !== 1) {
+            throw new Error(TeevolutionHidClient.mouseOfflineMessage(this.usesRapidSyncDongle()));
+        }
+    }
+    usesRapidSyncDongle() {
+        if (this.device.productId === 0xf523)
+            return true;
+        if (this.lcdDevice || TeevolutionHidClient.isLcdClockInterface(this.device))
+            return true;
+        return this.deviceInfo?.connection === "Wireless"
+            && this.deviceInfo.maximumPollingRateHz === 8000;
+    }
+    async readFlash(address, length) {
+        const result = new Uint8Array(length);
+        for (let offset = 0; offset < length; offset += 10) {
+            const count = Math.min(10, length - offset);
+            const response = await this.exchange(teevolutionBuildReadPayload(address + offset, count));
+            const chunk = teevolutionParseReadResponse(response, address + offset, count);
+            if (!chunk) {
+                this.assertAccepted(response, "configuration read");
+                throw new Error("The Teevolution configuration read response was corrupt.");
+            }
+            result.set(chunk, offset);
+        }
+        return result;
+    }
+    async writeCheckedByte(address, value) {
+        await this.writeFlash(address, new Uint8Array([value, (0x55 - value) & 0xff]));
+    }
+    async setVerifiedByte(address, value, label) {
+        return await this.withDeviceControl(async () => {
+            await this.writeCheckedByte(address, value);
+            const confirmed = (await this.readFlash(address, 2))[0];
+            if (confirmed !== value)
+                throw new Error(`The mouse did not confirm the requested ${label}.`);
+            return confirmed;
+        });
+    }
+    async setVerifiedBoolean(address, enabled, label) {
+        return (await this.setVerifiedByte(address, enabled ? 1 : 0, label)) === 1;
+    }
+    async writeFlash(address, data) {
+        for (let offset = 0; offset < data.length; offset += 10) {
+            const chunk = [...data.slice(offset, offset + 10)];
+            this.assertAccepted(await this.exchange(teevolutionBuildWritePayload(address + offset, chunk)), "configuration write");
+        }
+    }
+    async query(command, parameters = new Uint8Array()) {
+        if (parameters.length > 10)
+            throw new Error("Teevolution queries support at most 10 parameter bytes.");
+        const packet = teevolutionBuildSimplePayload(command);
+        packet[4] = parameters.length;
+        packet.set(parameters, 5);
+        packet[15] = teevolutionPacketChecksum(packet);
+        return await this.exchange(packet);
+    }
+    async exchange(packet) {
+        if (this.responseWaiter)
+            throw new Error("Another Teevolution request is already in progress.");
+        const command = packet[0];
+        let timeout = 0;
+        let rejectResponse = null;
+        const response = new Promise((resolve, reject) => {
+            rejectResponse = reject;
+            timeout = window.setTimeout(() => {
+                this.responseWaiter = null;
+                reject(new Error(`The Teevolution mouse did not answer command 0x${command.toString(16).padStart(2, "0")}.`));
+            }, 1200);
+            this.responseWaiter = {
+                command,
+                resolve: (bytes) => {
+                    window.clearTimeout(timeout);
+                    resolve(bytes);
+                },
+                reject: (reason) => {
+                    window.clearTimeout(timeout);
+                    reject(reason);
+                },
+            };
+        });
+        void response.catch(() => undefined);
+        try {
+            await this.device.sendReport(TEEVOLUTION_REPORT_ID, new Uint8Array(packet));
+        }
+        catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            rejectResponse?.(new Error(`Chrome could not write Teevolution report 8. ${detail}`));
+            this.responseWaiter = null;
+        }
+        return await response;
+    }
+    decodeVersionOptional(label, response) {
+        if (!response || response[1] !== 0)
+            return null;
+        this.assertAccepted(response, `${label.toLowerCase()} firmware read`);
+        return teevolutionDecodeFirmwareVersion(label, response);
+    }
+    assertAccepted(response, operation) {
+        if (response[1] !== 0)
+            throw new Error(`The Teevolution receiver rejected the ${operation} (status ${response[1]}).`);
+    }
+}

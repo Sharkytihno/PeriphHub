@@ -49,18 +49,23 @@ async function driversScan() {
       if (!groups.has(devId(d))) groups.set(devId(d), []);
       groups.get(devId(d)).push(d);
     }
+    // Pilotes essayés du plus précis au plus général : le premier qui répond garde l'appareil
+    const order = DRIVERS.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
     for (const [, group] of groups) {
       if (group.some(d => drvBusy.has(d.info?.path))) continue;
-      const drv = DRIVERS.find(x => group.some(x.match));
-      if (!drv) continue;
+      const candidates = order.filter(x => group.some(x.match));
+      if (!candidates.length) continue;
       group.forEach(d => drvBusy.add(d.info?.path));
-      try {
-        const list = await drv.connect(group.find(drv.match), group);
-        if (!list?.length) throw new Error('aucune réponse');
-        for (const inst of list) drvAdd(inst, drv);
-      } catch (e) {
-        console.warn('[PeriphHub] pilote', drv.id, devId(group[0]), e.message);
-        // On ne réessaie qu'au prochain branchement (pas en boucle)
+      for (const drv of candidates) {
+        try {
+          const list = await drv.connect(group.find(drv.match), group);
+          if (!list?.length) throw new Error('aucune réponse');
+          for (const inst of list) drvAdd(inst, drv);
+          break;
+        } catch (e) {
+          console.warn('[PeriphHub] pilote', drv.id, devId(group[0]), e.message);
+          // On ne réessaie qu'au prochain branchement (pas en boucle)
+        }
       }
     }
   } finally {
@@ -149,7 +154,7 @@ async function drvRestore(inst) {
   if (!o) return;
   drvStatus(inst, 'Retour aux réglages d’origine…');
   try {
-    for (const cap of ['dpi', 'rate', 'smartshift', 'hires', 'invert', 'light']) {
+    for (const cap of ['dpi', 'rate', 'smartshift', 'hires', 'invert', 'light', ...(inst.restoreCaps || [])]) {
       if (o.state[cap] != null && inst.caps[cap] && JSON.stringify(o.state[cap]) !== JSON.stringify(inst.state[cap])) await inst.set(cap, structuredClone(o.state[cap]));
     }
     await inst.refresh();

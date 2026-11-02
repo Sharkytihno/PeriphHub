@@ -1,0 +1,1141 @@
+import { VENDOR_ID } from "../vendors.js";
+import { RATES_1K, RATES_8K, RAZER_PRODUCTS } from "../../razer/devices.js";
+import { openRazerDevice } from "./hid-open.js";
+import { RAZER_BACKLIGHT_BRIGHTNESS_READ, RAZER_BUTTON_CONTROLS, RAZER_LED, RAZER_BUTTON_CONTROL_LABEL, RAZER_LANDING_MAX, RAZER_LANDING_MIN, RAZER_LIFT_OFF_MAX, RAZER_LIFT_OFF_MIN, RAZER_READ, RAZER_TOGGLE_CONTROLS, RAZER_TOGGLE_CONTROL_INFO, RAZER_REPORT_ID, RAZER_STORAGE, RAZER_STATUS, RAZER_TRACKING_DISTANCES, RAZER_TRANSACTION_ID, RAZER_TRANSACTION_ID_1F, RazerProtocolError, decodeBacklightBrightness, decodeBatteryPercent, decodeCharging, decodeDpi, decodeDpiStages, decodeExtendedPollingRate, decodeFirmwareVersion, decodeLegacyPollingRate, decodeLiftOff, decodeLowPowerThreshold, decodeRazerResponse, decodeSerial, decodeSleepTimeout, encodeRazerRequest, isRazerGetter, razerDecodeButtonMapping, razerDecodeToggleControl, razerReadButtonMappingCommand, razerReadToggleControlCommand, razerSetButtonMappingCommand, razerSetToggleControlCommand, razerReadDpiCommand, razerReadDpiStagesCommand, razerSetDpiCommand, razerSetDpiStagesCommand, razerSetExtendedPollingCommand, razerSetLegacyPollingCommand, razerMaxLanding, razerSetLiftOffCommand, razerSetTrackingDistanceCommand, razerEnableAsymmetricLiftOffCommand, razerEnableAsymmetricLiftOffCanonicalCommand, razerEnableSensorCalibrationCommand, razerSetLowPowerThresholdCommand, razerSetSleepTimeoutCommand, razerSetBacklightBrightnessCommand, razerSetStandardEffectCommand, razerSetStandardCustomEffectCommand, razerSetOneRowCustomFrameCommand, razerReadExtendedBrightnessCommand, razerSetExtendedBrightnessCommand, razerSetExtendedEffectCommand, } from "../../razer/index.js";
+// The sensor takes any whole DPI from here up to the model's ceiling, per axis.
+const DPI_MIN = 100;
+// The vendor software steps DPI stage values by 50, so the stage editor's
+// slider does too. Individual values off that grid are still accepted by the
+// single-DPI path, which validates against the whole list.
+const DPI_STEP = 50;
+const RESPONSE_DELAY_MS = 100;
+const RESPONSE_ATTEMPTS = 6;
+// How long a polling-rate change takes to re-establish the wireless link. The
+// Viper V4 Pro driver pauses 150 ms for the same reason.
+const POLLING_LINK_SETTLE_MS = 150;
+// The vendor software slides from 1 to 15 minutes, so those are the bounds this
+// model is meant to hold. The firmware itself accepts less — 30 s round-tripped
+// exactly, below even the 60 s floor OpenRazer documents — but nothing offers
+// that, so it is not offered here either.
+const SLEEP_MIN_SECONDS = 60;
+const SLEEP_MAX_SECONDS = 900;
+const SLEEP_STEP_SECONDS = 60;
+// One entry per minute, matching the vendor slider exactly rather than sampling
+// it, so no offered value is an interpolation.
+const SLEEP_OPTIONS = Array.from({ length: SLEEP_MAX_SECONDS / SLEEP_STEP_SECONDS }, (_, index) => (index + 1) * SLEEP_STEP_SECONDS);
+// Synapse slides this from 5 to 100 percent. The value is stored on the battery
+// reads' 0–255 scale, so the offered percentages are what round-trip cleanly
+// through it rather than every whole percent.
+const LOW_POWER_MIN_PERCENT = 5;
+const LOW_POWER_MAX_PERCENT = 100;
+const LOW_POWER_STEP_PERCENT = 5;
+const LOW_POWER_OPTIONS = Array.from({ length: (LOW_POWER_MAX_PERCENT - LOW_POWER_MIN_PERCENT) / LOW_POWER_STEP_PERCENT + 1 }, (_, index) => LOW_POWER_MIN_PERCENT + index * LOW_POWER_STEP_PERCENT);
+// Synapse states low power mode is unavailable at 2000 Hz and above, and greys
+// the slider out there. The setting still reads, so this bounds the control
+// rather than the command.
+const LOW_POWER_MAX_POLLING_HZ = 1000;
+// The standard-matrix effect drives every LED on the mouse at once, so the
+// panel gets one zone, named the way the other whole-mouse drivers name it.
+const STANDARD_LIGHTING_ZONE = "Mouse";
+const STANDARD_LIGHTING_EFFECTS = {
+    Off: "off",
+    Spectrum: "spectrum",
+    Wave: "wave",
+    Static: "static",
+    Reactive: "reactive",
+    "Breathing random": "breathing-random",
+    "Breathing single": "breathing-single",
+    "Breathing dual": "breathing-dual",
+};
+const STANDARD_LIGHTING_MODES = Object.keys(STANDARD_LIGHTING_EFFECTS);
+const STANDARD_COLOR_MODES = ["Static", "Reactive", "Breathing single", "Breathing dual"];
+const STANDARD_DUAL_COLOR_MODES = ["Breathing dual"];
+const STANDARD_REACTIVE_MODES = ["Reactive"];
+const STANDARD_REACTIVE_SPEEDS = [1, 2, 3, 4];
+const STANDARD_BRIGHTNESS_LEVELS = [25, 50, 75, 100];
+// The extended-matrix family addresses leds, so the panel gets one zone per
+// led OpenRazer exposes on the Basilisk V3: the whole mouse (ZERO_LED, which
+// is also the only way to reach the underglow strip), the scroll wheel and
+// the logo. Effects are the ones OpenRazer creates for these models; the
+// "none" effect is the same command family, so Off is offered too.
+const EXTENDED_LIGHTING_ZONES = [
+    { zone: "Mouse", led: RAZER_LED.all },
+    { zone: "Scroll wheel", led: RAZER_LED.scrollWheel },
+    { zone: "Logo", led: RAZER_LED.logo },
+];
+const EXTENDED_LIGHTING_EFFECTS = {
+    Off: "off",
+    Spectrum: "spectrum",
+    Wave: "wave",
+    Static: "static",
+};
+const EXTENDED_LIGHTING_MODES = Object.keys(EXTENDED_LIGHTING_EFFECTS);
+const EXTENDED_COLOR_MODES = ["Static"];
+/** OpenRazer sends every extended-matrix command for these models on `0x1f`. */
+const EXTENDED_LIGHTING_TRANSACTION_ID = RAZER_TRANSACTION_ID_1F;
+/**
+ * Razer exposes its control channel on the interface that declares a Generic
+ * Desktop Mouse collection. WebHID groups each top-level collection into its
+ * own `HIDDevice`, so there this collection is always alone; a native
+ * (hidapi) host instead groups every top-level collection an interface
+ * declares onto one `HIDDevice`, and the interface that answers Razer's
+ * feature-report commands can carry several — e.g. Consumer Control
+ * alongside Generic Desktop Mouse on the DeathAdder V3 HyperSpeed. Requiring
+ * it to be the *only* collection made every interface a native host can
+ * offer fail this check for that model; checking for its presence instead
+ * accepts both hosts' shapes without weakening what browsers ever hand this
+ * function.
+ */
+function isMouseControlInterface(device) {
+    return device.collections.some((collection) => collection.usagePage === 0x01 && collection.usage === 0x02);
+}
+/**
+ * Older Razer mice carry the configuration channel on a vendor-defined
+ * interface instead, and which one varies by hardware revision. Accepting both
+ * shapes means the picker can offer either without the driver refusing it.
+ */
+function hasVendorCollection(device) {
+    return device.collections.some((collection) => (collection.usagePage ?? 0) >= 0xff00);
+}
+export class RazerHidClient {
+    queue = Promise.resolve();
+    staticReads = new Map();
+    // The mode probe is a write, so it runs once per connection rather than on
+    // every background refresh. Both setters know which mode they leave behind,
+    // so nothing after the first read needs to ask the mouse again.
+    asymmetric = null;
+    asymmetricKnown = false;
+    // Same reasoning as asymmetric/asymmetricKnown: read once per connection
+    // rather than on every background refresh. Button-mapping writes use their
+    // own transaction id (RAZER_BUTTON_TRANSACTION_ID) and are confirmed by an
+    // immediate read-back in setButtonMapping — polling this command class on a
+    // timer would put an unrelated read between a write and its own verify-read
+    // for no benefit, since nothing changes these but setButtonMapping itself.
+    buttonMappings = null;
+    buttonMappingsKnown = false;
+    /** Filled for dock passthrough after the first polling probe. */
+    discoveredPollingRates = null;
+    /** Which polling command the paired mouse answers; null until probed. */
+    discoveredHighRatePolling = null;
+    /**
+     * The standard-matrix effect has no read, so this holds the last one
+     * written, the way the Cobra and Viper Mini drivers do. Brightness does
+     * read, and every status read refreshes it.
+     */
+    lighting = null;
+    /** Same cache, one entry per led, for the extended-matrix family. */
+    lightingZones = null;
+    perLedLighting = null;
+    customFrameActive = false;
+    lightingQueue = Promise.resolve();
+    device;
+    constructor(device) {
+        this.device = device;
+    }
+    static isSupported(device) {
+        const product = RAZER_PRODUCTS.get(device.productId);
+        if (device.vendorId !== VENDOR_ID.razer || !product)
+            return false;
+        // A nativeOnly model's control channel sits on a collection the browser
+        // refuses to expose, so the WebHID driver must never claim it even when a
+        // previously granted device enumerates (auto-reconnect, shared grants).
+        if (product.nativeOnly)
+            return false;
+        return isMouseControlInterface(device)
+            || (product.vendorControlInterface === true && hasVendorCollection(device));
+    }
+    profile() {
+        return RAZER_PRODUCTS.get(this.device.productId);
+    }
+    /**
+     * Whether polling uses the extended command (a divisor of 8000) rather than
+     * the legacy one (a divisor of 1000).
+     *
+     * Asked of the product rather than of the connection: the Viper 8KHz is wired
+     * and needs the extended command, while the pre-HyperPolling receivers are
+     * wireless and answer only the legacy one. For every model verified so far
+     * this is exactly `isWireless()`, which is what it used to read.
+     */
+    usesHighRatePolling() {
+        if (this.discoveredHighRatePolling !== null)
+            return this.discoveredHighRatePolling;
+        return this.profile()?.highRatePolling ?? this.isWireless();
+    }
+    /** DPI store byte; most models store, the V2 generation does not. */
+    dpiStorageByte() {
+        return this.profile()?.dpiStorageByte ?? RAZER_STORAGE;
+    }
+    async open() {
+        await openRazerDevice(this.device);
+    }
+    async close() {
+        this.staticReads.clear();
+        this.asymmetricKnown = false;
+        this.buttonMappingsKnown = false;
+        this.discoveredPollingRates = null;
+        this.discoveredHighRatePolling = null;
+        if (this.device.opened)
+            await this.device.close();
+    }
+    /**
+     * Whether this collection actually answers the Razer protocol, tried by
+     * sending the firmware-version read rather than inferred from the
+     * collection's declared shape. `isSupported()`'s shape check (a Generic
+     * Desktop Mouse collection present) is right for every model verified so
+     * far, but WebHID does not validate report ids against the descriptor (see
+     * the note atop codec.ts), so a collection that fails the shape check can
+     * still genuinely answer report 0 — used as a fallback in
+     * `razerProbeControlInterface` for exactly that case, not as the normal
+     * detection path.
+     */
+    async probeReachable() {
+        try {
+            await this.request(RAZER_READ.firmware);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    displayName() {
+        const known = this.profile();
+        return known ? `Razer ${known.model}` : this.device.productName || "Razer";
+    }
+    isWireless() {
+        return this.profile()?.wireless ?? false;
+    }
+    /**
+     * Says so when the model has never been connected by this project.
+     *
+     * The commands are the ones already confirmed elsewhere, but which of them a
+     * given model answers is transcribed rather than measured, so the panel
+     * should not present it as the same thing as a tested mouse.
+     */
+    connectionDetail(wireless) {
+        const link = this.profile()?.connectionLabel
+            ?? (wireless ? "HyperSpeed receiver" : "Wired USB");
+        return this.profile()?.verified === false ? `${link} · untested model` : link;
+    }
+    maxDpi() {
+        return this.profile()?.maxDpi ?? 35000;
+    }
+    getSupportedPollingRates() {
+        if (this.discoveredPollingRates)
+            return [...this.discoveredPollingRates];
+        return [...(this.profile()?.pollingRates ?? RATES_1K)];
+    }
+    /** Seconds, matching what the panel labels and what `setSleepTimeout` takes. */
+    getSleepOptions() {
+        return [...SLEEP_OPTIONS];
+    }
+    /** Whole percentages, matching the vendor slider. */
+    getLowPowerOptions() {
+        return [...LOW_POWER_OPTIONS];
+    }
+    /** The rate above which the vendor software refuses to arm low power mode. */
+    getLowPowerPollingCeiling() {
+        return LOW_POWER_MAX_POLLING_HZ;
+    }
+    /** Every whole value, because the control validates entries against this list. */
+    getDpiOptions() {
+        const options = [];
+        for (let dpi = DPI_MIN; dpi <= this.maxDpi(); dpi += 1)
+            options.push(dpi);
+        return options;
+    }
+    async readStatus() {
+        await this.open();
+        const wireless = this.isWireless();
+        const firmware = await this.once("firmware", () => this.request(RAZER_READ.firmware));
+        if (!firmware)
+            throw new Error("The mouse did not report a firmware version.");
+        const serial = await this.once("serial", () => this.request(RAZER_READ.serial).catch(() => null));
+        // A wired mouse with no cell answers battery and power-management commands
+        // as unsupported, which would otherwise abort the whole status read.
+        const hasBattery = this.profile()?.hasBattery !== false;
+        // On a model nobody has connected, `hasBattery` is a prediction. An
+        // unsupported reply throws, and this read is not optional the way sleep and
+        // low power are, so it would abort the whole status read and take DPI and
+        // polling down with it rather than dropping one card. Verified models still
+        // fail loudly: there, a battery command that stopped answering is news.
+        const battery = hasBattery
+            ? await this.readBattery().catch((error) => {
+                if (this.profile()?.verified === true)
+                    throw error;
+                return null;
+            })
+            : null;
+        // Both transports answer this, unlike polling. A transport that ever stops
+        // reports no timeout and hides the control rather than failing the whole
+        // read, which would take DPI and battery down with it.
+        const sleep = hasBattery ? await this.request(RAZER_READ.sleepTimeout).catch(() => null) : null;
+        const lowPower = hasBattery ? await this.request(RAZER_READ.lowPowerThreshold).catch(() => null) : null;
+        const dpi = decodeDpi(await this.request(razerReadDpiCommand(this.dpiStorageByte())));
+        const stages = await this.readDpiStages();
+        const pollingRateHz = await this.readPollingRateHz();
+        const buttonMappings = await this.currentButtonMappings();
+        // Asked of the product, not of the mouse. A model without lift-off can
+        // still answer this read — the Basilisk X HyperSpeed returns status 0x02
+        // with an all-zero payload, which decodes as a perfectly ordinary "Low" —
+        // so a successful reply proves nothing and the control cannot be offered on
+        // the strength of one. Skipping it also spares 0x0b a round trip on every
+        // background refresh for every model that does not have it.
+        const liftOff = this.profile()?.liftOff === true ? await this.readLiftOff() : null;
+        const lighting = this.profile()?.standardMatrixLighting === true ? await this.readLighting() : null;
+        const lightingZones = this.profile()?.extendedMatrixLighting === true
+            ? await this.readExtendedLighting()
+            : lighting && this.profile()?.oneRowCustomFrameLedCount
+                ? [lighting, ...this.perLedLightingFromCache()]
+                : null;
+        return {
+            brand: "Razer",
+            name: this.displayName(),
+            ui: {
+                family: "razer",
+                settingsReady: true,
+                valuesVerified: true,
+                hideUnsupportedPollingRates: true,
+                // No sensor-processing command is confirmed, so that card is hidden
+                // rather than offered and left inert. Lift-off is confirmed and
+                // readable through `readLiftOff`, but `MouseStatus` cannot carry the
+                // asymmetric pair yet — see the note on `liftOffDistance` below.
+                hideProcessingCard: true,
+                // Nothing reports link quality on this model, and the section this card
+                // shares with sleep is opened below, so it would otherwise appear as a
+                // permanent "signal is unavailable" placeholder.
+                hideSignalCard: true,
+                // Auto sleep and button mappings are what this driver puts in that
+                // section, so it opens only when at least one of them answered.
+                showAdvancedSection: sleep !== null || buttonMappings !== null,
+                forceShowBattery: battery ? true : undefined,
+                defaultDisplayName: this.profile()?.model,
+                // The stage read answered on this connection, so the shared stage
+                // editor is offered below. `countEditable: false` pins it to the
+                // table's own row count; the write (`0x04`/`0x06`) is modelled on
+                // OpenRazer's kernel driver and made writable via
+                // `setDpiStageValue`/`setActiveDpiStage`.
+                ...(stages
+                    ? {
+                        dpiStageEditor: {
+                            maxStages: stages.stages.length,
+                            countEditable: false,
+                            minDpi: DPI_MIN,
+                            maxDpi: this.maxDpi(),
+                            stepDpi: DPI_STEP,
+                        },
+                    }
+                    : {}),
+            },
+            batteryPercent: battery?.percent ?? null,
+            batteryState: battery?.state ?? "Unknown",
+            dpi: dpi.x,
+            dpiY: dpi.y,
+            supportsSeparateDpiAxes: true,
+            pollingRateHz,
+            supportedPollingRates: this.getSupportedPollingRates(),
+            activeProfile: null,
+            connectionType: wireless ? "Wireless" : "Wired",
+            connectionDetail: this.connectionDetail(wireless),
+            sleepTimeout: sleep ? decodeSleepTimeout(sleep) : null,
+            lowBatteryWarning: lowPower ? decodeLowPowerThreshold(lowPower) : null,
+            unitId: serial ? decodeSerial(serial) : null,
+            liftOffDistance: liftOff?.tracking ?? null,
+            // An empty list hides the control, which is what should happen on a
+            // transport that does not answer class 0x0b at all.
+            supportedLiftOffDistances: liftOff ? [...RAZER_TRACKING_DISTANCES] : [],
+            asymmetricLiftOff: liftOff && this.hasAsymmetricLiftOff()
+                ? {
+                    enabled: await this.asymmetricMode(liftOff),
+                    liftOff: liftOff.liftOff,
+                    landing: liftOff.landing,
+                    liftOffRange: { min: RAZER_LIFT_OFF_MIN, max: RAZER_LIFT_OFF_MAX },
+                    landingRange: { min: RAZER_LANDING_MIN, max: RAZER_LANDING_MAX },
+                }
+                : null,
+            razerButtonMappings: buttonMappings ?? undefined,
+            lighting: lighting ?? lightingZones?.[0],
+            lightingZones: lightingZones ?? undefined,
+            // Writable through `setDpiStageValue`/`setActiveDpiStage`, which rewrite
+            // the whole table and confirm by reading it back.
+            ...(stages ? { dpiStages: stages.stages, activeDpiStage: stages.active } : {}),
+            firmware: [`Mouse ${decodeFirmwareVersion(firmware)}`],
+        };
+    }
+    /**
+     * Every shipped control's current state, keyed by control name — the four
+     * cross-assignable `RazerButtonControl`s and the three two-state
+     * `RazerToggleControl`s share one dict, since the view layer reads each
+     * family by iterating its own fixed control list (`RAZER_BUTTON_CONTROLS` /
+     * `RAZER_TOGGLE_CONTROLS`), and the two lists share no control names. Null
+     * on a model that has not been confirmed to support this write at all. A
+     * control whose reply this driver cannot decode is omitted rather than
+     * guessed at.
+     */
+    async readButtonMappings() {
+        if (this.profile()?.buttonMapping !== true)
+            return null;
+        const mappings = {};
+        await Promise.all([
+            ...RAZER_BUTTON_CONTROLS.map(async (control) => {
+                const reply = await this.request(razerReadButtonMappingCommand(control)).catch(() => null);
+                const mapping = reply ? razerDecodeButtonMapping(reply) : null;
+                if (mapping)
+                    mappings[control] = mapping;
+            }),
+            ...RAZER_TOGGLE_CONTROLS.map(async (control) => {
+                const reply = await this.request(razerReadToggleControlCommand(control)).catch(() => null);
+                const state = reply ? razerDecodeToggleControl(control, reply) : null;
+                if (state)
+                    mappings[control] = state;
+            }),
+        ]);
+        // Every control failing means the transport does not answer class 0x02 at
+        // all — the cable (0x00c0) has never been tested against it, only the
+        // receiver. Collapse that to null so the card is hidden outright rather
+        // than rendered empty, the same way readLiftOff degrades.
+        return Object.keys(mappings).length > 0 ? mappings : null;
+    }
+    /** Probes once, then trusts what setButtonMapping leaves behind. */
+    async currentButtonMappings() {
+        if (!this.buttonMappingsKnown) {
+            this.buttonMappings = await this.readButtonMappings();
+            this.buttonMappingsKnown = true;
+        }
+        return this.buttonMappings;
+    }
+    /**
+     * Sets one control's mapping and confirms it by reading the same control
+     * back — not a formality here: this write silently no-ops under the driver's
+     * default transaction id, so a status-only check would have shipped a
+     * control that looked correct and did nothing. See
+     * `RAZER_BUTTON_TRANSACTION_ID`.
+     */
+    async setButtonMapping(control, mapping) {
+        await this.request(razerSetButtonMappingCommand(control, mapping));
+        const reply = await this.request(razerReadButtonMappingCommand(control));
+        const confirmed = razerDecodeButtonMapping(reply);
+        if (confirmed !== mapping) {
+            throw new Error(`The mouse kept ${confirmed ?? "an unrecognised mapping"} for ${RAZER_BUTTON_CONTROL_LABEL[control]} instead of ${mapping}.`);
+        }
+        this.buttonMappings = { ...this.buttonMappings, [control]: confirmed };
+        this.buttonMappingsKnown = true;
+        return confirmed;
+    }
+    /**
+     * Sets a two-state control (Scroll Up/Down, the bottom sensitivity button)
+     * and confirms it the same way `setButtonMapping` does — read-back after
+     * write, not status alone. `label` must be the control's own enabled label
+     * or "Disabled"; `razerSetToggleControlCommand` throws otherwise.
+     */
+    async setToggleControl(control, label) {
+        await this.request(razerSetToggleControlCommand(control, label));
+        const reply = await this.request(razerReadToggleControlCommand(control));
+        const confirmed = razerDecodeToggleControl(control, reply);
+        if (confirmed !== label) {
+            throw new Error(`The mouse kept ${confirmed ?? "an unrecognised state"} for ${RAZER_TOGGLE_CONTROL_INFO[control].label} instead of ${label}.`);
+        }
+        this.buttonMappings = { ...this.buttonMappings, [control]: confirmed };
+        this.buttonMappingsKnown = true;
+        return confirmed;
+    }
+    /**
+     * Writes the standard-matrix effect, then the backlight brightness when it
+     * changed. The effect cannot be read back, so what was written is cached and
+     * returned; brightness can, and is confirmed like every other setter.
+     *
+     * Every command goes out on the product's own transaction id (`0xff` on the
+     * Diamondback Chroma), breathing included. OpenRazer sends this model's
+     * breathing on `0x3f`, but from a block that also lists the Cobra, whose
+     * breathing turned out to answer on the same id as its other effects. If
+     * breathing alone fails on hardware, that is the assumption to revisit.
+     */
+    async setLighting(lighting) {
+        // Keep a frame upload and activation together, including concurrent callers.
+        const run = this.lightingQueue.then(() => this.writeLighting(lighting));
+        this.lightingQueue = run.catch(() => undefined);
+        return run;
+    }
+    async writeLighting(lighting) {
+        if (lighting.hardwareZoneId !== undefined)
+            return this.setPerLedLighting(lighting);
+        if (this.profile()?.extendedMatrixLighting === true)
+            return this.setExtendedLighting(lighting);
+        if (this.profile()?.standardMatrixLighting !== true) {
+            throw new Error("This mouse does not support changing the lighting yet.");
+        }
+        if (lighting.zone !== STANDARD_LIGHTING_ZONE) {
+            throw new Error(`This mouse has no "${lighting.zone}" lighting zone.`);
+        }
+        const effect = lighting.mode ? STANDARD_LIGHTING_EFFECTS[lighting.mode] : undefined;
+        if (!effect)
+            throw new Error("Pick an effect first.");
+        const speed = STANDARD_REACTIVE_SPEEDS.find((candidate) => candidate === lighting.speed);
+        if (lighting.speed !== null && speed === undefined) {
+            throw new Error(`Unknown reactive speed ${lighting.speed}.`);
+        }
+        const previous = this.lightingFromCache();
+        await this.request(razerSetStandardEffectCommand(effect, {
+            color: lighting.color ?? undefined,
+            color2: lighting.color2 ?? undefined,
+            speed,
+        }));
+        // Cached before the brightness step so a refused brightness cannot leave
+        // the panel showing an effect the mouse is no longer running.
+        this.lighting = { ...lighting, brightness: previous.brightness };
+        this.customFrameActive = false;
+        // A whole-mouse effect overrides every individual cell on screen. Its
+        // custom frame buffer remains on the device, but cannot be read back.
+        for (const cell of this.perLedLightingFromCache())
+            cell.mode = null;
+        if (lighting.brightness != null && lighting.brightness !== previous.brightness) {
+            await this.request(razerSetBacklightBrightnessCommand(lighting.brightness));
+            const confirmed = decodeBacklightBrightness(await this.request(RAZER_BACKLIGHT_BRIGHTNESS_READ));
+            if (confirmed !== lighting.brightness) {
+                throw new Error(`The mouse kept ${confirmed}% brightness instead of ${lighting.brightness}%.`);
+            }
+            this.lighting = { ...this.lighting, brightness: confirmed };
+        }
+        return this.lighting;
+    }
+    async setPerLedLighting(lighting) {
+        const cells = this.perLedLightingFromCache();
+        const index = lighting.hardwareZoneId;
+        const previous = cells[index];
+        if (!Number.isInteger(index) || index < 0 || !previous || previous.zone !== lighting.zone) {
+            throw new Error(`This mouse has no "${lighting.zone}" individual LED zone.`);
+        }
+        if (lighting.mode !== "Off" && lighting.mode !== "Static") {
+            throw new Error("Individual LEDs support only Off or Static.");
+        }
+        if (lighting.mode === "Static" && lighting.color === null) {
+            throw new Error("An individual LED needs a colour.");
+        }
+        await this.request(razerSetOneRowCustomFrameCommand(index, [lighting.mode === "Off" ? "#000000" : lighting.color]));
+        if (!this.customFrameActive)
+            await this.request(razerSetStandardCustomEffectCommand());
+        this.customFrameActive = true;
+        // Custom colours have no getter. Only cache an acknowledged frame, and
+        // never imply that untouched LEDs or their physical order were read back.
+        cells[index] = { ...previous, mode: lighting.mode, color: lighting.color };
+        this.lighting = { ...this.lightingFromCache(), mode: null };
+        return { ...cells[index] };
+    }
+    perLedLightingFromCache() {
+        this.perLedLighting ??= Array.from({ length: this.profile()?.oneRowCustomFrameLedCount ?? 0 }, (_, index) => ({
+            zone: `LED ${index}`,
+            group: "Custom frame",
+            hardwareZoneId: index,
+            modes: ["Off", "Static"],
+            mode: null,
+            color: "#00ff00",
+            color2: null,
+            colorModes: ["Static"],
+            dualColorModes: [],
+            reactiveModes: [],
+            speeds: [],
+            speed: null,
+            writeOnly: true,
+        }));
+        return this.perLedLighting;
+    }
+    /**
+     * The cached effect plus the brightness the mouse reports. A brightness read
+     * that fails hides only the brightness row; the effects are still offered.
+     */
+    async readLighting() {
+        const reply = await this.request(RAZER_BACKLIGHT_BRIGHTNESS_READ).catch(() => null);
+        const brightness = reply ? decodeBacklightBrightness(reply) : null;
+        this.lighting = {
+            ...this.lightingFromCache(),
+            brightness,
+            brightnessLevels: brightness === null ? [] : STANDARD_BRIGHTNESS_LEVELS,
+        };
+        return this.lighting;
+    }
+    /**
+     * Extended-matrix counterpart of `setLighting`: the effect goes to the zone's
+     * led on `0x1f`, then the brightness when it changed, confirmed by reading
+     * it back. Effects have no read, so the zone's cache is what gets reported.
+     */
+    async setExtendedLighting(lighting) {
+        const index = EXTENDED_LIGHTING_ZONES.findIndex(({ zone }) => zone === lighting.zone);
+        if (index < 0)
+            throw new Error(`This mouse has no "${lighting.zone}" lighting zone.`);
+        const { led } = EXTENDED_LIGHTING_ZONES[index];
+        const effect = lighting.mode ? EXTENDED_LIGHTING_EFFECTS[lighting.mode] : undefined;
+        if (!effect)
+            throw new Error("Pick an effect first.");
+        const zones = this.extendedLightingFromCache();
+        const previous = zones[index];
+        await this.request(razerSetExtendedEffectCommand(effect, { color: lighting.color ?? undefined, led }), EXTENDED_LIGHTING_TRANSACTION_ID);
+        // Cached before the brightness step, as in the standard family.
+        zones[index] = { ...lighting, brightness: previous.brightness };
+        if (lighting.brightness != null && lighting.brightness !== previous.brightness) {
+            await this.request(razerSetExtendedBrightnessCommand(led, lighting.brightness), EXTENDED_LIGHTING_TRANSACTION_ID);
+            const confirmed = decodeBacklightBrightness(await this.request(razerReadExtendedBrightnessCommand(led), EXTENDED_LIGHTING_TRANSACTION_ID));
+            if (confirmed !== lighting.brightness) {
+                throw new Error(`The mouse kept ${confirmed}% brightness instead of ${lighting.brightness}%.`);
+            }
+            zones[index] = { ...zones[index], brightness: confirmed };
+        }
+        return zones[index];
+    }
+    /** Every zone's cached effect plus the brightness its led reports. */
+    async readExtendedLighting() {
+        const zones = this.extendedLightingFromCache();
+        for (const [index, { led }] of EXTENDED_LIGHTING_ZONES.entries()) {
+            const reply = await this.request(razerReadExtendedBrightnessCommand(led), EXTENDED_LIGHTING_TRANSACTION_ID).catch(() => null);
+            const brightness = reply ? decodeBacklightBrightness(reply) : null;
+            zones[index] = {
+                ...zones[index],
+                brightness,
+                brightnessLevels: brightness === null ? [] : STANDARD_BRIGHTNESS_LEVELS,
+            };
+        }
+        return zones;
+    }
+    extendedLightingFromCache() {
+        this.lightingZones ??= EXTENDED_LIGHTING_ZONES.map(({ zone }) => ({
+            zone,
+            modes: EXTENDED_LIGHTING_MODES,
+            mode: null,
+            color: "#00ff00",
+            color2: null,
+            colorModes: EXTENDED_COLOR_MODES,
+            dualColorModes: [],
+            reactiveModes: [],
+            speeds: [],
+            speed: null,
+            brightness: null,
+            writeOnly: true,
+        }));
+        return this.lightingZones;
+    }
+    lightingFromCache() {
+        this.lighting ??= {
+            zone: STANDARD_LIGHTING_ZONE,
+            modes: STANDARD_LIGHTING_MODES,
+            mode: null,
+            // The colours are the lighting card's own picker defaults and the speed
+            // starts mid-scale, so the first effect picked writes what the card
+            // shows instead of failing for want of a value.
+            color: "#00ff00",
+            color2: "#ff0000",
+            colorModes: STANDARD_COLOR_MODES,
+            dualColorModes: STANDARD_DUAL_COLOR_MODES,
+            reactiveModes: STANDARD_REACTIVE_MODES,
+            speeds: STANDARD_REACTIVE_SPEEDS,
+            speed: STANDARD_REACTIVE_SPEEDS[1],
+            brightness: null,
+            writeOnly: true,
+        };
+        return this.lighting;
+    }
+    async setDpi(dpi, dpiY = dpi) {
+        const ceiling = this.maxDpi();
+        for (const value of [dpi, dpiY]) {
+            if (!Number.isInteger(value) || value < DPI_MIN || value > ceiling) {
+                throw new Error(`DPI must be a whole number between ${DPI_MIN} and ${ceiling.toLocaleString()}.`);
+            }
+        }
+        await this.request(razerSetDpiCommand(dpi, dpiY, this.dpiStorageByte()));
+        const confirmed = decodeDpi(await this.request(razerReadDpiCommand(this.dpiStorageByte())));
+        if (confirmed.x !== dpi || confirmed.y !== dpiY) {
+            throw new Error(`The mouse kept ${confirmed.x.toLocaleString()} DPI instead of ${dpi.toLocaleString()}.`);
+        }
+        return confirmed.x;
+    }
+    async setSleepTimeout(seconds) {
+        if (!Number.isInteger(seconds) || seconds < SLEEP_MIN_SECONDS || seconds > SLEEP_MAX_SECONDS) {
+            const minutes = SLEEP_MAX_SECONDS / SLEEP_STEP_SECONDS;
+            throw new Error(`Auto sleep must be between 1 and ${minutes} minutes.`);
+        }
+        await this.request(razerSetSleepTimeoutCommand(seconds));
+        const confirmed = decodeSleepTimeout(await this.request(RAZER_READ.sleepTimeout));
+        if (confirmed !== seconds) {
+            throw new Error(`The mouse kept ${confirmed} seconds instead of ${seconds}.`);
+        }
+        return confirmed;
+    }
+    async setLowPowerThreshold(percent) {
+        // A range rather than the offered list: the panel adds the mouse's own value
+        // when it sits off the five-point step, and that value must stay writable.
+        if (!Number.isInteger(percent) || percent < LOW_POWER_MIN_PERCENT || percent > LOW_POWER_MAX_PERCENT) {
+            throw new Error(`Low power mode must be between ${LOW_POWER_MIN_PERCENT}% and ${LOW_POWER_MAX_PERCENT}%.`);
+        }
+        // Asked of the mouse, not the panel. Staging a polling change repaints the
+        // control as disabled without withdrawing a threshold already queued behind
+        // it, so the disabled select cannot be what enforces this.
+        const pollingRateHz = await this.readPollingRateHz();
+        if (pollingRateHz > LOW_POWER_MAX_POLLING_HZ) {
+            throw new Error(`Low power mode is unavailable at ${pollingRateHz.toLocaleString()} Hz.`
+                + ` Set the polling rate to ${LOW_POWER_MAX_POLLING_HZ.toLocaleString()} Hz or lower first.`);
+        }
+        await this.request(razerSetLowPowerThresholdCommand(percent));
+        const confirmed = decodeLowPowerThreshold(await this.request(RAZER_READ.lowPowerThreshold));
+        if (confirmed !== percent) {
+            throw new Error(`The mouse kept ${confirmed}% instead of ${percent}%.`);
+        }
+        return confirmed;
+    }
+    async setPollingRate(pollingRateHz) {
+        // Dock passthrough: discover the paired mouse's ladder before validating.
+        if (this.profile()?.probePollingRates === true && !this.discoveredPollingRates) {
+            await this.readPollingRateHz();
+        }
+        if (!this.getSupportedPollingRates().includes(pollingRateHz)) {
+            throw new Error(`This mouse does not support ${pollingRateHz.toLocaleString()} Hz on this connection.`);
+        }
+        const highRate = this.usesHighRatePolling();
+        await this.request(highRate
+            ? razerSetExtendedPollingCommand(pollingRateHz)
+            : razerSetLegacyPollingCommand(pollingRateHz));
+        const commitTransactionId = highRate
+            ? this.profile()?.extendedPollingCommitTransactionId
+            : undefined;
+        if (commitTransactionId !== undefined) {
+            const commit = razerSetExtendedPollingCommand(pollingRateHz);
+            commit.args = [0x01, commit.args?.[1] ?? 0x00];
+            await this.request(commit, commitTransactionId);
+        }
+        // Changing the rate briefly reconfigures the wireless link, and exchanges
+        // sent into that window come back corrupt or unanswered — the Viper V4 Pro
+        // driver documents the same pause. Let it settle before the read-back; any
+        // stragglers are then caught by `exchange`'s own retry.
+        if (this.isWireless())
+            await this.delay(POLLING_LINK_SETTLE_MS);
+        const confirmed = await this.readPollingRateHz();
+        if (confirmed !== pollingRateHz) {
+            throw new Error(`The mouse kept ${confirmed.toLocaleString()} Hz instead of ${pollingRateHz.toLocaleString()} Hz.`);
+        }
+        return confirmed;
+    }
+    /**
+     * Battery level, and the charging state when the mouse reports one.
+     *
+     * The two are separate commands and a mouse may answer the first without the
+     * second — the Basilisk X HyperSpeed reports a good level and refuses
+     * `0x07`/`0x84` as unsupported. Letting that take the level down with it threw
+     * away the reading the panel actually wanted; an unknown charging state is
+     * only a missing word in the battery caption.
+     */
+    async readBattery() {
+        const level = await this.request(RAZER_READ.battery);
+        const charging = await this.request(RAZER_READ.charging).catch(() => null);
+        return {
+            percent: decodeBatteryPercent(level),
+            state: charging === null
+                ? "Unknown"
+                : decodeCharging(charging) ? "Charging" : "Discharging",
+        };
+    }
+    /**
+     * Reads the tracking level and the asymmetric lift-off/landing pair.
+     *
+     * Returns null when the mouse does not answer. Class `0x0b` has only ever
+     * been exercised on the receiver, so the cable may reject it, and a status
+     * read that throws takes the whole panel down rather than one control. The
+     * caller degrades instead.
+     */
+    async readLiftOff() {
+        const reply = await this.request(RAZER_READ.liftOff).catch(() => null);
+        return reply ? decodeLiftOff(reply) : null;
+    }
+    /**
+     * Reads the stored DPI stage table (`0x04`/`0x86`) and which stage is
+     * active, for the app's shared multi-stage editor.
+     *
+     * The read is verified on hardware; the matching write (`0x04`/`0x06`) is
+     * implemented in `setDpiStageValue`/`setActiveDpiStage` below, so the table
+     * is published writable when the mouse answers it.
+     *
+     * Returns null when the mouse does not answer or the reply decoded to no
+     * usable values, mirroring `readLiftOff`'s degradation: a status read that
+     * throws takes the whole panel down rather than one control. Values outside
+     * the sensor's range are filtered rather than clamped, since a stage the
+     * mouse cannot hold must not be offered.
+     */
+    async readDpiStages() {
+        const reply = await this.request(RAZER_READ.dpiStages).catch(() => null);
+        if (!reply)
+            return null;
+        const decoded = decodeDpiStages(reply);
+        const ceiling = this.maxDpi();
+        const stages = decoded.stages
+            .map(({ x }) => x)
+            .filter((value) => value >= DPI_MIN && value <= ceiling);
+        if (stages.length === 0)
+            return null;
+        // The reply numbers stages from one; the panel indexes from zero. Clamped
+        // so a corrupt index still lands on a row the panel can highlight.
+        const active = Math.min(Math.max(decoded.active - 1, 0), stages.length - 1);
+        return { stages, active };
+    }
+    /**
+     * The stored stage table through the same store byte the setters write
+     * through (`dpiStorageByte()`), so a verify-read can never see the other
+     * store's stale copy. Kept apart from `readDpiStages` because that one keeps
+     * the verified `0x00` selector and filters out-of-range stages, while a
+     * rewrite must echo every stored stage unchanged rather than drop one.
+     */
+    async readDpiTable() {
+        const reply = await this.request(razerReadDpiStagesCommand(this.dpiStorageByte())).catch(() => null);
+        if (!reply)
+            return null;
+        return decodeDpiStages(reply);
+    }
+    async writeDpiTable(active, stages) {
+        await this.request(razerSetDpiStagesCommand(active, stages, this.dpiStorageByte()));
+    }
+    /**
+     * Replaces one DPI stage's resolution. The write carries the whole stage
+     * table, so the sibling stages are read back and echoed unchanged, and the
+     * change is confirmed by reading the table again. `stage` is zero-based, as
+     * the stage editor numbers its rows.
+     */
+    async setDpiStageValue(stage, dpi) {
+        const ceiling = this.maxDpi();
+        if (!Number.isInteger(dpi) || dpi < DPI_MIN || dpi > ceiling) {
+            throw new Error(`DPI must be a whole number between ${DPI_MIN} and ${ceiling.toLocaleString()}.`);
+        }
+        const table = await this.readDpiTable();
+        if (!table || table.stages.length === 0) {
+            throw new Error("The mouse did not report its DPI stages.");
+        }
+        if (!Number.isInteger(stage) || stage < 0 || stage >= table.stages.length) {
+            throw new Error(`DPI stage ${stage} is out of range 0-${table.stages.length - 1}.`);
+        }
+        const stages = table.stages.map((entry, index) => index === stage ? { x: dpi, y: dpi } : entry);
+        await this.writeDpiTable(table.active, stages);
+        const confirmed = await this.readDpiTable();
+        if (!confirmed || confirmed.stages[stage]?.x !== dpi) {
+            throw new Error(`The mouse kept ${confirmed?.stages[stage]?.x.toLocaleString() ?? "no"} DPI on stage ${stage + 1} instead of ${dpi.toLocaleString()}.`);
+        }
+        return dpi;
+    }
+    /** Moves the mouse onto another DPI stage, confirming with a read-back. */
+    async setActiveDpiStage(stage) {
+        const table = await this.readDpiTable();
+        if (!table || table.stages.length === 0) {
+            throw new Error("The mouse did not report its DPI stages.");
+        }
+        if (!Number.isInteger(stage) || stage < 0 || stage >= table.stages.length) {
+            throw new Error(`DPI stage ${stage} is out of range 0-${table.stages.length - 1}.`);
+        }
+        await this.writeDpiTable(stage + 1, table.stages);
+        const confirmed = await this.readDpiTable();
+        if (!confirmed || confirmed.active !== stage + 1) {
+            throw new Error(`The mouse stayed on DPI stage ${confirmed?.active ?? "an unknown one"} instead of ${stage + 1}.`);
+        }
+        return stage;
+    }
+    /**
+     * Reports whether the mouse is currently in asymmetric mode, or null when it
+     * cannot be established.
+     *
+     * Nothing readable carries the mode — two 47-command captures differing only
+     * by it were byte-identical, and a full sweep found nothing. What does report
+     * it is the pair write's own status: refused `0x03` in symmetric mode,
+     * accepted `0x02` in asymmetric.
+     *
+     * That makes this a probe rather than a read, so it is written to disturb
+     * nothing. Re-sending the values the mirror already holds is value-preserving
+     * either way, and mode-preserving too: a refusal cannot switch the mode, and
+     * an acceptance re-selects the mode the mouse was already in.
+     *
+     * Call it once per connection, not on every refresh — it is still a write.
+     */
+    async probeAsymmetric(current) {
+        // The firmware stores an inverted pair without complaint, and one session
+        // left it holding lift-off 2 with landing 26. Probing with that would throw
+        // in the command builder, so report "unknown" rather than guessing.
+        if (current.landing >= current.liftOff)
+            return null;
+        try {
+            await this.request(razerSetLiftOffCommand(current.liftOff, current.landing));
+            return true;
+        }
+        catch (error) {
+            if (error instanceof RazerProtocolError && error.status === RAZER_STATUS.failure)
+                return false;
+            return null;
+        }
+    }
+    /**
+     * Whether this model stores a separate lift-off/landing pair at all.
+     *
+     * Establishing the mode costs a *write*, so it is only attempted where the
+     * pair commands have been confirmed on hardware. A model that has not been
+     * connected keeps the plain three-stop tracking control instead, which costs
+     * reads only.
+     */
+    hasAsymmetricLiftOff() {
+        return this.profile()?.asymmetricLiftOff === true;
+    }
+    /** Probes once, then trusts what the setters leave behind. */
+    async asymmetricMode(current) {
+        if (!this.asymmetricKnown) {
+            this.asymmetric = await this.probeAsymmetric(current);
+            this.asymmetricKnown = true;
+        }
+        return this.asymmetric;
+    }
+    /**
+     * Selects the symmetric tracking distance, which also takes the mouse out of
+     * asymmetric mode — it honours whichever store was written last, and there is
+     * no mode flag to clear.
+     *
+     * Named for the shell's driver contract rather than the vendor's wording; the
+     * vendor calls this the tracking distance.
+     */
+    async setLiftOffDistance(distance) {
+        await this.request(razerSetTrackingDistanceCommand(distance));
+        const confirmed = decodeLiftOff(await this.request(RAZER_READ.liftOff));
+        if (confirmed.tracking !== distance) {
+            throw new Error(`The mouse kept ${confirmed.tracking ?? "an unknown"} tracking distance instead of ${distance}.`);
+        }
+        this.asymmetric = false;
+        this.asymmetricKnown = true;
+        return distance;
+    }
+    /**
+     * Writes the asymmetric pair, and switches the mouse into asymmetric mode to
+     * do it. The tracking level shares the same reply but not the same write, so
+     * it is left as the mouse holds it.
+     *
+     * Landing is capped just below lift-off rather than rejected, because
+     * lowering lift-off past an already-set landing is ordinary use of a pair of
+     * controls and the vendor software caps its own slider the same way. The
+     * returned values are what the mouse ended up holding, not what was asked
+     * for, so a caller can render the cap rather than guess at it.
+     */
+    async setLiftOff(liftOff, landing) {
+        const capped = Math.min(landing, razerMaxLanding(liftOff));
+        // Built before anything is sent, so a rejected value costs no device
+        // traffic and cannot leave the mouse switched into asymmetric mode over a
+        // write that never happened. `razerSetLiftOffCommand` validates lift-off
+        // before landing, so an out-of-range lift-off still reports itself rather
+        // than being masked by the landing it drags out of range here.
+        const command = razerSetLiftOffCommand(liftOff, capped);
+        // The pair write is refused in symmetric mode, so it is armed first. Units
+        // differ within the same "Mouse 1.14" version string: the 0x01 unlock is
+        // verified on the swept hardware, but a reporter's unit answered the armed
+        // pair write 0x03 in two separate sessions, so each refusal falls back to
+        // the next documented arm rather than giving up.
+        const arms = [
+            [razerEnableAsymmetricLiftOffCommand()],
+            [razerEnableAsymmetricLiftOffCanonicalCommand()],
+            [razerEnableSensorCalibrationCommand(), razerEnableAsymmetricLiftOffCommand()],
+        ];
+        await this.writePairArmed(command, arms);
+        // Some units answer a refused pair write by still moving the stored pair;
+        // others leave it untouched. Either way the read-back is a genuine check.
+        const confirmed = decodeLiftOff(await this.request(RAZER_READ.liftOff));
+        if (confirmed.liftOff !== liftOff || confirmed.landing !== capped) {
+            throw new Error(`The mouse kept lift-off ${confirmed.liftOff} and landing ${confirmed.landing} instead of ${liftOff} and ${capped}.`);
+        }
+        this.asymmetric = true;
+        this.asymmetricKnown = true;
+        return confirmed;
+    }
+    /**
+     * Sends one arm sequence (setting writes) followed by the pair write, and
+     * returns on the first success. A refused arm is safe to burn — the units
+     * that refuse it read the stored pair back unchanged, and the pair write
+     * that follows restores any pair a refusal may have disturbed. When every
+     * arm fails, the last refusal propagates so the caller sees the refused
+     * command rather than a guessed substitution.
+     */
+    async writePairArmed(command, arms) {
+        let lastRefusal;
+        for (const sequence of arms) {
+            for (const write of sequence) {
+                await this.request(write);
+            }
+            try {
+                await this.request(command);
+                return;
+            }
+            catch (error) {
+                if (error instanceof RazerProtocolError && error.status === RAZER_STATUS.failure) {
+                    lastRefusal = error;
+                    continue;
+                }
+                throw error;
+            }
+        }
+        throw lastRefusal ?? new RazerProtocolError(`The mouse refused the lift-off write after ${arms.length} attempts.`);
+    }
+    /**
+     * Wired answers only the legacy command and the receiver only the extended
+     * one, so ask for the expected one first and keep the other as a fallback.
+     * Asking in the wrong order costs a failed exchange on every refresh.
+     *
+     * Mouse Dock Pro omits a fixed rate list (`probePollingRates`): if extended
+     * polling answers, the paired mouse can use the HyperPolling ladder;
+     * otherwise stay on the 1 kHz ladder (e.g. Naga V2 Pro).
+     */
+    async readPollingRateHz() {
+        const probe = this.profile()?.probePollingRates === true;
+        const extended = [RAZER_READ.pollingRateExtended, decodeExtendedPollingRate, true];
+        const legacy = [RAZER_READ.pollingRate, decodeLegacyPollingRate, false];
+        // Until a dock probe settles, prefer the product's declared encoding so the
+        // first try matches what verified HyperSpeed paths already expect.
+        const preferExtended = this.discoveredHighRatePolling ?? this.profile()?.highRatePolling ?? this.isWireless();
+        for (const [command, decode, isExtended] of preferExtended ? [extended, legacy] : [legacy, extended]) {
+            const reply = await this.request(command).catch(() => null);
+            if (!reply)
+                continue;
+            const hz = decode(reply);
+            if (probe) {
+                this.discoveredHighRatePolling = isExtended;
+                this.discoveredPollingRates = isExtended ? RATES_8K : RATES_1K;
+            }
+            return hz;
+        }
+        throw new Error("The mouse did not report a polling rate.");
+    }
+    once(key, read) {
+        const pending = this.staticReads.get(key);
+        if (pending)
+            return pending;
+        const started = read();
+        this.staticReads.set(key, started);
+        started.catch(() => this.staticReads.delete(key));
+        return started;
+    }
+    async request(command, transactionId) {
+        const run = this.queue.then(() => this.exchange(command, transactionId), () => this.exchange(command, transactionId));
+        this.queue = run.catch(() => undefined);
+        return await run;
+    }
+    async exchange(command, transactionIdOverride) {
+        await this.open();
+        // A command may pin its own transaction id — the class `0x02` button write
+        // silently no-ops under the shared one. An explicit call-site override
+        // still wins over both.
+        const transactionId = transactionIdOverride
+            ?? command.transactionId
+            ?? this.profile()?.transactionId
+            ?? RAZER_TRANSACTION_ID;
+        const request = encodeRazerRequest(command, transactionId);
+        // A busy status means the mouse will answer this same request later, so the
+        // reads keep going without a re-send. A corrupt reply means the exchange
+        // itself was lost — the receiver can return garbage while it reconfigures
+        // the wireless link after a polling-rate change — so the send is retried
+        // from scratch. Retrying keeps one corrupt reply from failing the whole
+        // status read, which is what took the lift-off panel down after an 8,000 Hz
+        // switch.
+        for (let attempt = 0; attempt < RESPONSE_ATTEMPTS; attempt += 1) {
+            await this.write(command, request);
+            const reply = await this.awaitReply(command);
+            if (reply)
+                return reply;
+        }
+        throw new Error("The mouse stayed busy — it may be asleep or out of range.");
+    }
+    /**
+     * Sends one protocol request as a feature report. Chrome reports a refused
+     * write as a bare `NotAllowedError` whose message is only "Failed to write
+     * feature report." with no hint about why, so the throw is wrapped with the
+     * troubleshooting paths that actually explain it: the control interface is
+     * held by another program (Razer Synapse), the interface granted on the
+     * wireless receiver is the pointer collection rather than the control one,
+     * macOS has denied the browser Input Monitoring access, or the OS/browser
+     * refuses writes to mouse-class collections outright.
+     */
+    async write(command, request) {
+        try {
+            await this.device.sendFeatureReport(RAZER_REPORT_ID, request);
+        }
+        catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error(`Chrome could not write the ${this.displayName()}'s feature report (command 0x${command.commandClass
+                .toString(16)}/${command.commandId.toString(16)}). `
+                + "Quit Razer Synapse and try again — it holds the control interface. If it still fails, "
+                + "re-add the device and pick the other Razer Viper interface on the receiver, and on macOS "
+                + "allow the browser under System Settings → Privacy & Security → Input Monitoring. "
+                + `(${detail})`);
+        }
+    }
+    /**
+     * Reads up to the response budget for one send. Returns the decoded reply, or
+     * null when the reply was corrupt or the budget ran out on busy replies — the
+     * caller re-sends on null, since a corrupt reply is a lost exchange rather
+     * than a status the mouse owns.
+     */
+    async awaitReply(command) {
+        for (let read = 0; read < RESPONSE_ATTEMPTS; read += 1) {
+            await this.delay(RESPONSE_DELAY_MS);
+            const reply = this.copyDataView(await this.device.receiveFeatureReport(RAZER_REPORT_ID));
+            try {
+                return decodeRazerResponse(reply, command);
+            }
+            catch (error) {
+                if (!(error instanceof RazerProtocolError))
+                    throw error;
+                if (error.status === RAZER_STATUS.busy)
+                    continue;
+                // A bad checksum or wrong length carries no status, so it is transport
+                // corruption rather than an answer the mouse decided on.
+                if (error.status === null)
+                    return null;
+                // Repeating a getter is safe; setters confirm through a later read and
+                // must not be sent twice when an earlier reply is still buffered.
+                if (error.stale && isRazerGetter(command))
+                    return null;
+                throw error;
+            }
+        }
+        return null;
+    }
+    copyDataView(view) {
+        return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+    }
+    delay(milliseconds) {
+        return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    }
+}
+/**
+ * Last-resort device selection for when none of the granted collections
+ * matched `RazerHidClient.isSupported()`'s shape check. Rather than guess a
+ * new shape, this tries the protocol itself against every Razer-vendor
+ * collection Chrome granted and returns the client for whichever one
+ * actually answers.
+ *
+ * This exists because the shape check assumes every model's control channel
+ * is a single Generic Desktop Mouse collection (verified true so far for
+ * every model this driver has been confirmed against) — a real assumption a
+ * given browser/OS combination could break for a specific model without any
+ * code here changing, since what collections get exposed to WebHID at all is
+ * decided below this driver, by the platform. Kept off the normal detection
+ * path (`registry.ts`'s `DEVICE_DRIVERS` entry still uses `isSupported()`
+ * alone) because sending real protocol traffic to every candidate is real
+ * device I/O, not a cheap shape check, and only worth it once the cheap
+ * check has already failed to find anything.
+ *
+ * `sendFeatureReport`/`receiveFeatureReport` reject immediately for a
+ * collection with no feature-report capability at all, so a wrong candidate
+ * costs one failed call, not a hang — see `write()`'s try/catch above.
+ */
+export async function razerProbeControlInterface(devices) {
+    const candidates = devices.filter((device) => device.vendorId === VENDOR_ID.razer);
+    for (const device of candidates) {
+        const client = new RazerHidClient(device);
+        const tag = `[razer-probe] 0x${device.productId.toString(16).padStart(4, "0")} `
+            + device.collections.map((c) => `${(c.usagePage ?? 0).toString(16)}:${c.usage ?? 0}`).join(",");
+        try {
+            await client.open();
+            if (await client.probeReachable()) {
+                console.info(`${tag} -> answered`);
+                return client;
+            }
+            console.info(`${tag} -> opened, no reply`);
+        }
+        catch (error) {
+            console.info(`${tag} -> ${error instanceof Error ? error.message : String(error)}`);
+        }
+        await client.close().catch(() => undefined);
+    }
+    return null;
+}

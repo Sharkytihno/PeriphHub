@@ -90,6 +90,7 @@ class ViaKeyboard {
 
 registerDriver({
   id: 'via',
+  priority: 20, // collection faite pour les configurateurs : toujours la bonne porte d'entrée
   match: d => d.collections[0].usagePage === 0xFF60 && d.collections[0].usage === 0x61 && !VIA_NEVER.has(devId(d)),
   async connect(dev) {
     await dev.open();

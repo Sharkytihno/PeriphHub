@@ -1,0 +1,63 @@
+name: Retour sur un appareil (fonctionne ou pas)
+description: Un appareil marqué « Expérimental » marche, marche en partie ou ne marche pas — aidez à le confirmer
+title: "[Retour] "
+labels: [retour appareil]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci ! Les pilotes « Expérimental » sont écrits à partir de projets libres sans avoir été essayés
+        sur chaque modèle. Votre retour permet de les passer en « Pris en charge » (ou de les corriger).
+        / *English welcome too.*
+  - type: input
+    id: model
+    attributes:
+      label: Modèle exact
+      placeholder: ex. Pulsar X2 V2 Mini, Lamzu Maya X 8K, Wooting 60HE…
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Résultat
+      options:
+        - Tout fonctionne
+        - Fonctionne en partie
+        - Ne fonctionne pas (réglages absents ou sans effet)
+        - Reconnu mais pas réglable
+        - Pas reconnu du tout
+    validations:
+      required: true
+  - type: checkboxes
+    id: tested
+    attributes:
+      label: Réglages essayés
+      options:
+        - label: DPI
+        - label: Fréquence d'interrogation (polling rate)
+        - label: Batterie affichée
+        - label: Éclairage
+        - label: LOD / Motion Sync / anti-rebond / veille
+        - label: Égaliseur ou micro (casque)
+        - label: « Revenir aux réglages d'origine »
+  - type: input
+    id: connection
+    attributes:
+      label: Branchement
+      placeholder: ex. dongle 8K, câble USB, Bluetooth…
+  - type: textarea
+    id: details
+    attributes:
+      label: Ce qui ne va pas
+      description: Réglage qui ne s'applique pas, valeur fausse, message d'erreur affiché…
+  - type: input
+    id: version
+    attributes:
+      label: Version de PeriphHub
+      placeholder: ex. 0.10.0 (visible dans Options)
+  - type: textarea
+    id: report
+    attributes:
+      label: Rapport PeriphHub
+      description: Page Allègement → « Copier le rapport », puis collez ici (les chemins sont anonymisés).
+      render: json

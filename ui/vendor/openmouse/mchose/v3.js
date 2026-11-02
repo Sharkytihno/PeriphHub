@@ -1,0 +1,607 @@
+/**
+ * MCHOSE's **second** mouse protocol — the one the A7 V3 generation speaks.
+ *
+ * Read out of the same M HUB bundle as the A7 V2 codec in `./index.ts`, which
+ * carries two complete mouse UIs side by side: an older one driving the V2
+ * models and a newer one driving everything in {@link MCHOSE_V3_PRODUCTS}.
+ * They share a vendor id and even a usage page, and share nothing else.
+ *
+ * | | A7 V2 (`./index.ts`) | A7 V3 (this file) |
+ * | --- | --- | --- |
+ * | transport | feature reports `0x11` / `0x12` | **output report `0x4d`**, replies on the input report |
+ * | encoding | every body byte inverted (XOR `0xff`) | plain bytes, XOR checksum |
+ * | commands | one byte | **two bytes, little-endian** |
+ * | settings | one 64-byte blob (`0x67`) | several focused commands |
+ *
+ * The framing is a 64-byte frame whose first byte is both the `'M'` magic and
+ * the HID report id, so the body that actually goes out over
+ * `sendReport(0x4d, body)` is the remaining 63 bytes — which is what every
+ * function here encodes and decodes:
+ *
+ * ```
+ * frame[0] = 0x4d   report id, not part of the body
+ * body[0]  = 0x01   protocol version
+ * body[1]  = flags  1 when a trailing checksum is present
+ * body[2]  = data length
+ * body[3]  = command low byte
+ * body[4]  = command high byte
+ * body[5]  = business code
+ * body[6]  = sequence
+ * body[7…] = data, then the checksum at body[7 + length]
+ * ```
+ *
+ * The checksum is an XOR of `body[1]` through `body[6 + length]`.
+ *
+ * The **decoders** are confirmed against a real A7 V3 Ultra+; the framing that
+ * carries them is therefore confirmed too, since the mouse answered these
+ * frames. The **encoders below them have never been sent to a device.** Every
+ * write in this protocol replaces a whole block, so each one takes a structure
+ * a caller has just read back rather than a set of changes — see the Writes
+ * section and docs/mchose-protocol.md.
+ */
+/** Output report the whole V3 command set rides on; also the `'M'` magic. */
+export const MCHOSE_V3_REPORT_ID = 0x4d;
+/** Full frame including the report id. The body sent over WebHID is one less. */
+export const MCHOSE_V3_FRAME_LENGTH = 64;
+export const MCHOSE_V3_BODY_LENGTH = MCHOSE_V3_FRAME_LENGTH - 1;
+/**
+ * The V3 config channel sits on the **same collection as the V2's** — the
+ * vendor's own WebHID filters ask for `0xff01`/`0x0001` for both generations.
+ * Spelled out rather than imported from `./index.ts` to keep the two codecs
+ * free of a circular import; they are the same numbers because the hardware
+ * uses the same numbers, not because one derives from the other.
+ */
+export const MCHOSE_V3_USAGE_PAGE = 0xff01;
+export const MCHOSE_V3_USAGE = 0x0001;
+const VERSION_OFFSET = 0;
+const FLAGS_OFFSET = 1;
+const LENGTH_OFFSET = 2;
+const COMMAND_LOW_OFFSET = 3;
+const COMMAND_HIGH_OFFSET = 4;
+const BIZ_CODE_OFFSET = 5;
+const SEQUENCE_OFFSET = 6;
+const DATA_OFFSET = 7;
+const PROTOCOL_VERSION = 0x01;
+const FLAG_CHECKSUM = 0x01;
+/**
+ * Command ids, little-endian in the frame. The `0x00xx` block is settings and
+ * the `0x09xx` block is device-level; a write is its read plus `0x0100`.
+ */
+export const MCHOSE_V3_COMMAND = {
+    /** Button assignments for one profile: `[profileIndex, 0, buttonCount]`. */
+    readButtons: 0x0001,
+    /** Profile, DPI/rate indices, sleep, sensor flags, debounce: `[]`. */
+    readSettings: 0x0002,
+    /** DPI stage table for one axis: `[profileIndex, axis]`. */
+    readDpi: 0x0003,
+    /** Lift-off index, on models that keep it outside the sensor byte. */
+    readLiftOff: 0x0009,
+    /** Identity and power: vendor/product id, charge state, battery. */
+    readDeviceInfo: 0x0900,
+    /** Firmware version, returned as a hex string the vendor trims. */
+    readVersion: 0x0901,
+    /** Macro storage, read 22 bytes at a time. */
+    readMacro: 0x090c,
+    writeButtons: 0x0101,
+    writeSettings: 0x0102,
+    writeDpi: 0x0103,
+    /** One stage without rewriting the table: `[profile, stage, axis, dpi u16]`. */
+    writeSingleDpi: 0x0104,
+    /** Factory reset, whole device or one profile. */
+    reset: 0x0105,
+    writeLiftOff: 0x0109,
+};
+/**
+ * Physical buttons, in the fixed order the button commands walk them. Matches
+ * the V2 vocabulary in `./buttons.ts` apart from the vendor's own spelling.
+ */
+export const MCHOSE_V3_BUTTONS = ["Left", "Right", "Middle", "Forward", "Back", "DPI"];
+/** XOR of `body[from]` through `body[to]`, inclusive. */
+function checksum(body, from, to) {
+    let value = 0;
+    for (let index = from; index <= to; index += 1)
+        value ^= body[index] ?? 0;
+    return value & 0xff;
+}
+/**
+ * Build the 63-byte body for `sendReport(MCHOSE_V3_REPORT_ID, body)`.
+ *
+ * Throws rather than silently truncating: a command whose data does not fit
+ * would otherwise go out with a valid checksum over the wrong bytes.
+ */
+export function mchoseV3Encode(command, data = [], options = {}) {
+    const flags = options.flags ?? FLAG_CHECKSUM;
+    // The checksum needs a byte of its own past the data.
+    if (DATA_OFFSET + data.length + 1 > MCHOSE_V3_BODY_LENGTH) {
+        throw new RangeError(`mchoseV3Encode: ${data.length} data bytes do not fit in a frame`);
+    }
+    const body = new Uint8Array(MCHOSE_V3_BODY_LENGTH);
+    body[VERSION_OFFSET] = PROTOCOL_VERSION;
+    body[FLAGS_OFFSET] = flags & 0xff;
+    body[LENGTH_OFFSET] = data.length & 0xff;
+    body[COMMAND_LOW_OFFSET] = command & 0xff;
+    body[COMMAND_HIGH_OFFSET] = (command >> 8) & 0xff;
+    body[BIZ_CODE_OFFSET] = (options.bizCode ?? 0) & 0xff;
+    body[SEQUENCE_OFFSET] = (options.sequence ?? 0) & 0xff;
+    for (let index = 0; index < data.length; index += 1) {
+        body[DATA_OFFSET + index] = data[index] & 0xff;
+    }
+    if (flags === FLAG_CHECKSUM) {
+        body[DATA_OFFSET + data.length] = checksum(body, FLAGS_OFFSET, SEQUENCE_OFFSET + data.length);
+    }
+    return body;
+}
+/** Command id carried by a reply body, or null if it is too short to hold one. */
+export function mchoseV3ReplyCommand(body) {
+    if (body.length <= COMMAND_HIGH_OFFSET)
+        return null;
+    return (body[COMMAND_LOW_OFFSET] | (body[COMMAND_HIGH_OFFSET] << 8)) & 0xffff;
+}
+/**
+ * Data slice of a reply, or null when the frame is malformed or answers a
+ * different command.
+ *
+ * The vendor's own reader trusts the command id alone and never checks the
+ * checksum. This does check it, but only when the reply claims to carry one:
+ * a reply with other flags is accepted on its command id, the way M HUB
+ * accepts it.
+ */
+export function mchoseV3Payload(body, command) {
+    if (mchoseV3ReplyCommand(body) !== command)
+        return null;
+    const length = body[LENGTH_OFFSET] ?? 0;
+    if (DATA_OFFSET + length > body.length)
+        return null;
+    if ((body[FLAGS_OFFSET] ?? 0) === FLAG_CHECKSUM) {
+        const expected = checksum(body, FLAGS_OFFSET, SEQUENCE_OFFSET + length);
+        if (body[DATA_OFFSET + length] !== expected)
+            return null;
+    }
+    return body.slice(DATA_OFFSET, DATA_OFFSET + length);
+}
+const u16 = (data, offset) => (data[offset] ?? 0) | ((data[offset + 1] ?? 0) << 8);
+/** `0x0900` — identity and power. This is how a model is resolved. */
+export function mchoseV3DecodeDeviceInfo(data) {
+    if (data.length < 14)
+        return null;
+    return {
+        vendorId: u16(data, 0),
+        productId: u16(data, 2),
+        profileCount: data[4],
+        macroSaveType: data[5],
+        shareMacroDataSize: u16(data, 6),
+        macroUnitSize: u16(data, 8),
+        connectStatus: data[10],
+        chargeStatus: data[11],
+        batteryPercent: data[12],
+        gameMode: data[13],
+    };
+}
+/**
+ * The firmware's polling table has a slot M HUB never offers, so a stored rate
+ * index is not an index into the model's rate list. The vendor maps around it
+ * in both directions; these two are those maps.
+ *
+ * Device slot 1 is the hidden one — it reads back as option 1 but is never
+ * written, which is what makes the pair asymmetric.
+ */
+export function mchoseV3RateIndexToOption(deviceIndex) {
+    return deviceIndex > 1 ? deviceIndex - 1 : deviceIndex;
+}
+export function mchoseV3OptionToRateIndex(optionIndex) {
+    return optionIndex > 0 ? optionIndex + 1 : optionIndex;
+}
+/** `0x0002` — the settings the V2 kept in its one big config blob. */
+export function mchoseV3DecodeSettings(data) {
+    if (data.length < 9)
+        return null;
+    const wired = data[1];
+    const wireless = data[2];
+    return {
+        profileIndex: data[0],
+        dpiIndex: wired & 0x0f,
+        wiredRateIndex: mchoseV3RateIndexToOption((wired >> 4) & 0x0f),
+        wirelessRateIndex: mchoseV3RateIndexToOption((wireless >> 4) & 0x0f),
+        sleep: data[3],
+        sleepMode: data[4] & 1,
+        sensor: data[5],
+        angleTuning: (data[6] << 24) >> 24,
+        leftDebounceMs: data[7],
+        rightDebounceMs: data[8],
+        extra: [...data.slice(9)],
+    };
+}
+/**
+ * Encode the settings block back. Every field is required because the command
+ * replaces the whole block — there is no read-modify-write on the device side,
+ * so a caller must pass a freshly read {@link MchoseV3Settings} with its edits
+ * applied rather than a partial object.
+ */
+export function mchoseV3EncodeSettings(settings) {
+    const wired = ((mchoseV3OptionToRateIndex(settings.wiredRateIndex) & 0x0f) << 4)
+        | (settings.dpiIndex & 0x0f);
+    const wireless = ((mchoseV3OptionToRateIndex(settings.wirelessRateIndex) & 0x0f) << 4)
+        | (settings.dpiIndex & 0x0f);
+    return [
+        settings.profileIndex & 0xff,
+        wired,
+        wireless,
+        settings.sleep & 0xff,
+        settings.sleepMode & 0xff,
+        settings.sensor & 0xff,
+        settings.angleTuning & 0xff,
+        settings.leftDebounceMs & 0xff,
+        settings.rightDebounceMs & 0xff,
+        // Whatever the mouse had here goes straight back. Ten zeros only when a
+        // caller built settings from nothing, which matches M HUB's own padding.
+        ...(settings.extra.length ? settings.extra.map((byte) => byte & 0xff)
+            : new Array(SETTINGS_EXTRA_BYTES).fill(0)),
+    ];
+}
+/** Bytes past the nine named settings fields, as M HUB pads them. */
+const SETTINGS_EXTRA_BYTES = 10;
+/**
+ * Sensor byte layout — **note that it is not the V2's**. The V2 puts lift-off
+ * in bits 0-1 and the performance mode in bits 6-7; this generation swaps
+ * them, and adds a glass-surface flag on the top bit. Getting the two mixed up
+ * reads a lift-off level as a power mode.
+ */
+export const MCHOSE_V3_SENSOR_MODE_MASK = 0x03;
+export const MCHOSE_V3_SENSOR_RIPPLE = 0x04;
+export const MCHOSE_V3_SENSOR_LINEAR = 0x08;
+export const MCHOSE_V3_SENSOR_MOTION_SYNC = 0x10;
+export const MCHOSE_V3_SENSOR_LOD_MASK = 0x60;
+export const MCHOSE_V3_SENSOR_LOD_SHIFT = 5;
+export const MCHOSE_V3_SENSOR_GLASS = 0x80;
+export function mchoseV3DecodeSensor(sensor) {
+    return {
+        liftOffIndex: (sensor & MCHOSE_V3_SENSOR_LOD_MASK) >> MCHOSE_V3_SENSOR_LOD_SHIFT,
+        rippleControl: (sensor & MCHOSE_V3_SENSOR_RIPPLE) !== 0,
+        angleSnapping: (sensor & MCHOSE_V3_SENSOR_LINEAR) !== 0,
+        motionSync: (sensor & MCHOSE_V3_SENSOR_MOTION_SYNC) !== 0,
+        glassMode: (sensor & MCHOSE_V3_SENSOR_GLASS) !== 0,
+        modeIndex: sensor & MCHOSE_V3_SENSOR_MODE_MASK,
+    };
+}
+/** Same three-way choice the V2 offers, in the same order. */
+export const MCHOSE_V3_MODES = ["Performance", "eSports", "Ultra"];
+export const MCHOSE_V3_DPI_STAGES = 6;
+/** `0x0003` — one axis of the DPI table. */
+export function mchoseV3DecodeDpi(data) {
+    if (data.length < 5 + MCHOSE_V3_DPI_STAGES * 2)
+        return null;
+    const stages = [];
+    for (let stage = 0; stage < MCHOSE_V3_DPI_STAGES; stage += 1) {
+        stages.push(u16(data, 5 + stage * 2));
+    }
+    return {
+        profileIndex: data[0],
+        axis: data[1],
+        stageCount: data[2],
+        activeStage: data[3],
+        hasSeparateY: data[4] === 1,
+        stages,
+    };
+}
+/** `0x0009` — lift-off on the models that moved it out of the sensor byte. */
+export function mchoseV3DecodeLiftOff(data) {
+    if (data.length < 1)
+        return null;
+    return data[0];
+}
+/**
+ * Button action types are **not** the A7 V2's numbering; the vocabulary and
+ * the width of each value live in `./v3-buttons.ts`, which this file
+ * re-exports at the bottom.
+ */
+/** Value byte counts by type; anything unlisted carries two. */
+const BUTTON_VALUE_WIDTH = {
+    0x01: 3,
+    0x22: 3,
+    0x23: 7,
+    0x24: 7,
+};
+/** Types whose value bytes are already in order rather than little-endian. */
+const BUTTON_BIG_ENDIAN_TYPES = new Set([0x13, 0x16]);
+/**
+ * `0x0001` — the button table, which is a variable-width walk rather than a
+ * fixed record: each entry's width depends on the type byte in front of it.
+ *
+ * Returns null if the walk would run past the payload, so a short or stale
+ * reply is rejected instead of yielding half a table.
+ */
+export function mchoseV3DecodeButtons(data) {
+    const result = {};
+    let offset = 0;
+    for (const name of MCHOSE_V3_BUTTONS) {
+        if (offset >= data.length)
+            return null;
+        const type = data[offset];
+        const width = BUTTON_VALUE_WIDTH[type] ?? 2;
+        if (offset + 1 + width > data.length)
+            return null;
+        const raw = Array.from(data.slice(offset + 1, offset + 1 + width));
+        result[name] = {
+            type,
+            value: BUTTON_BIG_ENDIAN_TYPES.has(type) ? raw : raw.reverse(),
+        };
+        offset += 1 + width;
+    }
+    return result;
+}
+const LOD_TWO = [1, 2];
+const LOD_THREE = [0.7, 1, 2];
+const LOD_FIVE = [0.7, 0.9, 1.2, 1.4, 1.7];
+/**
+ * Every model on this protocol, from the bundle's own table. The A7 V3 family
+ * is what this was written for; the rest share the wire format and the same
+ * receivers, so leaving them out would mean resolving one of them to the wrong
+ * DPI ceiling rather than not claiming it at all.
+ */
+export const MCHOSE_V3_PRODUCTS = [
+    { name: "A5 V3 Pro", productId: 0x4035, dpiMax: 26000, liftOffDistances: LOD_TWO, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "A5 V3 Ultra+", productId: 0x4026, dpiMax: 42000, liftOffDistances: LOD_THREE, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "A5 V3 Ultra+ (3955)", productId: 0x4034, dpiMax: 50000, liftOffDistances: LOD_FIVE, maxPollingRate: 8000, liftOffCommand: true },
+    { name: "K7 V2 Pro+", productId: 0x4027, dpiMax: 42000, liftOffDistances: LOD_THREE, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "K7 V2 Ultra+", productId: 0x4028, dpiMax: 50000, liftOffDistances: LOD_FIVE, maxPollingRate: 8000, liftOffCommand: true },
+    { name: "A7 V3", productId: 0x4030, dpiMax: 26000, liftOffDistances: LOD_TWO, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "A7 V3 Pro", productId: 0x4031, dpiMax: 42000, liftOffDistances: LOD_THREE, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "A7 V3 Pro+", productId: 0x4032, dpiMax: 42000, liftOffDistances: LOD_THREE, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "A7 V3 Ultra+", productId: 0x4033, dpiMax: 50000, liftOffDistances: LOD_FIVE, maxPollingRate: 8000, liftOffCommand: true },
+    { name: "K5 Pro", productId: 0x4037, dpiMax: 26000, liftOffDistances: LOD_TWO, maxPollingRate: 8000, liftOffCommand: false },
+    { name: "K5 Ultra", productId: 0x4038, dpiMax: 50000, liftOffDistances: LOD_FIVE, maxPollingRate: 8000, liftOffCommand: true },
+    { name: "R7 Ultra", productId: 0x4036, dpiMax: 50000, liftOffDistances: LOD_FIVE, maxPollingRate: 8000, liftOffCommand: true },
+    { name: "V7", productId: 0x402a, dpiMax: 26000, liftOffDistances: LOD_TWO, maxPollingRate: 1000, liftOffCommand: false },
+    { name: "G3 V3", productId: 0x4029, dpiMax: 12000, liftOffDistances: LOD_TWO, maxPollingRate: 1000, liftOffCommand: false },
+];
+/**
+ * Receivers, shared across the whole generation — which is exactly why a model
+ * cannot be resolved from the host-facing product id and `0x0900` has to be
+ * asked. `receiver1k` serves the two 1000 Hz models.
+ */
+export const MCHOSE_V3_LINK_PRODUCT_IDS = {
+    receiver: 0x1014,
+    receiver8k: 0x1018,
+    receiver1k: 0x1016,
+};
+const V3_LINK_IDS = Object.values(MCHOSE_V3_LINK_PRODUCT_IDS);
+/**
+ * Every product id this protocol answers on: the mice over their own cable,
+ * plus the receivers. The V2 driver subtracts this set from its own match, so
+ * anything added here has to be a V3 device.
+ */
+export const MCHOSE_V3_PRODUCT_IDS = [
+    ...MCHOSE_V3_PRODUCTS.map((product) => product.productId),
+    ...V3_LINK_IDS,
+];
+export function mchoseV3IsProductId(productId) {
+    return MCHOSE_V3_PRODUCT_IDS.includes(productId);
+}
+/** Rate lists the firmware exposes, keyed by the model's maximum. */
+export const MCHOSE_V3_POLLING_RATES = {
+    1000: [125, 500, 1000],
+    8000: [125, 500, 1000, 2000, 4000, 8000],
+};
+/**
+ * Resolve a model, **preferring the USB product string over the id `0x0900`
+ * reports**. An unrecognised device yields null rather than a wrong DPI ceiling.
+ *
+ * The id ordering is the opposite of the A7 V2's, and deliberately so. On the
+ * V2, the id inside the battery reply is decisive because the host-facing id is
+ * shared. Here that reasoning does not hold: a capture from a real **A7 V3
+ * Ultra+** has `0x0900` reporting `0x4026`, which this table — and MCHOSE's own
+ * — lists against the *A5 V3 Ultra+*. Trusting it named the wrong mouse and,
+ * through it, handed out a 42,000 DPI ceiling and a three-step lift-off ladder
+ * to a 50,000 DPI five-step model.
+ *
+ * Whatever `0x0900` byte 2 is — a sensor or platform id, shared across shells —
+ * it is not a model id. M HUB agrees: every model lookup in the vendor bundle
+ * keys off `navigator.device.productName`, never off this field. The id is kept
+ * only as a fallback for a device whose product string says nothing useful.
+ */
+export function mchoseV3FindProduct(mouseProductId, productName) {
+    const name = productName?.trim().toUpperCase() ?? "";
+    if (name) {
+        // Longest name first so "A7 V3 Pro+" is not swallowed by "A7 V3 Pro".
+        const byName = [...MCHOSE_V3_PRODUCTS]
+            .sort((a, b) => b.name.length - a.name.length)
+            .find((product) => name.includes(product.name.toUpperCase()));
+        if (byName)
+            return byName;
+    }
+    return MCHOSE_V3_PRODUCTS.find((product) => product.productId === mouseProductId) ?? null;
+}
+/** Polling rates available to a model. */
+export function mchoseV3PollingRates(product) {
+    return MCHOSE_V3_POLLING_RATES[product.maxPollingRate] ?? MCHOSE_V3_POLLING_RATES[1000];
+}
+/** Lift-off labels, matching the ladder the model actually has. */
+export function mchoseV3LiftOffLabels(product) {
+    return product.liftOffDistances.map((mm) => `${mm} mm`);
+}
+/**
+ * Position a lift-off index on the shell's three-stop Low/Medium/High scale.
+ *
+ * The five-step models do not fit that scale, so this buckets them: the lowest
+ * step is Low, the highest is High, everything in between is Medium. The exact
+ * millimetre figure is the thing actually worth reporting and it survives in
+ * {@link mchoseV3LiftOffLabels}; this is only what the shared status field can
+ * carry.
+ */
+export function mchoseV3LiftOffStop(product, index) {
+    const steps = product.liftOffDistances.length;
+    if (index < 0 || index >= steps)
+        return null;
+    if (index === 0)
+        return "Low";
+    if (index === steps - 1)
+        return "High";
+    return "Medium";
+}
+// ── Writes ───────────────────────────────────────────────────────────────────
+//
+// Every write below replaces a whole block: this protocol has no partial
+// update, so a caller must read, edit the decoded object and send it back.
+// That is why each encoder takes a full structure rather than a set of changes.
+/** DPI bounds. The vendor's own slider starts at 200 and steps in 50s. */
+export const MCHOSE_V3_DPI_MIN = 200;
+export const MCHOSE_V3_DPI_STEP = 50;
+/** The firmware takes 0-20 ms, the same window as the A7 V2's. */
+export const MCHOSE_V3_DEBOUNCE_MAX_MS = 20;
+/** Auto-sleep in minutes, where 0 means never. */
+export const MCHOSE_V3_SLEEP_MAX_MINUTES = 60;
+export const MCHOSE_V3_ANGLE_TUNING_MIN = -30;
+export const MCHOSE_V3_ANGLE_TUNING_MAX = 30;
+function checkRange(name, value, min, max) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+        throw new RangeError(`${name} must be an integer from ${min} to ${max}.`);
+    }
+}
+/**
+ * Round a DPI to something the firmware stores exactly, and refuse anything
+ * outside the model's range rather than clamping — a silently clamped value
+ * reads back as a mismatch and looks like a protocol fault.
+ */
+export function mchoseV3RoundDpi(dpi, product) {
+    checkRange("DPI", Math.round(dpi), MCHOSE_V3_DPI_MIN, product.dpiMax);
+    const rounded = Math.round(dpi / MCHOSE_V3_DPI_STEP) * MCHOSE_V3_DPI_STEP;
+    return Math.min(Math.max(rounded, MCHOSE_V3_DPI_MIN), product.dpiMax);
+}
+/**
+ * Validate a settings block before it goes near the wire. The block is written
+ * whole, so one bad field would be written alongside eight good ones.
+ */
+export function mchoseV3CheckSettings(settings) {
+    checkRange("Profile", settings.profileIndex, 0, 15);
+    checkRange("DPI stage", settings.dpiIndex, 0, MCHOSE_V3_DPI_STAGES - 1);
+    checkRange("Wired polling", settings.wiredRateIndex, 0, 15);
+    checkRange("Wireless polling", settings.wirelessRateIndex, 0, 15);
+    checkRange("Sleep", settings.sleep, 0, MCHOSE_V3_SLEEP_MAX_MINUTES);
+    checkRange("Left debounce", settings.leftDebounceMs, 0, MCHOSE_V3_DEBOUNCE_MAX_MS);
+    checkRange("Right debounce", settings.rightDebounceMs, 0, MCHOSE_V3_DEBOUNCE_MAX_MS);
+    checkRange("Angle tuning", settings.angleTuning, MCHOSE_V3_ANGLE_TUNING_MIN, MCHOSE_V3_ANGLE_TUNING_MAX);
+    checkRange("Sensor flags", settings.sensor, 0, 0xff);
+}
+/**
+ * Rewrite the sensor byte, changing only the named fields and **preserving
+ * every bit this codec does not claim**. The A7 V2 taught this the hard way:
+ * its bit 5 was never explained, and assigning the byte rather than masking it
+ * would have cleared whatever it meant.
+ */
+export function mchoseV3EncodeSensor(current, changes) {
+    let sensor = current & 0xff;
+    const set = (mask, on) => {
+        sensor = on ? (sensor | mask) : (sensor & ~mask & 0xff);
+    };
+    if (changes.rippleControl !== undefined)
+        set(MCHOSE_V3_SENSOR_RIPPLE, changes.rippleControl);
+    if (changes.angleSnapping !== undefined)
+        set(MCHOSE_V3_SENSOR_LINEAR, changes.angleSnapping);
+    if (changes.motionSync !== undefined)
+        set(MCHOSE_V3_SENSOR_MOTION_SYNC, changes.motionSync);
+    if (changes.glassMode !== undefined)
+        set(MCHOSE_V3_SENSOR_GLASS, changes.glassMode);
+    if (changes.modeIndex !== undefined) {
+        // Bounded by the field, not by the label table: the mode is two bits and
+        // MCHOSE names only three of the four, so a faithful decode of an unknown
+        // 0b11 has to survive being written straight back. Picking a *new* mode
+        // goes through the name lookup in the driver, which cannot produce a 3.
+        checkRange("Mode", changes.modeIndex, 0, MCHOSE_V3_SENSOR_MODE_MASK);
+        sensor = (sensor & ~MCHOSE_V3_SENSOR_MODE_MASK & 0xff) | changes.modeIndex;
+    }
+    if (changes.liftOffIndex !== undefined) {
+        // Only the models that keep lift-off here, and only two bits of it.
+        checkRange("Lift-off", changes.liftOffIndex, 0, MCHOSE_V3_SENSOR_LOD_MASK >> MCHOSE_V3_SENSOR_LOD_SHIFT);
+        sensor = (sensor & ~MCHOSE_V3_SENSOR_LOD_MASK & 0xff)
+            | ((changes.liftOffIndex << MCHOSE_V3_SENSOR_LOD_SHIFT) & MCHOSE_V3_SENSOR_LOD_MASK);
+    }
+    return sensor;
+}
+/**
+ * `0x0103` — the whole DPI table for one axis. Six stages go out every time,
+ * so the untouched ones must be the values just read back.
+ */
+export function mchoseV3EncodeDpiTable(dpi, product) {
+    checkRange("Stage count", dpi.stageCount, 1, MCHOSE_V3_DPI_STAGES);
+    checkRange("Active stage", dpi.activeStage, 0, dpi.stageCount - 1);
+    if (dpi.stages.length !== MCHOSE_V3_DPI_STAGES) {
+        throw new RangeError(`The DPI table needs all ${MCHOSE_V3_DPI_STAGES} stages.`);
+    }
+    const data = [
+        dpi.profileIndex & 0xff,
+        dpi.axis & 0xff,
+        dpi.hasSeparateY ? 1 : 0,
+        dpi.stageCount & 0xff,
+        dpi.activeStage & 0xff,
+    ];
+    for (const stage of dpi.stages) {
+        const value = mchoseV3RoundDpi(stage, product);
+        data.push(value & 0xff, (value >> 8) & 0xff);
+    }
+    return data;
+}
+/** `0x0104` — one stage, without rewriting the table around it. */
+export function mchoseV3EncodeSingleDpi(profileIndex, stage, axis, dpi, product) {
+    checkRange("Stage", stage, 0, MCHOSE_V3_DPI_STAGES - 1);
+    const value = mchoseV3RoundDpi(dpi, product);
+    return [profileIndex & 0xff, stage & 0xff, axis & 0xff, value & 0xff, (value >> 8) & 0xff];
+}
+/** `0x0109` — lift-off on the models that keep it outside the sensor byte. */
+export function mchoseV3EncodeLiftOff(profileIndex, index, product) {
+    checkRange("Lift-off", index, 0, product.liftOffDistances.length - 1);
+    return [profileIndex & 0xff, index & 0xff];
+}
+/**
+ * `0x0101` — the button table, written whole in the same variable-width shape
+ * it is read in. Every button goes out, so the ones not being changed must be
+ * the assignments just read back.
+ */
+export function mchoseV3EncodeButtons(profileIndex, buttons) {
+    const data = [profileIndex & 0xff, 0, MCHOSE_V3_BUTTONS.length];
+    for (const name of MCHOSE_V3_BUTTONS) {
+        const action = buttons[name];
+        if (!action)
+            throw new Error(`The button table is missing "${name}".`);
+        const width = BUTTON_VALUE_WIDTH[action.type] ?? 2;
+        if (action.value.length !== width) {
+            throw new RangeError(`"${name}": type 0x${action.type.toString(16)} takes ${width} value bytes, not ${action.value.length}.`);
+        }
+        data.push(action.type & 0xff);
+        // Decode reversed all but the two big-endian types, so encoding mirrors it.
+        const value = BUTTON_BIG_ENDIAN_TYPES.has(action.type)
+            ? [...action.value]
+            : [...action.value].reverse();
+        for (const byte of value)
+            data.push(byte & 0xff);
+    }
+    return data;
+}
+/** Sleep timeouts the panel offers, in seconds; 0 is "never". */
+export const MCHOSE_V3_SLEEP_OPTIONS = [0, 60, 120, 180, 300, 600, 1800];
+export * from "./v3-buttons.js";
+/**
+ * A reply the firmware sends to refuse a command outright: command id `0x0000`
+ * with the checksum flag clear and `0xff` in the sequence byte. It is not a
+ * malformed frame and not noise — an A7 V3 Ultra+ answers `0x0901` with one,
+ * about a second after the request, every time.
+ *
+ * Worth recognising because the alternative is spending the whole retry budget
+ * waiting for an answer that has already arrived.
+ */
+export function mchoseV3IsRejection(body) {
+    return mchoseV3ReplyCommand(body) === 0x0000
+        && (body[FLAGS_OFFSET] ?? 0) === 0
+        && (body[LENGTH_OFFSET] ?? 0) === 0;
+}
+/**
+ * A one-byte `0xff` payload, which means "ask again" rather than carrying data.
+ * A receiver whose mouse is not currently reachable answers `0x0900` with it.
+ *
+ * M HUB's own retry helper loops while the first payload byte is `0xff`. This
+ * is stricter — it requires the payload to be *only* that byte — because a
+ * button table legitimately starts with `0xff` when the first button carries no
+ * assignment, and the vendor's looser test would reject that as busy.
+ */
+export function mchoseV3IsBusy(payload) {
+    return payload.length === 1 && payload[0] === 0xff;
+}

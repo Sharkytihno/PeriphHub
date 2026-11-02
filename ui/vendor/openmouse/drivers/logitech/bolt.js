@@ -1,0 +1,109 @@
+/**
+ * Logi Bolt transport helpers.
+ *
+ * Kept out of hidpp.ts so Bolt/MX work can land without rewriting the shared
+ * Lightspeed / direct-connect driver paths that other PRs touch often.
+ */
+import { BOLT_PAIRING_SLOTS, DEVICE_INDEX_DIRECT, DEVICE_INDEX_RECEIVER, HIDPP_BLUETOOTH_USAGE_PAGE, HIDPP_USAGE_PAGE, isBoltReceiverProduct, } from "../../logitech/index.js";
+/** Index probe on empty Bolt slots should fail fast; feature I/O keeps longer. */
+export const BOLT_INDEX_PROBE_TIMEOUT_MS = 800;
+/** True when a collection, or any nested child, matches. */
+function anyCollection(collections, matches) {
+    return collections.some((collection) => matches(collection) || anyCollection(collection.children, matches));
+}
+/** Short-report HID++ collection (Lightspeed, Bolt receiver registers). */
+export function hasHidppShortCollection(device) {
+    return anyCollection(device.collections, (collection) => collection.usagePage === HIDPP_USAGE_PAGE && collection.usage === 0x0001);
+}
+/** Long-report HID++ collection (required for Bolt device feature traffic). */
+export function hasHidppLongCollection(device) {
+    return anyCollection(device.collections, (collection) => collection.usagePage === HIDPP_USAGE_PAGE && collection.usage === 0x0002);
+}
+/**
+ * HID++ over Bluetooth, which lives on its own vendor page instead of the
+ * 0xFF00 short/long pair. Kept separate from those two so Bolt peer collapsing
+ * and report-device selection keep reasoning only about 0xFF00 interfaces.
+ *
+ * @see HIDPP_BLUETOOTH_USAGE_PAGE
+ */
+export function hasHidppBluetoothCollection(device) {
+    return anyCollection(device.collections, (collection) => collection.usagePage === HIDPP_BLUETOOTH_USAGE_PAGE);
+}
+/**
+ * Prefer Bolt's long-report collection when both HID++ endpoints are present
+ * so feature traffic lands on the interface that can carry it.
+ */
+export function boltSupportScore(device, supported) {
+    if (!supported)
+        return 0;
+    if (isBoltReceiverProduct(device.productId) && hasHidppLongCollection(device))
+        return 8;
+    return 6;
+}
+/**
+ * Collapse Bolt short+long peers to one sidebar entry (the long collection
+ * when both are authorized).
+ */
+export function collapseBoltPeers(devices) {
+    const boltLongPresent = new Set();
+    for (const device of devices) {
+        if (isBoltReceiverProduct(device.productId) && hasHidppLongCollection(device)) {
+            boltLongPresent.add(device.productId);
+        }
+    }
+    return devices.filter((device) => {
+        if (!isBoltReceiverProduct(device.productId) || !hasHidppShortCollection(device))
+            return true;
+        if (hasHidppLongCollection(device))
+            return true;
+        return !boltLongPresent.has(device.productId);
+    });
+}
+/**
+ * HID++ device-index probe order. Bolt may place the mouse on any of six
+ * pairing slots; Lightspeed stays 0x01 then 0xFF; unknown endpoints try self
+ * first so wired mice are not addressed as receivers.
+ */
+export function hidppIndexCandidates(productId, knownReceiverIds) {
+    if (isBoltReceiverProduct(productId))
+        return [...BOLT_PAIRING_SLOTS];
+    if (knownReceiverIds.has(productId))
+        return [DEVICE_INDEX_RECEIVER, DEVICE_INDEX_DIRECT];
+    return [DEVICE_INDEX_DIRECT, DEVICE_INDEX_RECEIVER];
+}
+/**
+ * Classify a root getFeature probe: only HID++ 2.0 replies mean a mouse is on
+ * that index. Bolt receivers answer HID++ 1.0 errors on empty slots / 0xFF.
+ * Anything that is not a HID++ reply at all (sendReport itself rejected, e.g.
+ * on a collection that lacks the report id) is "unreachable": no index was
+ * asked, so it must not count as an answer, let alone a sensorless one.
+ */
+export function classifyHidpp20Probe(error, isTimeout) {
+    if (isTimeout)
+        return "absent";
+    if (!(error instanceof Error) || !/^The mouse rejected that/.test(error.message))
+        return "unreachable";
+    if (/HID\+\+ 1\.0/.test(error.message))
+        return "absent";
+    return "hidpp20";
+}
+/**
+ * Bolt device features answer on the long-report collection (usage 2). The
+ * picker may hand us the short collection; use an already-authorized peer.
+ */
+export function resolveBoltReportDevice(device, peers) {
+    if (!isBoltReceiverProduct(device.productId))
+        return device;
+    if (hasHidppLongCollection(device))
+        return device;
+    const longPeer = peers.find((candidate) => candidate !== device
+        && candidate.vendorId === device.vendorId
+        && candidate.productId === device.productId
+        && hasHidppLongCollection(candidate));
+    if (!longPeer) {
+        throw new Error("Logi Bolt needs the HID++ long-report interface (usage 2). "
+            + "Reconnect and authorize both Bolt HID++ collections, or pick the usage-2 interface. "
+            + "Close Logi Options+ if the browser cannot open the device.");
+    }
+    return longPeer;
+}

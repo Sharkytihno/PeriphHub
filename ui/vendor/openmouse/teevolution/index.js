@@ -1,0 +1,510 @@
+export const TEEVOLUTION_REPORT_ID = 0x08;
+export const TEEVOLUTION_PACKET_LENGTH = 16;
+/** RapidSync 8K LCD clock — separate HID collection from Compx report 8. */
+export const TEEVOLUTION_LCD_REPORT_ID = 0x0a;
+export const TEEVOLUTION_LCD_PACKET_LENGTH = 40;
+export const TEEVOLUTION_LCD_USAGE_PAGE = 0xff08;
+export const TEEVOLUTION_LCD_USAGE = 0x02;
+export const TEEVOLUTION_LCD_SET_TIME = 0x0010;
+export const TEEVOLUTION_MAX_CHUNK = 10;
+export const TEEVOLUTION_DPI_MAX = 42000;
+export const TEEVOLUTION_PRODUCT_IDS = new Set([0xf520, 0xf523, 0xf5bb, 0xf522]);
+export const TEEVOLUTION_POLLING_RATES = [125, 250, 500, 1000, 2000, 4000, 8000];
+export const TEEVOLUTION_SLEEP_OPTIONS = [1, 3, 6, 12, 30, 60, 180];
+/** Teevolink "Highest performance" duration codes (flash 0xB7). */
+export const TEEVOLUTION_PERFORMANCE_TIME_OPTIONS = [1, 3, 6, 12, 30, 60, 90];
+export const TEEVOLUTION_PERFORMANCE_TIME_LABELS = [
+    [1, "10 seconds"], [3, "30 seconds"], [6, "1 minute"], [12, "2 minutes"],
+    [30, "5 minutes"], [60, "10 minutes"], [90, "15 minutes"],
+];
+export const TEEVOLUTION_DPI_LIGHT_MODES = [0, 1, 2];
+export const TEEVOLUTION_DEVICE_PROFILES = new Map([
+    [14, {
+            cid: 14,
+            name: "Terra Pro",
+            protocol: "compX-terra-v1",
+            dpiStageCount: 4,
+            dpi: {
+                min: 50,
+                standardMax: 30_000,
+                max: TEEVOLUTION_DPI_MAX,
+                standardStep: 50,
+                highStep: 100,
+            },
+            pollingRates: TEEVOLUTION_POLLING_RATES,
+            liftOffDistances: ["Low", "Medium", "High"],
+            debounce: { min: 0, max: 20 },
+            sleepOptions: TEEVOLUTION_SLEEP_OPTIONS,
+            performanceTimeOptions: TEEVOLUTION_PERFORMANCE_TIME_OPTIONS,
+            sensorModes: ["Eco", "High"],
+            dpiLighting: {
+                modes: TEEVOLUTION_DPI_LIGHT_MODES,
+                brightness: { min: 1, max: 10 },
+                speed: { min: 1, max: 5 },
+            },
+        }],
+]);
+export function teevolutionProfileForCid(cid) {
+    return TEEVOLUTION_DEVICE_PROFILES.get(cid) ?? null;
+}
+export const TEEVOLUTION_COMMAND = {
+    encryptionData: 0x01,
+    deviceOnline: 0x03,
+    batteryLevel: 0x04,
+    writeFlashData: 0x07,
+    readFlashData: 0x08,
+    getCurrentConfig: 0x0e,
+    setCurrentConfig: 0x0f,
+    readVersionId: 0x12,
+    getDongleVersion: 0x1d,
+    getRssi: 0x2b,
+};
+/** Flash offsets used by Teevolink / Compx HUB for Terra Pro. */
+export const TEEVOLUTION_FLASH = {
+    reportRate: 0,
+    /** Number of enabled DPI stages (1…dpiStageCount). */
+    maxDpiStage: 2,
+    /** Active DPI stage index (0-based). */
+    currentDpi: 4,
+    liftOffDistance: 10,
+    /** Base of 4-byte DPI stage records. */
+    dpiValues: 12,
+    dpiLightMode: 76,
+    dpiLightBrightness: 78,
+    dpiLightSpeed: 80,
+    dpiLightState: 82,
+    /** Base of 4-byte key-function records (one per physical button). */
+    keyFunction: 96,
+    debounceTime: 169,
+    motionSync: 171,
+    sleepTime: 173,
+    angleSnapping: 175,
+    rippleControl: 177,
+    performanceState: 181,
+    performanceTime: 183,
+    sensorMode: 185,
+};
+/** Teevolink MouseKeyFunction class byte stored at flash 0x60 + 4×index. */
+export const TEEVOLUTION_KEY_CLASS = {
+    disable: 0,
+    mouse: 1,
+    dpi: 2,
+    tilt: 3,
+};
+export const TEEVOLUTION_BUTTONS = [
+    { name: "Left", index: 0 },
+    { name: "Right", index: 1 },
+    { name: "Middle", index: 2 },
+    { name: "Back", index: 3 },
+    { name: "Forward", index: 4 },
+    { name: "DPI", index: 5 },
+];
+/** Simple assignments the generic remap dropdown can write. */
+export const TEEVOLUTION_BUTTON_ACTIONS = [
+    { label: "Left Click", cls: TEEVOLUTION_KEY_CLASS.mouse, param: 0x0100 },
+    { label: "Right Click", cls: TEEVOLUTION_KEY_CLASS.mouse, param: 0x0200 },
+    { label: "Middle Click", cls: TEEVOLUTION_KEY_CLASS.mouse, param: 0x0400 },
+    { label: "Backward", cls: TEEVOLUTION_KEY_CLASS.mouse, param: 0x0800 },
+    { label: "Forward", cls: TEEVOLUTION_KEY_CLASS.mouse, param: 0x1000 },
+    { label: "DPI Loop", cls: TEEVOLUTION_KEY_CLASS.dpi, param: 0x0100 },
+    { label: "DPI+", cls: TEEVOLUTION_KEY_CLASS.dpi, param: 0x0200 },
+    { label: "DPI-", cls: TEEVOLUTION_KEY_CLASS.dpi, param: 0x0300 },
+    { label: "Scroll Left", cls: TEEVOLUTION_KEY_CLASS.tilt, param: 0x0100 },
+    { label: "Scroll Right", cls: TEEVOLUTION_KEY_CLASS.tilt, param: 0x0200 },
+    { label: "Disable", cls: TEEVOLUTION_KEY_CLASS.disable, param: 0x0000 },
+];
+export const TEEVOLUTION_BUTTON_OPTIONS = TEEVOLUTION_BUTTON_ACTIONS.map((action) => action.label);
+/**
+ * What the reference firmware's own configurators offer (G-Wolves' web
+ * driver, Dareu's panel). Tilt is Teevolution's addition, so the other brands
+ * on this key table leave it out.
+ */
+export const TEEVOLUTION_SHARED_BUTTON_OPTIONS = TEEVOLUTION_BUTTON_ACTIONS
+    .filter((action) => action.cls !== TEEVOLUTION_KEY_CLASS.tilt)
+    .map((action) => action.label);
+export const TEEVOLUTION_KEY_RECORD_LENGTH = 4;
+export const TEEVOLUTION_KEY_TABLE_LENGTH = TEEVOLUTION_BUTTONS.length * TEEVOLUTION_KEY_RECORD_LENGTH;
+/** TeevoLink ProfileOptions: four firmware-managed flash banks. */
+export const TEEVOLUTION_PROFILE_COUNT = 4;
+export function teevolutionKeyFunctionAddress(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= TEEVOLUTION_BUTTONS.length) {
+        throw new Error("Teevolution button index is out of range.");
+    }
+    return TEEVOLUTION_FLASH.keyFunction + index * TEEVOLUTION_KEY_RECORD_LENGTH;
+}
+export function teevolutionEncodeKeyFunction(cls, param) {
+    if (!Number.isInteger(cls) || cls < 0 || cls > 0xff) {
+        throw new Error("Teevolution key class must be one byte.");
+    }
+    if (!Number.isInteger(param) || param < 0 || param > 0xffff) {
+        throw new Error("Teevolution key parameter must be a 16-bit value.");
+    }
+    const bytes = [cls, (param >> 8) & 0xff, param & 0xff];
+    return new Uint8Array([...bytes, teevolutionDataChecksum(bytes)]);
+}
+export function teevolutionDecodeKeyFunction(data) {
+    const cls = data[0] ?? 0;
+    const param = ((data[1] ?? 0) << 8) | (data[2] ?? 0);
+    const checksumValid = data.length >= 4
+        && (data[3] ?? 0) === teevolutionDataChecksum([cls, (param >> 8) & 0xff, param & 0xff]);
+    return { cls, param, checksumValid };
+}
+export function teevolutionFindButtonAction(label) {
+    return TEEVOLUTION_BUTTON_ACTIONS.find((action) => action.label === label) ?? null;
+}
+export function teevolutionFindButton(name) {
+    return TEEVOLUTION_BUTTONS.find((button) => button.name === name) ?? null;
+}
+export function teevolutionKeyFunctionLabel(data) {
+    const { cls, param } = teevolutionDecodeKeyFunction(data);
+    return TEEVOLUTION_BUTTON_ACTIONS.find((action) => action.cls === cls && action.param === param)?.label
+        ?? "Custom";
+}
+export function teevolutionIsLeftClick(cls, param) {
+    return cls === TEEVOLUTION_KEY_CLASS.mouse && param === 0x0100;
+}
+export function teevolutionKeyTableHasLeftClick(table) {
+    for (let index = 0; index < TEEVOLUTION_BUTTONS.length; index += 1) {
+        const offset = index * TEEVOLUTION_KEY_RECORD_LENGTH;
+        const { cls, param } = teevolutionDecodeKeyFunction(table.slice(offset, offset + TEEVOLUTION_KEY_RECORD_LENGTH));
+        if (teevolutionIsLeftClick(cls, param))
+            return true;
+    }
+    return false;
+}
+/**
+ * `base` is where the key table starts inside `flash`: the default suits a
+ * whole flash image read from address 0, and 0 suits a buffer holding just
+ * the table. `buttons` trims the list for a mouse without a DPI slot.
+ */
+export function teevolutionDecodeButtonMappings(flash, base = TEEVOLUTION_FLASH.keyFunction, buttons = TEEVOLUTION_BUTTONS.length) {
+    const mappings = {};
+    for (const { name, index } of TEEVOLUTION_BUTTONS.slice(0, buttons)) {
+        const offset = base + index * TEEVOLUTION_KEY_RECORD_LENGTH;
+        mappings[name] = flash.length >= offset + TEEVOLUTION_KEY_RECORD_LENGTH
+            ? teevolutionKeyFunctionLabel(flash.slice(offset, offset + TEEVOLUTION_KEY_RECORD_LENGTH))
+            : "Custom";
+    }
+    return mappings;
+}
+/**
+ * The six key records on their own. Two records per read keeps every request
+ * under the 10-byte payload cap these transports share.
+ */
+export async function teevolutionReadKeyTable(read) {
+    const table = new Uint8Array(TEEVOLUTION_KEY_TABLE_LENGTH);
+    for (let offset = 0; offset < table.length; offset += 2 * TEEVOLUTION_KEY_RECORD_LENGTH) {
+        table.set(await read(TEEVOLUTION_FLASH.keyFunction + offset, 2 * TEEVOLUTION_KEY_RECORD_LENGTH), offset);
+    }
+    return table;
+}
+/**
+ * One remap, for any firmware that keeps this key table at this address
+ * (Teevolution, Pulsar, Lamzu Atlantis, VGN F2, G-Wolves). Writes only the
+ * record that changes and reads it back. Returns the confirmed action, or
+ * null when the button already had it and nothing was written. `buttons`
+ * and `actions` hold a driver to what its mouse actually offers.
+ */
+export async function teevolutionRemapButton(read, write, button, action, { buttons = TEEVOLUTION_BUTTONS.length, actions = TEEVOLUTION_BUTTON_OPTIONS } = {}) {
+    const slot = teevolutionFindButton(button);
+    if (!slot || slot.index >= buttons)
+        throw new Error(`This mouse has no "${button}" button.`);
+    const table = await teevolutionReadKeyTable(read);
+    const offset = slot.index * TEEVOLUTION_KEY_RECORD_LENGTH;
+    if (teevolutionKeyFunctionLabel(table.slice(offset, offset + TEEVOLUTION_KEY_RECORD_LENGTH)) === action)
+        return null;
+    const assigned = actions.includes(action) ? teevolutionFindButtonAction(action) : null;
+    if (!assigned)
+        throw new Error(`Unknown button action "${action}".`);
+    const payload = teevolutionEncodeKeyFunction(assigned.cls, assigned.param);
+    table.set(payload, offset);
+    if (!teevolutionKeyTableHasLeftClick(table))
+        throw new Error("Keep at least one button as Left Click.");
+    const address = teevolutionKeyFunctionAddress(slot.index);
+    await write(address, payload);
+    const confirmed = teevolutionKeyFunctionLabel(await read(address, payload.length));
+    if (confirmed !== assigned.label)
+        throw new Error(`The mouse kept ${confirmed} on ${button} instead of ${assigned.label}.`);
+    return confirmed;
+}
+export const TEEVOLUTION_TYPE_MAX_POLL = {
+    0: 1000,
+    1: 4000,
+    2: 1000,
+    3: 8000,
+    4: 2000,
+    5: 8000,
+};
+function assertByte(value, label) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xff) {
+        throw new Error(`${label} must be one byte.`);
+    }
+}
+export function teevolutionPacketChecksum(packet) {
+    let sum = 0;
+    const limit = Math.min(packet.length, TEEVOLUTION_PACKET_LENGTH - 1);
+    for (let index = 0; index < limit; index += 1)
+        sum += packet[index] & 0xff;
+    return (0x55 - (sum & 0xff) - TEEVOLUTION_REPORT_ID) & 0xff;
+}
+export function teevolutionPacketChecksumIsValid(payload) {
+    if (payload.length !== TEEVOLUTION_PACKET_LENGTH)
+        return false;
+    return teevolutionPacketChecksum(payload) === (payload[15] & 0xff);
+}
+export function teevolutionDataChecksum(data) {
+    let sum = 0;
+    for (const value of data)
+        sum += value & 0xff;
+    return (0x55 - (sum & 0xff)) & 0xff;
+}
+function finalize(payload) {
+    payload[15] = teevolutionPacketChecksum(payload);
+    return payload;
+}
+export function teevolutionBuildSimplePayload(command) {
+    assertByte(command, "Teevolution command");
+    const payload = new Uint8Array(TEEVOLUTION_PACKET_LENGTH);
+    payload[0] = command;
+    return finalize(payload);
+}
+export function teevolutionBuildReadPayload(address, length) {
+    if (!Number.isInteger(address) || address < 0 || address > 0xffff) {
+        throw new Error("Teevolution address is out of range.");
+    }
+    if (!Number.isInteger(length) || length < 1 || length > TEEVOLUTION_MAX_CHUNK) {
+        throw new Error("Teevolution read length must be 1–10 bytes.");
+    }
+    const payload = teevolutionBuildSimplePayload(TEEVOLUTION_COMMAND.readFlashData);
+    payload[2] = address >> 8;
+    payload[3] = address & 0xff;
+    payload[4] = length;
+    return finalize(payload);
+}
+export function teevolutionBuildWritePayload(address, data) {
+    if (!Number.isInteger(address) || address < 0 || address > 0xffff) {
+        throw new Error("Teevolution address is out of range.");
+    }
+    if (data.length < 1 || data.length > TEEVOLUTION_MAX_CHUNK) {
+        throw new Error("Teevolution write length must be 1–10 bytes.");
+    }
+    const payload = teevolutionBuildSimplePayload(TEEVOLUTION_COMMAND.writeFlashData);
+    payload[2] = address >> 8;
+    payload[3] = address & 0xff;
+    payload[4] = data.length;
+    payload.set(data.map((byte) => byte & 0xff), 5);
+    return finalize(payload);
+}
+export function teevolutionBuildWriteScalarPayload(address, value) {
+    assertByte(value, "Teevolution scalar");
+    return teevolutionBuildWritePayload(address, [value, (0x55 - value) & 0xff]);
+}
+export function teevolutionBuildOnlinePayload(enabled) {
+    const payload = teevolutionBuildSimplePayload(TEEVOLUTION_COMMAND.deviceOnline);
+    payload[5] = enabled ? 1 : 0;
+    return finalize(payload);
+}
+/** Build SetCurrentConfig with TeevoLink's length byte and zero-based bank. */
+export function teevolutionBuildSetCurrentProfile(profile) {
+    if (!Number.isInteger(profile) || profile < 0 || profile >= TEEVOLUTION_PROFILE_COUNT) {
+        throw new Error(`Teevolution profile must be between 0 and ${TEEVOLUTION_PROFILE_COUNT - 1}.`);
+    }
+    const payload = teevolutionBuildSimplePayload(TEEVOLUTION_COMMAND.setCurrentConfig);
+    payload[4] = 1;
+    payload[5] = profile;
+    return finalize(payload);
+}
+/**
+ * Decode GetCurrentConfig. TeevoLink treats status 1 as “no profile switch”
+ * (`supportChangeProfile = false`); only a 0–3 bank in byte 5 is usable.
+ */
+export function teevolutionDecodeCurrentProfile(response) {
+    if (!teevolutionPacketChecksumIsValid(response))
+        return null;
+    if (response[0] !== TEEVOLUTION_COMMAND.getCurrentConfig || response[1] !== 0)
+        return null;
+    const profile = response[5] ?? 0;
+    return profile < TEEVOLUTION_PROFILE_COUNT ? profile : null;
+}
+export function teevolutionParseReadResponse(response, address, length) {
+    if (!teevolutionPacketChecksumIsValid(response))
+        return null;
+    if (response[0] !== TEEVOLUTION_COMMAND.readFlashData || response[1] !== 0)
+        return null;
+    if (response[2] !== ((address >> 8) & 0xff) || response[3] !== (address & 0xff))
+        return null;
+    if (response[4] !== length || response.length < 5 + length)
+        return null;
+    return response.slice(5, 5 + length);
+}
+export function teevolutionParseBattery(response) {
+    if (!teevolutionPacketChecksumIsValid(response))
+        return null;
+    if (response[0] !== TEEVOLUTION_COMMAND.batteryLevel || response[1] !== 0)
+        return null;
+    const raw = response[5] ?? 0xff;
+    return {
+        percent: raw <= 100 ? raw : null,
+        charging: response[6] === 1,
+    };
+}
+export function teevolutionEncodePollingRate(rate) {
+    if (!TEEVOLUTION_POLLING_RATES.includes(rate)) {
+        throw new Error("Unsupported Teevolution polling rate.");
+    }
+    const encoded = rate <= 1000 ? 1000 / rate : rate / 2000 * 16;
+    if (!Number.isInteger(encoded))
+        throw new Error("Unsupported Teevolution polling rate.");
+    return encoded;
+}
+export function teevolutionDecodePollingRate(encoded) {
+    return encoded >= 16 ? encoded / 16 * 2000 : 1000 / encoded;
+}
+/**
+ * PAW3950 Compx packing used by Teevolink: 50 DPI steps below 30,100, then
+ * 100 DPI steps to 42,000 via dpiEx 0x11 (halve before packing).
+ */
+export function teevolutionEncodeDpi(dpi) {
+    let dpiEx = 0;
+    let scaled = dpi;
+    if (dpi >= 30100) {
+        dpiEx = 0x11;
+        scaled = dpi / 2;
+    }
+    const raw = scaled / 50 - 1;
+    if (!Number.isInteger(raw) || raw < 0) {
+        throw new Error(`${dpi} DPI cannot be encoded for the Terra Pro.`);
+    }
+    const high = raw >> 8;
+    const flags = (high << 2) | (high << 6) | dpiEx | (dpiEx << 4);
+    const low = raw & 0xff;
+    return new Uint8Array([low, low, flags & 0xff, teevolutionDataChecksum([low, low, flags & 0xff])]);
+}
+export function teevolutionDecodeDpi(data) {
+    const flags = data[2] ?? 0;
+    const raw = (data[0] ?? 0) + (((flags & 0x0c) >> 2) << 8);
+    const dpiEx = flags & 0x03;
+    let dpi = (raw + 1) * 50;
+    if ((dpiEx & 0x01) !== 0)
+        dpi *= 2;
+    if ((dpiEx & 0x02) !== 0)
+        dpi *= 2;
+    return dpi;
+}
+export function teevolutionDecodeLiftOff(value) {
+    return value === 3 ? "Low" : value === 1 ? "Medium" : value === 2 ? "High" : null;
+}
+export function teevolutionEncodeLiftOff(liftOffDistance) {
+    return { Low: 3, Medium: 1, High: 2 }[liftOffDistance];
+}
+export function teevolutionDecodeFirmwareVersion(label, response) {
+    return `${label} v${response[5] ?? 0}.${(response[6] ?? 0).toString(16).padStart(2, "0")}`;
+}
+export function teevolutionDpiOptions(profile) {
+    const options = [];
+    for (let dpi = profile.dpi.min; dpi <= profile.dpi.standardMax; dpi += profile.dpi.standardStep) {
+        options.push(dpi);
+    }
+    for (let dpi = profile.dpi.standardMax + profile.dpi.highStep; dpi <= profile.dpi.max; dpi += profile.dpi.highStep) {
+        options.push(dpi);
+    }
+    return options;
+}
+/** Converts Teevolink's 1–10 brightness slider to the byte stored in flash 0x4E. */
+export function teevolutionEncodeDpiLightBrightness(level) {
+    if (!Number.isInteger(level) || level < 1 || level > 10) {
+        throw new Error("Teevolution DPI light brightness must be from 1 to 10.");
+    }
+    if (level === 1)
+        return 0x10;
+    if ([2, 3, 4, 6, 7, 8].includes(level))
+        return 0x1e * (level - 1);
+    if (level === 5)
+        return 0x80;
+    if (level === 9)
+        return 0xe6;
+    return 0xff;
+}
+/** Mirrors Teevolink's fallback to level 5 for an unrecognised stored byte. */
+export function teevolutionDecodeDpiLightBrightness(value) {
+    if (value !== 0 && value % 0x1e === 0) {
+        const level = value / 0x1e + 1;
+        if (Number.isInteger(level) && level >= 2 && level <= 8)
+            return level;
+    }
+    if (value === 0x10)
+        return 1;
+    if (value === 0x80)
+        return 5;
+    if (value === 0xe6)
+        return 9;
+    if (value === 0xff)
+        return 10;
+    return 5;
+}
+export function teevolutionDecodeDpiLightMode(mode, state) {
+    if (state !== 1)
+        return 0;
+    return mode === 2 ? 2 : 1;
+}
+export function teevolutionEncodeSensorMode(mode) {
+    if (mode === "High")
+        return 1;
+    if (mode === "Eco")
+        return 0;
+    throw new Error("Ultra sensor mode is enforced by the link and cannot be written.");
+}
+export function teevolutionDecodeSensorModeStored(value) {
+    return value === 1 ? "High" : "Eco";
+}
+/**
+ * Mirrors Teevolink Update_MS_SensorModeDisplay for PAW3950 Terra Pro links.
+ * Ultra (256) is display-only when high poll rates force corded tracking.
+ */
+export function teevolutionSensorModeUi(options) {
+    const storedValue = options.storedMode === 1 ? 1 : 0;
+    if (options.connection === "Wired" || options.fps20k) {
+        return { mode: "Ultra", editable: false, storedValue };
+    }
+    if (options.pollingRateHz < 2000) {
+        return { mode: storedValue === 1 ? "High" : "Eco", editable: true, storedValue };
+    }
+    if (options.pollingRateHz === 8000) {
+        return { mode: "Ultra", editable: false, storedValue };
+    }
+    // 2000/4000 Hz wireless on PAW3950 uses corded/Ultra tracking.
+    return { mode: "Ultra", editable: false, storedValue };
+}
+/**
+ * Teevolink Generate_CRC for RapidSync LCD writes: last byte is
+ * `(0x55 - sum(packet[0..len-2])) & 0xff`, including the report-id byte.
+ */
+export function teevolutionLcdChecksum(packet) {
+    if (packet.length < 2)
+        throw new Error("Teevolution LCD packets need a checksum byte.");
+    let sum = 0;
+    for (let index = 0; index < packet.length - 1; index += 1)
+        sum += packet[index] & 0xff;
+    return (0x55 - (sum & 0xff)) & 0xff;
+}
+/**
+ * 40-byte RapidSync set-time write, including report id 0x0A as byte 0.
+ * DateTime layout matches Teevolink GetCurrentTimer_Tick (year big-endian,
+ * Sunday = 0). WebHID sendReport uses bytes 1…39.
+ */
+export function teevolutionBuildLcdTimePacket(now) {
+    const packet = new Uint8Array(TEEVOLUTION_LCD_PACKET_LENGTH);
+    packet[0] = TEEVOLUTION_LCD_REPORT_ID;
+    packet[1] = TEEVOLUTION_LCD_SET_TIME >> 8;
+    packet[2] = TEEVOLUTION_LCD_SET_TIME & 0xff;
+    packet[3] = (now.getFullYear() >> 8) & 0xff;
+    packet[4] = now.getFullYear() & 0xff;
+    packet[5] = now.getMonth() + 1;
+    packet[6] = now.getDate();
+    packet[7] = now.getHours();
+    packet[8] = now.getMinutes();
+    packet[9] = now.getSeconds();
+    packet[10] = now.getDay();
+    packet[TEEVOLUTION_LCD_PACKET_LENGTH - 1] = teevolutionLcdChecksum(packet);
+    return packet;
+}

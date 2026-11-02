@@ -1,0 +1,184 @@
+export const PULSAR_VENDOR_ID = 0x3710;
+export const PULSAR_CONFIG_REPORT_ID = 0x08;
+export const PULSAR_CONFIG_PACKET_LENGTH = 16;
+export const PULSAR_COMMAND = {
+    encryptionData: 0x01, deviceOnline: 0x03, batteryLevel: 0x04,
+    writeFlashData: 0x07, readFlashData: 0x08, getCurrentConfig: 0x0e,
+    readVersionId: 0x12, setDongleRgb: 0x14, getDongleRgb: 0x15,
+    getDongleVersion: 0x1d, getRssi: 0x2b,
+};
+export const PULSAR_FLASH = {
+    reportRate: 0, currentDpi: 4, liftOffDistance: 10, dpiValues: 12,
+    debounceTime: 169, motionSync: 171, sleepTime: 173,
+    angleSnapping: 175, rippleControl: 177, performanceState: 181,
+    performanceTime: 183,
+};
+export const PULSAR_PRO_PRODUCT_ID = 0x5405;
+export const PULSAR_PRO_REPORT_ID = 0;
+export const PULSAR_PRO_REPORT_LENGTH = 63;
+export const PULSAR_PRO_COMMAND = {
+    dongleVersion: 0xa0, rssi: 0xa4, dpi: 0xb1, polling: 0xb2, lod: 0xb3,
+    battery: 0xb4, motionSync: 0xb5, ripple: 0xb6, angleSnap: 0xb7,
+    angleTune: 0xb8, wheelAcceleration: 0xb9, lowBattery: 0xbe,
+    mouseVersion: 0xbf, remoteLed: 0xc0, dpiLed: 0xc1, powerSaving: 0xc2,
+    saveAllow: 0xc3, turboMode: 0xc4, debounce: 0xc5, profile: 0xc6,
+};
+export function pulsarPacketChecksum(packet) {
+    let sum = PULSAR_CONFIG_REPORT_ID;
+    for (let index = 0; index < packet.length - 1; index += 1)
+        sum += packet[index] ?? 0;
+    return (0x55 - (sum & 0xff)) & 0xff;
+}
+export function pulsarDataChecksum(data) {
+    let sum = 0;
+    for (const value of data)
+        sum += value;
+    return (0x55 - (sum & 0xff)) & 0xff;
+}
+export function pulsarDecodePollingRate(encoded) {
+    return encoded >= 16 ? encoded / 16 * 2000 : 1000 / encoded;
+}
+export function pulsarEncodePollingRate(rate) {
+    const encoded = rate <= 1000 ? 1000 / rate : rate / 2000 * 16;
+    if (!Number.isInteger(encoded) || ![125, 250, 500, 1000, 2000, 4000, 8000].includes(rate)) {
+        throw new Error("Unsupported Pulsar polling rate.");
+    }
+    return encoded;
+}
+// Real Pulsar-vendor (0x3710) flash mice, including the X2 CrazyLight (CID
+// 0x57), use this 10-step low range plus a dpiEx-flagged high range. Verified
+// against hardware 2026-08-19: bbb.pulsar.gg (Pulsar's own configurator) writes
+// exactly these bytes for a CrazyLight's low-range DPI stages (e.g. 800 DPI ->
+// raw 79, flags 0 -> (79+1)*10 = 800), and a CrazyLight physically tracks at
+// the value this formula decodes, not at the pulsarVgn* 50-step formula below.
+export function pulsarDecodeDpi(data) {
+    if (data.length < 4)
+        return null;
+    const low = data[0] ?? 0;
+    const duplicate = data[1] ?? 0;
+    const flags = data[2] ?? 0;
+    const checksum = data[3] ?? 0;
+    if (low !== duplicate || ((low + duplicate + flags + checksum) & 0xff) !== 0x55)
+        return null;
+    const raw = low + (((flags & 0x0c) >> 2) << 8);
+    let dpi = (raw + 1) * 10;
+    if ((flags & 0x02) !== 0)
+        dpi = dpi * 5 + 10000;
+    if ((flags & 0x01) !== 0)
+        dpi *= 2;
+    return dpi;
+}
+export function pulsarEncodeDpi(dpi) {
+    let raw;
+    let dpiEx;
+    if (dpi >= 30100) {
+        raw = (dpi / 2 - 10050) / 50;
+        dpiEx = 0x33;
+    }
+    else if (dpi >= 10050) {
+        raw = (dpi - 10050) / 50;
+        dpiEx = 0x22;
+    }
+    else {
+        raw = dpi / 10 - 1;
+        dpiEx = 0;
+    }
+    const high = raw >> 8;
+    const result = new Uint8Array(4);
+    result[0] = raw;
+    result[1] = raw;
+    result[2] = (high << 2) | (high << 6) | dpiEx | (dpiEx << 4);
+    result[3] = pulsarDataChecksum(result.slice(0, 3));
+    return result;
+}
+export function pulsarDpiOptions() {
+    const options = [];
+    for (let dpi = 10; dpi <= 10000; dpi += 10)
+        options.push(dpi);
+    for (let dpi = 10050; dpi <= 30000; dpi += 50)
+        options.push(dpi);
+    for (let dpi = 30100; dpi <= 32000; dpi += 100)
+        options.push(dpi);
+    return options;
+}
+// The Pulsar 4K Wireless Receiver is sold as a Pulsar product but enumerates
+// under the shared Teevolution/VGN vendor id (0x3554) and speaks a different,
+// flat 50-step DPI encoding with no dpiEx branching. This does NOT apply to
+// real Pulsar-vendor (0x3710) mice — scope callers by device.vendorId, not by
+// CID, or a genuine Pulsar mouse's physical DPI ends up 1/5 of what's selected.
+export function pulsarVgnDecodeDpi(data) {
+    if (data.length < 4)
+        return null;
+    const low = data[0] ?? 0;
+    const duplicate = data[1] ?? 0;
+    const flags = data[2] ?? 0;
+    const checksum = data[3] ?? 0;
+    if (low !== duplicate || ((low + duplicate + flags + checksum) & 0xff) !== 0x55)
+        return null;
+    return ((((flags >> 2) & 0x03) << 8) + low + 1) * 50;
+}
+export function pulsarVgnEncodeDpi(dpi) {
+    if (!Number.isInteger(dpi) || dpi < 50 || dpi > 26000 || dpi % 50 !== 0) {
+        throw new Error("Pulsar DPI must be 50–26,000 in 50 DPI steps.");
+    }
+    const encoded = dpi / 50 - 1;
+    const low = encoded & 0xff;
+    const high = (encoded >> 8) & 0x03;
+    const flags = (high << 2) | (high << 6);
+    return new Uint8Array([low, low, flags, (0x55 - low - low - flags) & 0xff]);
+}
+export function pulsarVgnDpiOptions() {
+    const options = [];
+    for (let dpi = 50; dpi <= 26000; dpi += 50)
+        options.push(dpi);
+    return options;
+}
+export function readUint16LE(data, offset) {
+    return (data[offset] ?? 0) | ((data[offset + 1] ?? 0) << 8);
+}
+// XS-1 protocol used by the X3 family: unnumbered 64-byte feature reports
+// (report ID 0, which WebHID does not prefix) carrying a 16-bit
+// little-endian checksum of bytes 0..61 in bytes 62..63.
+export const PULSAR_XS1_PRODUCT_IDS = new Set([0x3404, 0x3409, 0x3410, 0x5402, 0x5403]);
+export const PULSAR_XS1_WIRELESS_PRODUCT_IDS = new Set([0x5402, 0x5403]);
+export const PULSAR_XS1_FEATURE_REPORT_ID = 0;
+export const PULSAR_XS1_PACKET_LENGTH = 64;
+export const PULSAR_XS1_DPI_MIN = 50;
+export const PULSAR_XS1_DPI_MAX = 26000;
+export const PULSAR_XS1_DPI_STEP = 50;
+export const PULSAR_XS1_DEBOUNCE_MAX_MS = 15;
+export const PULSAR_XS1_POLLING_RATES = [125, 250, 500, 1000];
+export function pulsarXs1Checksum(packet) {
+    let sum = 0;
+    for (let index = 0; index < packet.length - 2; index += 1)
+        sum += packet[index] ?? 0;
+    return sum & 0xffff;
+}
+export function pulsarXs1EncodeRequest(command) {
+    const packet = new Uint8Array(PULSAR_XS1_PACKET_LENGTH);
+    packet[0] = 0x00;
+    for (let index = 0; index < command.length; index += 1)
+        packet[index + 1] = command[index] ?? 0;
+    const checksum = pulsarXs1Checksum(packet);
+    packet[62] = checksum & 0xff;
+    packet[63] = checksum >> 8;
+    return packet;
+}
+export function pulsarXs1DpiOptions() {
+    const options = [];
+    for (let dpi = PULSAR_XS1_DPI_MIN; dpi <= PULSAR_XS1_DPI_MAX; dpi += PULSAR_XS1_DPI_STEP)
+        options.push(dpi);
+    return options;
+}
+export function pulsarXs1DecodePollingRate(value) {
+    return PULSAR_XS1_POLLING_QUERY_RATES[value] ?? null;
+}
+const PULSAR_XS1_POLLING_QUERY_RATES = {
+    240: 125, 120: 250, 60: 500, 30: 1000, 15: 2000, 8: 4000, 4: 8000,
+};
+export function readUint32LE(data, offset) {
+    return ((data[offset] ?? 0) | ((data[offset + 1] ?? 0) << 8) | ((data[offset + 2] ?? 0) << 16) | ((data[offset + 3] ?? 0) << 24)) >>> 0;
+}
+export function uint32LE(value) {
+    return new Uint8Array([value, value >>> 8, value >>> 16, value >>> 24]);
+}

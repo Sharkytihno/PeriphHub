@@ -1,0 +1,117 @@
+export const LUNAFURY_BUTTON_RATES = [[1, 1000], [32, 2000], [64, 4000], [128, 8000]];
+export const LUNAFURY_DPI_DEFAULTS = [400, 800, 1600, 3200, 6400, 30000];
+function whole(value, min, max, label) {
+    if (!Number.isInteger(value) || value < min || value > max)
+        throw new Error(`${label} must be between ${min} and ${max}.`);
+}
+function profile(id) { whole(id, 1, 3, "LunaFury profile"); }
+function maximum(count) { if (count !== 5 && count !== 6)
+    throw new Error("LunaFury supports five or six DPI stages."); }
+export function lunafuryValidateDpi(value) {
+    whole(value, 50, 30000, "DPI");
+    if (value % 50 !== 0)
+        throw new Error("DPI must use 50 DPI steps.");
+}
+const request = (page, command, length, args) => ({ target: 2, page, command, length, args });
+const scoped = (id, page, command, length = 2, rest = []) => {
+    profile(id);
+    return request(page, command, length, [id, ...rest]);
+};
+export const LUNAFURY_ONBOARD_READ = {
+    profile: () => request(0, 0x85, 1, []),
+    buttonRate: (id) => scoped(id, 0, 0x9f),
+    dpiStages: (id, maxStages) => {
+        maximum(maxStages);
+        return scoped(id, 1, 0x81, 10, [maxStages]);
+    },
+    activeStage: (id) => scoped(id, 1, 0x82),
+    separateAxes: (id) => scoped(id, 1, 0x8d),
+};
+export const LUNAFURY_ONBOARD_WRITE = {
+    profile: (id) => scoped(id, 0, 0x05, 1),
+    buttonRate: (id, hertz) => {
+        const code = LUNAFURY_BUTTON_RATES.find(([, rate]) => rate === hertz)?.[0];
+        if (code === undefined)
+            throw new Error("Unknown LunaFury button polling rate.");
+        return scoped(id, 0, 0x1f, 2, [code]);
+    },
+    activeStage: (id, stage, count) => {
+        whole(count, 1, 6, "DPI stage count");
+        whole(stage, 0, count - 1, "DPI stage index");
+        return scoped(id, 1, 0x02, 2, [stage + 1]);
+    },
+    separateAxes: (id, enabled) => {
+        if (typeof enabled !== "boolean")
+            throw new Error("Separate DPI axes needs an on/off value.");
+        return scoped(id, 1, 0x0d, 2, [+enabled]);
+    },
+};
+export function lunafuryDecodeButtonRate(payload) {
+    return payload && payload.length >= 2 ? LUNAFURY_BUTTON_RATES.find(([code]) => code === payload[1])?.[1] : undefined;
+}
+export function lunafuryDecodeSeparateAxes(payload) {
+    return payload && payload.length >= 2 && payload[1] <= 1 ? payload[1] === 1 : undefined;
+}
+export function lunafuryDecodeDpiStages(payload, maxStages) {
+    maximum(maxStages);
+    const count = payload[1];
+    whole(count, 1, maxStages, "DPI stage count");
+    if (payload.length < 2 + count * 4)
+        throw new Error("Truncated LunaFury DPI table.");
+    return Array.from({ length: count }, (_, index) => {
+        const offset = 2 + index * 4;
+        const x = (payload[offset] << 8) | payload[offset + 1];
+        const y = (payload[offset + 2] << 8) | payload[offset + 3];
+        lunafuryValidateDpi(x);
+        lunafuryValidateDpi(y);
+        return { x, y };
+    });
+}
+export function lunafuryDecodeDpiStorage(payload, maxStages) {
+    lunafuryDecodeDpiStages(payload, maxStages);
+    if (payload.length < 26)
+        return undefined;
+    profile(payload[0]);
+    return { profile: payload[0], count: payload[1], stages: Array.from({ length: maxStages }, (_, index) => {
+            const offset = 2 + index * 4;
+            return { x: (payload[offset] << 8) | payload[offset + 1], y: (payload[offset + 2] << 8) | payload[offset + 3] };
+        }) };
+}
+/** Dormant slots may contain reserved values; preserve their exact 16-bit storage. */
+export function lunafuryWriteDpiStorage(storage, previous, maxStages) {
+    maximum(maxStages);
+    profile(storage.profile);
+    whole(storage.count, 1, maxStages, "DPI stage count");
+    if (!Array.isArray(storage.stages) || storage.stages.length !== maxStages)
+        throw new Error("Incomplete LunaFury DPI storage.");
+    if (!lunafuryDecodeDpiStorage(previous, maxStages) || previous[0] !== storage.profile)
+        throw new Error("DPI storage belongs to another profile or is incomplete.");
+    const args = Array.from(previous.slice(0, 26));
+    args[1] = storage.count;
+    storage.stages.forEach(({ x, y }, index) => {
+        whole(x, 0, 65535, "Stored X DPI");
+        whole(y, 0, 65535, "Stored Y DPI");
+        if (index < storage.count) {
+            lunafuryValidateDpi(x);
+            lunafuryValidateDpi(y);
+        }
+        args.splice(2 + index * 4, 4, x >> 8, x & 255, y >> 8, y & 255);
+    });
+    return request(1, 1, 26, args);
+}
+/** Retain dormant slots and trailing vendor bytes in the fixed 26-byte table. */
+export function lunafuryWriteDpiStages(id, stages, previous, maxStages) {
+    profile(id);
+    lunafuryDecodeDpiStages(previous, maxStages);
+    if (previous[0] !== id)
+        throw new Error("DPI table belongs to another profile.");
+    whole(stages.length, 1, maxStages, "DPI stage count");
+    const args = Array.from({ length: 26 }, (_, index) => previous[index] ?? 0);
+    args[1] = stages.length;
+    stages.forEach(({ x, y }, index) => {
+        lunafuryValidateDpi(x);
+        lunafuryValidateDpi(y);
+        args.splice(2 + index * 4, 4, x >> 8, x & 255, y >> 8, y & 255);
+    });
+    return request(1, 1, 26, args);
+}

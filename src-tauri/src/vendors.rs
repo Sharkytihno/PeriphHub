@@ -117,6 +117,26 @@ pub fn support() -> Vec<Support> {
         .expect("data/devices.json invalide")
 }
 
+/// Catalogue généré par scripts/build-catalog.py à partir des projets libres (OpenRGB, OpenRazer,
+/// libratbag, Solaar, rivalcfg, HeadsetControl, OpenMouse) : nomme un appareil et dit ce qu'on sait en faire.
+#[derive(Deserialize)]
+pub struct Known {
+    pub vid: String,
+    pub pid: String,
+    pub name: String,
+    pub kind: String,
+    /// "experimental" (un pilote générique sait le régler) | "rgb" (éclairage via OpenRGB) | "known"
+    pub status: String,
+    #[serde(default)]
+    pub via: String,
+    #[serde(default)]
+    pub src: Vec<String>,
+}
+
+pub fn catalog() -> Vec<Known> {
+    serde_json::from_str(include_str!("../../data/catalog.json")).expect("data/catalog.json invalide")
+}
+
 /// Anti-triche et protections système : PeriphHub n'y touche jamais, même si une entrée de la
 /// base de données les désignait par erreur (risque de bannissement en jeu).
 pub fn protected(text: &str) -> bool {

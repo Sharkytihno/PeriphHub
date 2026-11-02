@@ -38,14 +38,20 @@ PeriphHub vise à les remplacer par une seule petite application :
 | Souris CompX (Scyrox, VXE, ATK, MCHOSE…) | Protocole observé | DPI, fréquence jusqu'à 8 kHz, boutons, macros, veille | ✅ Scyrox V6 · 🧪 autres |
 | Claviers VIA / Vial (Keychron, Akko, NuPhy, REKT…) | Protocole VIA | Éclairage enregistré dans le clavier ; REKT : touches, rapid trigger, macros | ✅ REKT · 🧪 autres |
 | Logitech (HID++ 2.0) | D'après Solaar / libratbag | DPI, fréquence, SmartShift, molette, batterie | 🧪 |
+| Souris de ~50 marques : Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE, Ninjutso, Glorious, HyperX, Corsair, SteelSeries, ASUS… | Bibliothèque [OpenMouse](https://github.com/OpenMouse-Project/mouse-protocol) (AGPL-3.0) | DPI, fréquence, LOD, Motion Sync, correction d'angle, lissage, anti-rebond, veille, batterie | 🧪 |
 | Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
 | Casques Razer BlackShark V2 HyperSpeed | Protocole observé | Égaliseur, retour micro, veille, THX | ✅ |
 | Casques SteelSeries, Corsair, HyperX, Logitech, Audeze, Sony… | [HeadsetControl](https://github.com/Sapd/HeadsetControl) | Batterie, retour micro, égaliseur, extinction auto… | 🧪 |
 | RGB carte mère GIGABYTE | Protocole RGB Fusion 2 | Effets, couleurs | ✅ |
 | Tout ce que gère OpenRGB (1 000+ appareils) | Serveur SDK d'OpenRGB | Couleur unie | 🧪 |
 
+Les autres appareils branchés sont tout de même **nommés** grâce à une base de plus de 1 400 modèles
+(`data/catalog.json`, tirée d'OpenRGB, OpenRazer, libratbag, Solaar, rivalcfg, HeadsetControl et
+OpenMouse) : PeriphHub dit honnêtement s'il sait les régler, seulement piloter leur éclairage via
+OpenRGB, ou s'ils ont encore besoin de leur logiciel d'origine.
+
 ✅ testé sur l'appareil · 🧪 expérimental : écrit à partir de projets libres, à confirmer. Un modèle
-fonctionne (ou pas) ? Ouvrez un ticket avec le rapport de la page Allègement.
+fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://github.com/Sharkytihno/PeriphHub/issues/new?template=retour-appareil.yml) avec le rapport de la page Allègement.
 
 ## État du projet
 
@@ -60,6 +66,7 @@ fonctionne (ou pas) ? Ouvrez un ticket avec le rapport de la page Allègement.
 | 0.7 | Passerelle **OpenRGB** : si OpenRGB tourne (serveur SDK), couleur unie sur tous ses appareils ou appareil par appareil | ✅ |
 | 0.8 | Identité visuelle « Orbit » : logo, dégradé iris → cyan, thèmes clair et sombre accordés, animations ; README illustré | ✅ |
 | 0.9 | Interface en **anglais** (choix de la langue dans Options, anglais par défaut hors Windows en français) ; signature de l'installeur prête (SignPath Foundation) | ✅ |
+| 0.10 | Souris de ~50 marques via **OpenMouse** ; base de 1 400+ appareils nommés avec leur niveau de prise en charge | ✅ |
 | 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
@@ -116,6 +123,6 @@ src-tauri/target/release/periphhub.exe --scan
 ## Licence
 
 [GPL-3.0-or-later](LICENSE). PeriphHub s'appuie sur le travail de la communauté
-(OpenRGB, OpenRazer, Solaar, libratbag, HeadsetControl…) et en restera un logiciel libre.
+(OpenRGB, OpenRazer, Solaar, libratbag, HeadsetControl, OpenMouse…) — détail dans [THIRD_PARTY.md](THIRD_PARTY.md) — et en restera un logiciel libre.
 
 Les noms et marques cités appartiennent à leurs propriétaires. PeriphHub n'est affilié à aucun fabricant.

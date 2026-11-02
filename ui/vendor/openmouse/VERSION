@@ -1,0 +1,4 @@
+@openmouse/protocol 0.49.0
+https://github.com/OpenMouse-Project/mouse-protocol
+Licence : AGPL-3.0-or-later (voir LICENSE). Copié par scripts/vendor-openmouse.py, non modifié
+à part les chemins d'import.

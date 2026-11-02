@@ -1,0 +1,325 @@
+export * from "./controls.js";
+export * from "./friendly-name.js";
+export * from "./haptics.js";
+export * from "./hosts.js";
+export * from "./wheel.js";
+// HID++ reserves software ID 0 for device-originated notifications. Using a
+// nonzero ID keeps command replies distinct from asynchronous mouse events.
+const SOFTWARE_ID = 0x05;
+/** Add this client's HID++ software ID while preserving the function nibble. */
+export function withSoftwareId(functionId) {
+    return (functionId & 0xf0) | SOFTWARE_ID;
+}
+/**
+ * Usage page carrying HID++ over USB: a receiver, or a mouse's own wired
+ * vendor interface. Usage 1 is the short-report collection, usage 2 the long.
+ */
+export const HIDPP_USAGE_PAGE = 0xff00;
+/**
+ * Usage page carrying HID++ over Bluetooth. BLE devices do not expose the
+ * 0xFF00 pair at all: Logitech moves the protocol to its own vendor page
+ * (usage 0x0202) and carries long reports only, which is why an MX Master
+ * paired over Bluetooth shows a single `Vendor (0xFF43)` interface and was
+ * never offered by a 0xFF00-only picker filter.
+ *
+ * The page is Logitech's alone, so both the filter and the support check match
+ * the whole page rather than a single usage, keeping firmware that numbers the
+ * collection differently within reach.
+ */
+export const HIDPP_BLUETOOTH_USAGE_PAGE = 0xff43;
+/** Receiver-attached mice answer on the receiver's first pairing slot. */
+export const DEVICE_INDEX_RECEIVER = 0x01;
+/** A mouse addressed over its own USB interface answers on 0xFF. */
+export const DEVICE_INDEX_DIRECT = 0xff;
+/** Bolt receivers expose up to six pairing slots (HID++ device indices 1..6). */
+export const BOLT_PAIRING_SLOTS = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+/**
+ * Logitech mice whose vendor interface is the mouse itself rather than a
+ * receiver. They answer HID++ on device index 0xFF and keep their writable
+ * settings in an onboard profile.
+ *
+ * G203 / G102 generation (HID++ 2.0, legacy DPI feature 0x2201):
+ * - 0xc084 — G203 PRODIGY (wired)
+ * - 0xc089 — G102 LIGHTSYNC (wired)
+ * - 0xc092 — G203 LIGHTSYNC (wired)
+ *
+ * G302 / G303 / G402 generation:
+ * - 0xc07d — G502 / G502 Proteus Core (wired)
+ * - 0xc07e — G402 / G402 Hyperion Fury (wired)
+ * - 0xc07f — G302 Daedalus Prime (wired)
+ * - 0xc080 — G303 Daedalus Apex (wired)
+ * - 0xc097 — G303 Shroud Edition (USB cable)
+ * - 0xc332 — G502 Proteus Spectrum (wired)
+ *
+ * G Pro / G502 / G403 / G703 / G900 / G903 generation (HID++ 2.0, DPI feature 0x2202):
+ * - 0xc081 — G900 Chaos Spectrum (wired)
+ * - 0xc082 — G403 Wireless (USB cable)
+ * - 0xc083 — G403 (wired)
+ * - 0xc085 — G Pro (wired, 2017)
+ * - 0xc086 — G903 Lightspeed (USB cable)
+ * - 0xc087 — G703 (wired)
+ * - 0xc088 — G Pro Wireless (USB cable)
+ * - 0xc08b — G502 HERO (wired)
+ * - 0xc08c — G Pro Hero (wired)
+ * - 0xc08d — G502 Lightspeed (USB cable)
+ * - 0xc08e — MX518 (Legendary, wired)
+ * - 0xc08f — G403 HERO (wired)
+ * - 0xc090 — G703 HERO (USB cable)
+ * - 0xc091 — G903 HERO (USB cable)
+ * - 0xc096 — G705 (USB cable)
+ * - 0xc095 — G502 X PLUS (USB cable)
+ * - 0xc098 — G502 X LIGHTSPEED (USB cable, direct-connect mode)
+ * - 0xc099 — G502 X (wired)
+ *
+ * G Pro X Superlight generation:
+ * - 0xc094 — G Pro X Superlight (wired)
+ * - 0xc09b — PRO X SUPERLIGHT 2 (USB)
+ * - 0xc0a0 — PRO X SUPERLIGHT 2 DEX (USB)
+ *
+ * G PRO 2 / next-gen G Pro family:
+ * - 0xc09a — G PRO 2 LIGHTSPEED (USB)
+ *
+ * This module deliberately imports nothing, so both the driver and the WebHID
+ * filters in ../vendors can read it without a cycle.
+ */
+export const LOGITECH_DIRECT_PRODUCT_IDS = [
+    // G203 / G102 generation
+    0xc084, 0xc089, 0xc092,
+    // G302 / G303 / G402 generation
+    0xc07d, 0xc07e, 0xc07f, 0xc080, 0xc097,
+    // G502 Proteus Spectrum
+    0xc332,
+    // G Pro / G502 / G403 / G703 / G900 / G903 generation
+    0xc081, 0xc082, 0xc083, 0xc085, 0xc086, 0xc087, 0xc088,
+    0xc08b, 0xc08c, 0xc08d, 0xc08e, 0xc08f,
+    // G703 HERO / G903 HERO / G705
+    0xc090, 0xc091, 0xc096,
+    // G Pro X Superlight generation
+    0xc094, 0xc09b, 0xc0a0,
+    // G PRO 2 / next-gen G Pro family
+    0xc09a,
+    // G502 X generation
+    0xc095, 0xc098, 0xc099,
+];
+/**
+ * Logi Bolt receivers. Unlike Lightspeed, device HID++ 2.0 rides long reports
+ * (report id 0x11) on usage `ff00:2`, and the mouse may sit on any pairing
+ * slot — not only 0x01.
+ *
+ * - 0xc548 — Logi Bolt USB receiver (MX Master 3S and other Bolt mice)
+ */
+export const LOGITECH_BOLT_PRODUCT_IDS = [0xc548];
+/**
+ * Named catalog of the Logitech mice the HID++ driver directly covers, keyed
+ * by product id. This is the named counterpart to the bare-PID registries above
+ * (`LOGITECH_DIRECT_PRODUCT_IDS` etc.) and exists for the same reason every
+ * other vendor registry carries names: the supported-devices page auto-lists
+ * from it, so a covered Logitech model can never go missing because someone
+ * forgot to hand-write a row.
+ *
+ * Only *direct-connect* models get a PID here. Wireless Logitech mice have no
+ * dedicated USB product id of their own — they answer behind a Lightspeed/Bolt
+ * receiver or over HID++, and the driver claims them by protocol on the
+ * receiver's single control interface, not by a per-mouse PID. Listing them in
+ * a PID-keyed map would be a lie; they are receiver-supported and the page
+ * carries them as static receiver rows with an honest note (see the wall of
+ * "receiver" notes in the supported-mice table). That asymmetry is structural
+ * Logitech, not a maintenance gap — the same way WLMouse's wireless rows stay
+ * receiver-curated.
+ *
+ * `status` is per-model and honest: everything in `LOGITECH_DIRECT_PRODUCT_IDS`
+ * is genuinely writable (DPI via 0x2202 where the model has it, report rate
+ * 0x8060, onboard profiles), so every entry here is `supported`. The auto-list
+ * loop must honor `status` rather than hardcoding it, so adding a not-yet-
+ * implemented model here later cannot silently over-claim.
+ *
+ * Names mirror the landing page's static rows exactly ("G502 (all variants)",
+ * "G Pro (2017)", "G703 (wired)"), because the registry loop dedupes against
+ * the table by exact normalized key before falling back to fuzzy matching.
+ */
+export const LOGITECH_PRODUCTS = new Map([
+    // G203 / G102 generation
+    [0xc084, { name: "G203 PRODIGY", wireless: false, status: "supported" }],
+    [0xc089, { name: "G102 LIGHTSYNC", wireless: false, status: "supported" }],
+    [0xc092, { name: "G203 LIGHTSYNC", wireless: false, status: "supported" }],
+    // G302 / G303 / G402 generation
+    [0xc07d, { name: "G502 (all variants)", wireless: false, status: "supported" }],
+    [0xc07e, { name: "G402 Hyperion Fury", wireless: false, status: "supported" }],
+    [0xc07f, { name: "G302 Daedalus Prime", wireless: false, status: "supported" }],
+    [0xc080, { name: "G303 Daedalus Apex", wireless: false, status: "supported" }],
+    [0xc097, { name: "G303 Shroud Edition", wireless: false, status: "supported" }],
+    // G502 Proteus Spectrum
+    [0xc332, { name: "G502 Proteus Spectrum", wireless: false, status: "supported" }],
+    // G Pro / G502 / G403 / G703 / G900 / G903 generation
+    [0xc081, { name: "G900 Chaos Spectrum", wireless: false, status: "supported" }],
+    [0xc082, { name: "G403 Wireless", wireless: false, status: "supported" }],
+    [0xc083, { name: "G403", wireless: false, status: "supported" }],
+    [0xc085, { name: "G Pro (2017)", wireless: false, status: "supported" }],
+    [0xc086, { name: "G903 Lightspeed", wireless: false, status: "supported" }],
+    [0xc087, { name: "G703 (wired)", wireless: false, status: "supported" }],
+    [0xc088, { name: "G Pro Wireless", wireless: false, status: "supported" }],
+    [0xc08b, { name: "G502 HERO", wireless: false, status: "supported" }],
+    [0xc08c, { name: "G Pro Hero", wireless: false, status: "supported" }],
+    [0xc08d, { name: "G502 Lightspeed", wireless: false, status: "supported" }],
+    [0xc08e, { name: "MX518 (Legendary)", wireless: false, status: "supported" }],
+    [0xc08f, { name: "G403 HERO", wireless: false, status: "supported" }],
+    // HERO-era revisions
+    [0xc090, { name: "G703 HERO", wireless: false, status: "supported" }],
+    [0xc091, { name: "G903 HERO", wireless: false, status: "supported" }],
+    [0xc096, { name: "G705", wireless: false, status: "supported" }],
+    // G Pro X Superlight generation
+    [0xc094, { name: "G Pro X Superlight", wireless: false, status: "supported" }],
+    [0xc09b, { name: "PRO X SUPERLIGHT 2", wireless: false, status: "supported" }],
+    [0xc0a0, { name: "PRO X SUPERLIGHT 2 DEX", wireless: false, status: "supported" }],
+    // G PRO 2 / next-gen G Pro family
+    [0xc09a, { name: "G PRO 2 LIGHTSPEED", wireless: false, status: "supported" }],
+    // G502 X generation
+    [0xc095, { name: "G502 X PLUS", wireless: false, status: "supported" }],
+    [0xc098, { name: "G502 X LIGHTSPEED", wireless: false, status: "supported" }],
+    [0xc099, { name: "G502 X", wireless: false, status: "supported" }],
+]);
+const DIRECT_PRODUCT_ID_SET = new Set(LOGITECH_DIRECT_PRODUCT_IDS);
+const BOLT_PRODUCT_ID_SET = new Set(LOGITECH_BOLT_PRODUCT_IDS);
+export function isDirectConnectProduct(productId) {
+    return DIRECT_PRODUCT_ID_SET.has(productId);
+}
+export function isBoltReceiverProduct(productId) {
+    return BOLT_PRODUCT_ID_SET.has(productId);
+}
+/**
+ * Whether this HID++ endpoint is the mouse itself rather than a receiver.
+ * Runtime device-index probing is authoritative; product IDs do not decide it.
+ */
+export function isDirectConnection(resolvedDeviceIndex) {
+    return resolvedDeviceIndex === DEVICE_INDEX_DIRECT;
+}
+/**
+ * Device indices to probe when discovering which one answers.
+ *
+ * A receiver forwards to its pairing slots, and G HUB merging a keyboard onto
+ * the same receiver can push the mouse off the first one — so all six slots
+ * are probed before the direct index. A direct connection is its own single
+ * endpoint and answers as itself, with the receiver slot only a fallback for
+ * product ids that are on neither list.
+ */
+export function hidppDeviceIndexCandidates(isKnownReceiver) {
+    return isKnownReceiver
+        ? [DEVICE_INDEX_RECEIVER, 0x02, 0x03, 0x04, 0x05, 0x06, DEVICE_INDEX_DIRECT]
+        : [DEVICE_INDEX_DIRECT, DEVICE_INDEX_RECEIVER];
+}
+/** HID++ 2.0 error codes, reported in byte 4 of a 0xFF error response. */
+const HIDPP20_ERRORS = {
+    0x01: "unknown request",
+    0x02: "invalid argument",
+    0x03: "value out of range",
+    0x04: "hardware error",
+    0x05: "Logitech internal error",
+    0x06: "invalid feature index",
+    0x07: "invalid function",
+    0x08: "device busy",
+    0x09: "unsupported",
+};
+/** HID++ 1.0 error codes, reported in byte 4 of a 0x8F error response. */
+const HIDPP10_ERRORS = {
+    0x01: "invalid command",
+    0x02: "invalid address",
+    0x03: "invalid value",
+    0x04: "connection request failed",
+    0x05: "too many devices",
+    0x06: "already exists",
+    0x07: "device busy",
+    0x08: "unknown device",
+    0x09: "resource error",
+    0x0a: "request unavailable",
+    0x0b: "unsupported parameter value",
+    0x0c: "wrong PIN code",
+};
+export function hidppErrorMessage(code) {
+    const reason = HIDPP20_ERRORS[code];
+    return reason
+        ? `The mouse rejected that setting (${reason}).`
+        : `The mouse rejected that setting (HID++ 2.0 error 0x${code.toString(16).padStart(2, "0")}).`;
+}
+export function hidpp10ErrorMessage(code) {
+    const reason = HIDPP10_ERRORS[code];
+    return reason
+        ? `The mouse rejected that setting (HID++ 1.0: ${reason}).`
+        : `The mouse rejected that setting (HID++ 1.0 error 0x${code.toString(16).padStart(2, "0")}).`;
+}
+/**
+ * Decodes an error only when it echoes the request being awaited.
+ *
+ * HID++ 1.0: [device, 0x8f, sub-id, address, error]
+ * HID++ 2.0: [device, 0xff, feature-index, function+software-id, error]
+ */
+export function hidppErrorForRequest(report, requestFirstByte, requestSecondByte) {
+    if (report[2] !== requestFirstByte || report[3] !== withSoftwareId(requestSecondByte))
+        return null;
+    if (report[1] === 0x8f)
+        return hidpp10ErrorMessage(report[4] ?? 0);
+    if (report[1] === 0xff)
+        return hidppErrorMessage(report[4] ?? 0);
+    return null;
+}
+/**
+ * Decode the legacy Report Rate (0x8060) supported-rate bitmap, where bit i
+ * marks an interval of (i + 1) ms. The G402 generation reports 0x8b, meaning
+ * 1, 2, 4 and 8 ms — 1000, 500, 250 and 125 Hz.
+ */
+export function decodeReportRateBitmap(bitflags) {
+    const rates = [];
+    for (let bit = 0; bit < 8; bit += 1) {
+        if ((bitflags & (1 << bit)) !== 0)
+            rates.push(Math.round(1000 / (bit + 1)));
+    }
+    return rates.sort((left, right) => left - right);
+}
+/**
+ * 0x1004 UNIFIED_BATTERY chargingStatus.
+ *
+ * Deliberately separate from the 0x1000 mapping below: the two features number
+ * their states differently, and decoding one with the other's table reports a
+ * slow charge as "almost full".
+ */
+export function decodeUnifiedBatteryState(chargingStatus) {
+    switch (chargingStatus) {
+        case 0x00: return "Discharging";
+        case 0x01: return "Charging";
+        case 0x02: return "Charging slowly";
+        case 0x03: return "Full";
+        // 4 is a charging fault. There is no state for it, and calling it charging
+        // would be worse than admitting we do not know.
+        default: return "Unknown";
+    }
+}
+/** 0x1000 BATTERY_LEVEL_STATUS batteryStatus. */
+export function decodeBatteryLevelState(batteryStatus) {
+    switch (batteryStatus) {
+        case 0x00: return "Discharging";
+        case 0x01: return "Charging";
+        case 0x02: return "Almost full";
+        case 0x03: return "Full";
+        case 0x04: return "Charging slowly";
+        // 5 invalid battery, 6 thermal error, 7 other charging error.
+        default: return "Unknown";
+    }
+}
+/**
+ * The mouse keeps its settings in onboard memory and will not hand control to
+ * software, so the only way to change anything is to write its profile — which
+ * needs a decoded layout for that profile format.
+ *
+ * Its own type because it is not a fault: it is a mouse that cannot be
+ * supported yet, and the way forward is a capture from whoever owns one.
+ */
+export class OnboardOnlyError extends Error {
+    profileFormatId;
+    constructor(profileFormatId) {
+        super("This mouse keeps its settings in onboard memory and will not hand control to software. "
+            + `Writing ${profileFormatId === null ? "its profile format" : `profile format ${profileFormatId}`} `
+            + 'is not supported yet. Open Diagnostics, then HID++ capture, and use "Copy verification data" — '
+            + "sending that is what lets the layout be added.");
+        this.name = "OnboardOnlyError";
+        this.profileFormatId = profileFormatId;
+    }
+}

@@ -14,8 +14,36 @@ use tauri::{AppHandle, Emitter, State};
 // Un module ne parle jamais à un appareil qu'il ne connaît pas.
 const VIA_USAGE: (u16, u16) = (0xFF60, 0x61);
 
+// Fabricants (ou puces) des souris que savent piloter les protocoles d'OpenMouse
+// (ui/vendor/openmouse, voir js/drivers/openmouse.js). Chaque protocole vérifie ensuite
+// lui-même le modèle exact (PID, interface) avant d'ouvrir l'appareil.
+const OPENMOUSE_VIDS: &[u16] = &[
+    0x03EB, 0x03F0, 0x0483, 0x045E, 0x046D, 0x04D9, 0x04F3, 0x093A, 0x0951, 0x0B05, 0x0BDA,
+    0x1038, 0x1532, 0x1915, 0x1A2C, 0x1B1C, 0x1CAA, 0x1D57, 0x2023, 0x22D4, 0x24AE, 0x2516,
+    0x258A, 0x25A7, 0x260D, 0x2FE3, 0x3057, 0x3151, 0x31E3, 0x320F, 0x33E4, 0x3367, 0x3434,
+    0x3554, 0x361D, 0x362D, 0x36A7, 0x3710, 0x372E, 0x373B, 0x373E, 0x3770, 0x3794, 0x37B0,
+    0x3837, 0x3879, 0xA8A4, 0xA8A5,
+];
+
+// Modes de mise à jour (bootloader / DFU) : jamais visibles, quelle que soit la liste.
+// PeriphHub n'écrit jamais de firmware.
+const NEVER: &[(u16, u16)] = &[(0x373B, 0x215C)];
+
+fn bootloader(d: &hidapi::DeviceInfo) -> bool {
+    if NEVER.contains(&(d.vendor_id(), d.product_id())) {
+        return true;
+    }
+    let p = d.product_string().unwrap_or_default().to_lowercase();
+    ["boot", "dfu", "isp ", "firmware update"].iter().any(|w| p.contains(w))
+}
+
 fn allowed_info(d: &hidapi::DeviceInfo) -> bool {
-    allowed(d.vendor_id(), d.product_id()) || (d.usage_page(), d.usage()) == VIA_USAGE
+    if bootloader(d) {
+        return false;
+    }
+    allowed(d.vendor_id(), d.product_id())
+        || (d.usage_page(), d.usage()) == VIA_USAGE
+        || OPENMOUSE_VIDS.contains(&d.vendor_id())
 }
 
 fn allowed(vid: u16, pid: u16) -> bool {
@@ -45,6 +73,9 @@ pub struct HidInfo {
     pub interface: i32,
     pub product: String,
     pub serial: String,
+    // Descripteur HID (reconstruit par Windows) : l'interface en déduit les rapports
+    // et leurs tailles, comme le fait WebHID dans Chrome
+    pub descriptor: Vec<u8>,
 }
 
 struct Open {
@@ -57,6 +88,17 @@ pub struct Hid {
     api: Mutex<Option<hidapi::HidApi>>,
     open: Mutex<HashMap<u32, Open>>,
     next: AtomicU32,
+    descriptors: Mutex<HashMap<String, Vec<u8>>>,
+}
+
+// Lu une seule fois par interface (ouverture sans accès si Windows réserve l'appareil)
+fn read_descriptor(api: &hidapi::HidApi, path: &std::ffi::CStr) -> Vec<u8> {
+    let Ok(dev) = api.open_path(path) else { return Vec::new() };
+    let mut buf = vec![0u8; 4096];
+    match dev.get_report_descriptor(&mut buf) {
+        Ok(n) => buf[..n].to_vec(),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -78,18 +120,25 @@ fn with_api<T>(hid: &Hid, f: impl FnOnce(&mut hidapi::HidApi) -> Result<T, Strin
 pub fn hid_devices(hid: State<'_, Hid>) -> Result<Vec<HidInfo>, String> {
     with_api(&hid, |api| {
         api.refresh_devices().map_err(|e| e.to_string())?;
-        let mut out: Vec<HidInfo> = api
-            .device_list()
-            .filter(|d| allowed_info(d))
-            .map(|d| HidInfo {
-                path: d.path().to_string_lossy().to_string(),
-                vid: d.vendor_id(),
-                pid: d.product_id(),
-                usage_page: d.usage_page(),
-                usage: d.usage(),
-                interface: d.interface_number(),
-                product: d.product_string().unwrap_or_default().to_string(),
-                serial: d.serial_number().unwrap_or_default().to_string(),
+        let mut cache = hid.descriptors.lock().unwrap();
+        let infos: Vec<hidapi::DeviceInfo> = api.device_list().filter(|d| allowed_info(d)).cloned().collect();
+        cache.retain(|p, _| infos.iter().any(|d| d.path().to_string_lossy() == p.as_str()));
+        let mut out: Vec<HidInfo> = infos
+            .iter()
+            .map(|d| {
+                let path = d.path().to_string_lossy().to_string();
+                let descriptor = cache.entry(path.clone()).or_insert_with(|| read_descriptor(api, d.path())).clone();
+                HidInfo {
+                    path,
+                    vid: d.vendor_id(),
+                    pid: d.product_id(),
+                    usage_page: d.usage_page(),
+                    usage: d.usage(),
+                    interface: d.interface_number(),
+                    product: d.product_string().unwrap_or_default().to_string(),
+                    serial: d.serial_number().unwrap_or_default().to_string(),
+                    descriptor,
+                }
             })
             .collect();
         out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));

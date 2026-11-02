@@ -182,7 +182,29 @@ function ramHero() {
       h('div', { class: 'muted small' }, 'Mémoire privée, mesurée comme dans le Gestionnaire des tâches.')));
 }
 
-const STATUS = { supported: 'Pris en charge', experimental: 'Expérimental', partial: 'En partie', planned: 'Bientôt', unknown: 'Pas encore pris en charge' };
+const STATUS = { supported: 'Pris en charge', experimental: 'Expérimental', partial: 'En partie', planned: 'Bientôt', rgb: 'Éclairage via OpenRGB',
+  known: 'Reconnu, pas encore réglable', unknown: 'Pas encore pris en charge' };
+
+// Configurateurs web officiels (seulement ceux dont l'adresse est sûre)
+const WEB_TOOL = { '31E3': 'wootility.io', '03EB': 'wootility.io', '3434': 'launcher.keychron.com' };
+
+// Ce que l'utilisateur peut faire pour un appareil que PeriphHub ne règle pas (encore)
+function deviceHint(d) {
+  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d)];
+}
+
+function deviceTool(d) {
+  const web = WEB_TOOL[d.vid] || (d.plugin === 'via' ? 'usevia.app' : '');
+  // Phrase à part : chaque nœud texte est traduit séparément
+  return web ? h('div', { class: 'muted small' }, `Réglages aussi possibles sur ${web}, le configurateur officiel dans le navigateur.`) : '';
+}
+
+function deviceHintText(d) {
+  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser.';
+  if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB (lancé avec le serveur SDK). Ses autres réglages restent dans son logiciel d’origine.';
+  if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
+  return 'Son logiciel d’origine reste nécessaire pour le régler.';
+}
 
 function otherDevices() {
   if (!report) return null;
@@ -190,12 +212,13 @@ function otherDevices() {
   if (!others.length) return null;
   return h('section', { class: 'block' },
     h('div', { class: 'bhead' }, h('h3', {}, 'Autres appareils détectés'),
-      h('span', { class: 'muted small' }, 'Pas encore de réglages dans PeriphHub : leur logiciel d’origine reste nécessaire pour les modifier.')),
+      h('span', { class: 'muted small' }, 'Pas de réglages complets dans PeriphHub pour l’instant : voici ce qu’il est possible d’en faire.')),
     h('div', { class: 'devlist' }, others.map(d => h('div', { class: 'dev' },
       h('div', { class: 'tico' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
-        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', d.kind, `USB ${d.vid}:${d.pid}`].join(' · '))),
+        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', d.kind, `USB ${d.vid}:${d.pid}`].join(' · ')),
+        ...deviceHint(d)),
       h('span', { class: 'chip ' + d.status }, STATUS[d.status] || d.status)))));
 }
 
@@ -433,6 +456,7 @@ function renderOptions() {
 
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
 rescan();
+if (window.omApi) registerDriver(window.omApi.driver);
 driversStart();
 // Batterie et état relus régulièrement sur l'accueil (fenêtre visible seulement)
 setInterval(() => { if (!document.hidden && !$('home').hidden) refreshHome(); }, 30000);

@@ -1,0 +1,806 @@
+import { ASUS_OMNI_PRODUCT_ID, ASUS_OMNI_USAGE_PAGE, ASUS_PRODUCT_IDS, ASUS_USAGE, ASUS_USAGE_PAGE, ASUS_VENDOR_ID, } from "../asus/index.js";
+import { ATK_COMPX_PRODUCT_IDS } from "./atk/products.js";
+import { MICROSOFT_PRODUCT_CLASSIC, MICROSOFT_PRODUCT_PRO, MICROSOFT_VENDOR_ID, MICROSOFT_CLASSIC_USAGE_PAGE, MICROSOFT_CLASSIC_USAGE, MICROSOFT_PRO_USAGE_PAGE, MICROSOFT_PRO_USAGE } from "../microsoft/index.js";
+import { FINALMOUSE_SLX_DONGLE_PRODUCT_IDS } from "../finalmouse/index.js";
+import { INCOTT_PRODUCT_IDS, INCOTT_USAGE_PAGE, INCOTT_VENDOR_ID } from "../incott/index.js";
+import { GLORIOUS_CORE2_PRODUCTS, GLORIOUS_CORE2_USAGE_PAGE, GLORIOUS_CORE2_VENDOR_ID } from "../glorious-core2/index.js";
+import { GLORIOUS_SINOWEALTH_PRODUCTS } from "../glorious-sinowealth/index.js";
+import { EGG_WE_HID_FILTERS } from "./endgame/egg-we-control.js";
+import { HITSCAN_PRODUCTS, HITSCAN_VENDOR_ID } from "../hitscan/index.js";
+import { VAXEE_PRODUCT_IDS, VAXEE_USAGE, VAXEE_USAGE_PAGE, VAXEE_VENDOR_ID } from "../vaxee/index.js";
+import { GEARHUB_BLUETOOTH_USAGE, GEARHUB_BLUETOOTH_USAGE_PAGE, GEARHUB_PRODUCTS, GEARHUB_VENDOR_ID, } from "../gearhub/index.js";
+import { GWOLVES_PRODUCTS } from "./gwolves/products.js";
+import { LAMZU_INCA_PRODUCTS, LAMZU_INCA_VENDOR_ID } from "../lamzu/index.js";
+import { MCHOSE_CONFIG_USAGE, MCHOSE_CONFIG_USAGE_PAGE, MCHOSE_DOCK_PRODUCT_ID, MCHOSE_DOCK_USAGE, MCHOSE_DOCK_USAGE_PAGE, MCHOSE_A5_GEN1_PRODUCTS, MCHOSE_A5_GEN1_USAGE_PAGE, MCHOSE_A5_GEN1_VENDOR_ID, } from "../mchose/index.js";
+import { HIDPP_BLUETOOTH_USAGE_PAGE, HIDPP_USAGE_PAGE, LOGITECH_BOLT_PRODUCT_IDS, LOGITECH_DIRECT_PRODUCT_IDS, } from "../logitech/index.js";
+import { RAZER_PRODUCTS, RAZER_PRODUCT_IDS } from "../razer/devices.js";
+import { PULSAR_XS1_PRODUCT_IDS } from "../pulsar/index.js";
+import { BITMOUSE_PRODUCT_IDS, BITMOUSE_USAGE, BITMOUSE_USAGE_PAGE, } from "../bitmouse/index.js";
+import { NINJUTSO_LEGACY_MOUSE_PRODUCT_IDS, NINJUTSO_LEGACY_RECEIVER_PRODUCT_IDS, NINJUTSO_LEGACY_VENDOR_ID, NINJUTSO_MOUSE_PRODUCT_IDS, NINJUTSO_RECEIVER_PRODUCT_IDS, NINJUTSO_VENDOR_ID, } from "../ninjutso/index.js";
+import { ZAUNKOENIG_PRODUCT_IDS, ZAUNKOENIG_USAGE_PAGE, ZAUNKOENIG_VENDOR_ID, } from "../zaunkoenig/index.js";
+import { CORSAIR_BRAGI_PRODUCT_IDS, CORSAIR_BRAGI_USAGE_PAGE, CORSAIR_CONFIG_USAGE, CORSAIR_PRODUCT_IDS, CORSAIR_USAGE_PAGE, CORSAIR_VENDOR_ID, } from "../corsair/index.js";
+import { TEEVOLUTION_LCD_USAGE, TEEVOLUTION_LCD_USAGE_PAGE, } from "../teevolution/index.js";
+import { WOOTING_CONFIG_USAGE, WOOTING_CONFIG_USAGE_PAGE, WOOTING_PRODUCT_IDS, WOOTING_VENDOR_ID, } from "../wooting/index.js";
+import { STEELSERIES_PRODUCTS, STEELSERIES_VENDOR_ID, } from "../steelseries/index.js";
+import { WALLHACK_KEYBOARD_ALT_VENDOR_ID, WALLHACK_KEYBOARD_PRODUCT_IDS, WALLHACK_KEYBOARD_USAGE, WALLHACK_KEYBOARD_USAGE_PAGE, WALLHACK_MOUSE_PRODUCT_IDS, WALLHACK_MOUSE_USAGE, WALLHACK_MOUSE_USAGE_PAGE, WALLHACK_VENDOR_ID, } from "../wallhack/index.js";
+import { DAREU_COMMAND_USAGE, DAREU_COMMAND_USAGE_PAGE, DAREU_PRODUCT_IDS, DAREU_VENDOR_ID, } from "../dareu/index.js";
+import { HYPERX_PULSEFIRE_HASTE_KINGSTON_PIDS, HYPERX_PULSEFIRE_HASTE_HP_PIDS, HYPERX_USAGE_PAGE, HYPERX_VENDOR_ID_HP, HYPERX_VENDOR_ID_KINGSTON, } from "../hyperx/index.js";
+import { RAWM_PRODUCT_IDS, RAWM_USAGE, RAWM_USAGE_PAGE, RAWM_VENDOR_ID } from "../rawm/index.js";
+import { RYUNIX_PRODUCT_IDS, RYUNIX_USAGE, RYUNIX_USAGE_PAGE, RYUNIX_VENDOR_ID, } from "../ryunix/index.js";
+import { RAPOO_CONFIG_USAGE, RAPOO_CONFIG_USAGE_PAGE, RAPOO_PRODUCT_IDS, RAPOO_VENDOR_ID, } from "../rapoo/index.js";
+import { REDRAGON_CONFIG_USAGE, REDRAGON_CONFIG_USAGE_PAGE, REDRAGON_M690_PRO_PRODUCT_IDS, REDRAGON_M690_PRO_USAGE, REDRAGON_M690_PRO_USAGE_PAGE, REDRAGON_M690_PRO_VENDOR_ID, REDRAGON_PRODUCT_IDS, REDRAGON_VENDOR_ID, } from "../redragon/index.js";
+import { FATER_CONFIG_USAGE, FATER_CONFIG_USAGE_PAGE, FATER_PRODUCT_IDS, FATER_VENDOR_ID, } from "../fater/index.js";
+import { AJAZZ_DONGLE_VENDOR_ID, AJAZZ_PRODUCTS, AJAZZ_USAGE, AJAZZ_USAGE_PAGE, AJAZZ_USB_VENDOR_ID, } from "../ajazz/index.js";
+import { MOTOSPEED_PRODUCTS, MOTOSPEED_USAGE_PAGE, MOTOSPEED_VENDOR_ID } from "../motospeed/index.js";
+import { COOLERMASTER_USAGE, COOLERMASTER_USAGE_PAGE, COOLERMASTER_VENDOR_ID, } from "../coolermaster/index.js";
+import { AJAZZ_AK820_WIRED_PID } from "../ajazz/ak820.js";
+export const VENDOR_ID = {
+    coolermaster: COOLERMASTER_VENDOR_ID,
+    ajazz: 0x1a2c,
+    vaxee: VAXEE_VENDOR_ID,
+    asus: ASUS_VENDOR_ID,
+    ryunix: RYUNIX_VENDOR_ID,
+    rapoo: RAPOO_VENDOR_ID,
+    motospeed: MOTOSPEED_VENDOR_ID,
+    pulsar: 0x3710,
+    endgameGear: 0x3367,
+    wlmouse: 0x36a7,
+    lamzu: 0x373e,
+    lunafury: 0x373e,
+    vancer: 0x373e,
+    bytech: 0x372e,
+    lamzuInca: LAMZU_INCA_VENDOR_ID,
+    attackshark: 0x373e,
+    logitech: 0x046d,
+    orbital: 0x1915,
+    rawm: RAWM_VENDOR_ID,
+    razer: 0x1532,
+    teevolution: 0x3554,
+    vgn: 0x3554,
+    atk: 0x373b,
+    finalmouse: 0x361d,
+    keychron: 0x3434,
+    moddo: 0x2fe3,
+    attackShark: 0x25a7,
+    attackSharkX: 0x1d57, // R1 / X11 family OEM VID (PIDs vary per firmware)
+    ninjutsoLegacy: NINJUTSO_LEGACY_VENDOR_ID,
+    ninjutso: NINJUTSO_VENDOR_ID,
+    zaunkoenig: ZAUNKOENIG_VENDOR_ID,
+    corsair: CORSAIR_VENDOR_ID,
+    fantech: 0x3151,
+    wooting: WOOTING_VENDOR_ID,
+    wallhack: WALLHACK_VENDOR_ID,
+    wallhackKeyboardAlt: WALLHACK_KEYBOARD_ALT_VENDOR_ID,
+    gwolves: 0x33e4,
+    steelseries: STEELSERIES_VENDOR_ID,
+    glorious: 0x093a,
+    // Pre-Pixart "classic" Glorious line (Model O/O-, Model D/D-, Model O V2).
+    // Shares 0x258a with several other Sonix-based OEM mice.
+    gloriousClassic: 0x258a,
+    gloriousClassicI: 0x22d4, // original Model I
+    gloriousClassicIWired: 0x320f, // Model O V2 / Model I 2 wired
+    gloriousO3: 0x3794, // Model O3 Wireless / receiver (newer CORE-v2 generation)
+    mchose: 0x3837,
+    mchoseA5Gen1: MCHOSE_A5_GEN1_VENDOR_ID,
+    ksnakeUsb: 0xa8a4, // K-snake X11 wired
+    ksnakeDongle: 0xa8a5, // K-snake X11 2.4 GHz dongle
+    microsoft: MICROSOFT_VENDOR_ID,
+    dareu: DAREU_VENDOR_ID,
+    redragon: REDRAGON_VENDOR_ID,
+    // Shares SinoWealth's 0x258a with the Glorious classic line (see
+    // `gloriousClassic` above); disjoint by product id.
+    redragonM690Pro: REDRAGON_M690_PRO_VENDOR_ID,
+    fater: FATER_VENDOR_ID,
+    // Shares 0x093a with Glorious's Pixart-based Model O 2 / I 2 family (see
+    // `glorious` above); GloriousHidClient.isSupported() only claims its own
+    // catalogue product ids, so the two never overlap.
+    incott: INCOTT_VENDOR_ID,
+    hyperxKingston: HYPERX_VENDOR_ID_KINGSTON,
+    hyperxHp: HYPERX_VENDOR_ID_HP,
+    hitscan: HITSCAN_VENDOR_ID,
+};
+/**
+ * ASUS ROG / TUF configuration interface (usage page 0xFF01, usage 0x0001),
+ * verified on the Gladius II P502 and assumed for the rest of the table.
+ */
+export const ASUS_HID_FILTERS = [
+    ...ASUS_PRODUCT_IDS.map((productId) => ({
+        vendorId: ASUS_VENDOR_ID,
+        productId,
+        usagePage: ASUS_USAGE_PAGE,
+        usage: ASUS_USAGE,
+    })),
+    { vendorId: ASUS_VENDOR_ID, productId: ASUS_OMNI_PRODUCT_ID, usagePage: ASUS_OMNI_USAGE_PAGE, usage: ASUS_USAGE },
+];
+export const MCHOSE_A5_HID_FILTERS = [
+    ...[...MCHOSE_A5_GEN1_PRODUCTS.keys()].map((productId) => ({
+        vendorId: MCHOSE_A5_GEN1_VENDOR_ID,
+        productId,
+        usagePage: MCHOSE_A5_GEN1_USAGE_PAGE,
+    })),
+];
+/** Exact PID and report-8 command collection measured on the TM265 receiver. */
+export const DAREU_HID_FILTERS = [...DAREU_PRODUCT_IDS].map((productId) => ({
+    vendorId: DAREU_VENDOR_ID,
+    productId,
+    usagePage: DAREU_COMMAND_USAGE_PAGE,
+    usage: DAREU_COMMAND_USAGE,
+}));
+/** NJ07 / NJ08 control collection, on the wired VID and on the 2.4 GHz dongle VID. */
+export const AJAZZ_HID_FILTERS = [...AJAZZ_PRODUCTS.keys()].flatMap((productId) => [AJAZZ_USB_VENDOR_ID, AJAZZ_DONGLE_VENDOR_ID].map((vendorId) => ({
+    vendorId,
+    productId,
+    usagePage: AJAZZ_USAGE_PAGE,
+    usage: AJAZZ_USAGE,
+})));
+/** Holtek vendor collection on the MCR-9000B's interface 2, as reported by its owner. */
+export const FATER_HID_FILTERS = [...FATER_PRODUCT_IDS].map((productId) => ({
+    vendorId: FATER_VENDOR_ID,
+    productId,
+    usagePage: FATER_CONFIG_USAGE_PAGE,
+    usage: FATER_CONFIG_USAGE,
+}));
+/** Holtek config collection measured on the M724 K1NG 1K (usbmon + usbhid-dump). */
+/**
+ * Redragon M690 PRO (SinoWealth): cable and 2.4 GHz receiver, both exposing
+ * the vendor collection with feature reports 5 and 8 on USB interface 1.
+ */
+export const REDRAGON_M690_PRO_HID_FILTERS = REDRAGON_M690_PRO_PRODUCT_IDS.map((productId) => ({
+    vendorId: REDRAGON_M690_PRO_VENDOR_ID,
+    productId,
+    usagePage: REDRAGON_M690_PRO_USAGE_PAGE,
+    usage: REDRAGON_M690_PRO_USAGE,
+}));
+export const REDRAGON_HID_FILTERS = [...REDRAGON_PRODUCT_IDS].map((productId) => ({
+    vendorId: REDRAGON_VENDOR_ID,
+    productId,
+    usagePage: REDRAGON_CONFIG_USAGE_PAGE,
+    usage: REDRAGON_CONFIG_USAGE,
+}));
+/**
+ * SteelSeries ships keyboards, headsets, and USB audio under 0x1038, so there
+ * must never be a VID-only SteelSeries filter. The Rival 3 Gen 1's config
+ * channel is hidapi interface 3, whose WebHID collection shape has not been
+ * captured yet, so the whole device is requested per product id and the
+ * picker offers each interface; the driver's firmware probe fails loudly on
+ * the ones that never answer (add the device again and choose another entry).
+ * Narrow these to a usage-page filter once the collection dump is recorded in
+ * docs/steelseries-testing.md.
+ */
+export const STEELSERIES_RIVAL3_FILTERS = [...STEELSERIES_PRODUCTS.keys()].map((productId) => ({ vendorId: STEELSERIES_VENDOR_ID, productId }));
+// Pixart-based Model O 2 / I 2 family (OpenRGB issue #4649, linux-hardware.org).
+export const GLORIOUS_PRODUCTS = new Map([
+    [0x821d, { name: "Model I 2 Wireless receiver", wireless: true }],
+    [0x821b, { name: "Model I 2 Bluetooth", wireless: true }],
+    [0x822a, { name: "Model O 2 Wireless", wireless: false }],
+    [0x822b, { name: "Model O 2 Bluetooth", wireless: true }],
+    [0x822d, { name: "Model O 2 Wireless receiver", wireless: true }],
+    [0x824a, { name: "Model D 2 Wireless", wireless: false }],
+    [0x824b, { name: "Model D 2 Bluetooth", wireless: true }],
+    [0x824d, { name: "Model D 2 Wireless receiver", wireless: true }],
+    [0x825a, { name: "Model D 2 Wired", wireless: false }],
+    [0x826a, { name: "Model O 2 Mini Wireless", wireless: false }],
+    [0x826b, { name: "Model O 2 Mini Bluetooth", wireless: true }],
+    [0x826d, { name: "Model O 2 Mini Wireless receiver", wireless: true }],
+    [0x827a, { name: "Model O 2 Mini Wired", wireless: false }],
+    [0x832a, { name: "Model D- 2 Wired", wireless: false }],
+]);
+/**
+ * Pre-Pixart "classic" Glorious line, reverse-engineered from
+ * https://github.com/louis4craft/glorious-ctl (devices.json + mouse.py),
+ * https://github.com/korkje/mxw, https://github.com/RealCrystalNight/Glorious-Mouse-Toolkit-Linux
+ * (an expanded mxw fork with its own device enum), and
+ * https://github.com/AwesomeTy18/GloriousBatteryMonitor (an unrelated C#
+ * battery-only tool whose device table cross-confirms the "wired PID +
+ * receiver PID" pairing for most of these models). Keyed by product id only
+ * for lookup convenience; isSupported() also checks the VID.
+ *
+ * `generation` gates which commands the driver will actually send:
+ * - "core1": the original protocol korkje/mxw reverse-engineered. Full
+ *   support — RGB, debounce, battery (glorious-ctl), DPI/polling/LOD (mxw).
+ * - "core2": a newer, mostly-undocumented protocol generation (Model O3
+ *   Wireless; the 4K/8K-class mice have their own driver, see
+ *   GLORIOUS_CORE2_PRODUCTS). Only
+ *   RGB, debounce, and battery are enabled for these — glorious-ctl's own
+ *   `devices.json` lists Model O3/D2Pro-4K8K alongside the core1 devices and
+ *   applies the exact same `mouse.py` commands uniformly, and
+ *   AwesomeTy18/GloriousBatteryMonitor independently confirms the exact same
+ *   battery-read command (byte-for-byte: class 0x02, subclass 0x02, command
+ *   0x83) works across its ENTIRE device list, core1 and core2 alike — two
+ *   unrelated implementations agreeing is real evidence RGB/debounce/battery
+ *   carry over. DPI, polling rate, and lift-off distance stay OFF for core2:
+ *   korkje/mxw's own device list does not include any core2 model, and (for
+ *   polling rate specifically) https://github.com/AMarcinkiewicz/GloriousAutoPollingRate
+ *   shows the Model D2 Pro 4K/8K's real polling-rate command uses a
+ *   DIFFERENT usage page (0xFFFF/0x0000) and report layout entirely from the
+ *   one below — confirming core2 is not just core1 with new values, so
+ *   guessing at DPI/LOD offsets for it would likely be silently wrong. See
+ *   [[glorious-classic-protocol]] in memory for the full writeup, including
+ *   the exact D2 Pro 4K/8K polling-rate bytes for whoever wires that in
+ *   (needs multi-interface HID support this driver doesn't have yet).
+ *
+ * KNOWN UNRESOLVED DISCREPANCY: glorious-ctl's devices.json labels PID
+ * 0x2011 "Model D Wireless", but two independent, more structured sources
+ * (RealCrystalNight's Rust device enum and AwesomeTy18's C# device table)
+ * both instead pair 0x2011 with Model O (as its wired-mode PID, alongside
+ * receiver 0x2022) and put Model D's wired-mode PID at 0x2012. This table
+ * follows the 2-source majority below; if a real Model D Wireless answers
+ * "Model O Wireless" in the app, that's why — it's cosmetic only (the actual
+ * commands are identical either way), but worth fixing with a hardware
+ * report from whoever it happens to.
+ */
+export const GLORIOUS_CLASSIC_PRODUCTS = new Map([
+    [0x2011, { name: "Model O Wireless", wireless: false, generation: "core1" }], // see discrepancy note above
+    [0x2022, { name: "Model O Wireless", wireless: true, generation: "core1" }],
+    [0x2012, { name: "Model D Wireless", wireless: false, generation: "core1" }],
+    [0x2023, { name: "Model D Wireless", wireless: true, generation: "core1" }],
+    [0x2013, { name: "Model O- Wireless", wireless: false, generation: "core1" }],
+    [0x2024, { name: "Model O- Wireless receiver", wireless: true, generation: "core1" }],
+    [0x2014, { name: "Model D- Wireless", wireless: false, generation: "core1" }],
+    [0x2025, { name: "Model D- Wireless", wireless: true, generation: "core1" }],
+    [0x2019, { name: "Model O 2 PRO", wireless: false, generation: "core1" }],
+    // 0x2033 was previously labeled "Model O 2 Wireless" from community tables;
+    // Glorious CORE's own SupportDevice.DB (v2.1.3) pairs it as the Model O 2 PRO
+    // 2.4 GHz receiver (wired PID 0x2019 above), same ModelOSeries router family.
+    [0x2033, { name: "Model O 2 PRO Wireless receiver", wireless: true, generation: "core1" }],
+    // Series 2 PRO: CORE drives it with the same ModelOSeries router as the
+    // core1 classics above, so DPI/RGB/debounce/battery/LOD use the classic
+    // commands. Its 2K/4K/8K polling rates do NOT fit the classic polling
+    // payload ({125,250,500,1000} Hz only) — CORE sends them via the newer
+    // per-profile wired/wireless polling command instead, which this driver
+    // does not speak yet. Polling stays capped at 1000 Hz until a capture of
+    // that command exists.
+    [0x201d, { name: "Series 2 PRO", wireless: false, generation: "core1" }],
+    [0x2039, { name: "Series 2 PRO Wireless receiver", wireless: true, generation: "core1" }],
+    // "core1" here is unconfirmed, despite the name overlap with 0x2033 above -
+    // a real unit is on a completely different VID (gloriousClassicIWired,
+    // 0x320f, not gloriousClassic's 0x258a) and its feature report declares
+    // 263 bytes, not the 64 every other core1 device (including 0x2033) uses.
+    // A diagnostic confirmed the driver's core1 payloads write without error
+    // but do nothing on the mouse - see isConfirmedReportLength() in
+    // classic-hid.ts, which is what actually gates writes at runtime (not this
+    // label). Model I 2 Wireless/Wired below (0x821a/0x831a) share this same
+    // VID and are equally unconfirmed for the same reason.
+    [0x823a, { name: "Model O V2 Wired", wireless: false, generation: "core1" }],
+    [0x2015, { name: "Model O Pro", wireless: false, generation: "core1" }],
+    [0x2027, { name: "Model O Pro Wireless receiver", wireless: true, generation: "core1" }],
+    [0x2018, { name: "Series One Pro", wireless: false, generation: "core1" }],
+    [0x2031, { name: "Series One Pro Wireless receiver", wireless: true, generation: "core1" }],
+    [0x201a, { name: "Model D 2 PRO", wireless: false, generation: "core1" }],
+    [0x2034, { name: "Model D 2 PRO Wireless receiver", wireless: true, generation: "core1" }],
+    [0x1503, { name: "Model I", wireless: false, generation: "core1" }],
+    [0x821a, { name: "Model I 2 Wireless", wireless: false, generation: "core1" }], // unconfirmed - see the note on 0x823a above
+    [0x831a, { name: "Model I 2 Wired", wireless: false, generation: "core1" }], // unconfirmed - see the note on 0x823a above
+    // core2 — RGB/debounce/battery only, see the doc comment above.
+    // (Model D 2 PRO 4K/8KHz Edition used to live here; it has graduated to the
+    // full GloriousCore2HidClient driver — see GLORIOUS_CORE2_PRODUCTS.)
+    [0xa312, { name: "Model O3 Wireless", wireless: true, generation: "core2" }],
+    [0xa300, { name: "Model O3 Wireless receiver", wireless: true, generation: "core2" }],
+]);
+/**
+ * Model O2/D2 Pro 4K/8K. The config collection is usage page 0xffff, usage 0.
+ * Interface 1 has another 0xffff collection (usage 1, no feature report), so
+ * the picker may list two entries; the driver claims only the one that takes
+ * the feature report. The usage is left out so a firmware that reports another
+ * one is still offered.
+ */
+export const GLORIOUS_CORE2_HID_FILTERS = [...GLORIOUS_CORE2_PRODUCTS.keys()].map((productId) => ({
+    vendorId: GLORIOUS_CORE2_VENDOR_ID,
+    productId,
+    usagePage: GLORIOUS_CORE2_USAGE_PAGE,
+}));
+/**
+ * Original wired Model O / D (SinoWealth 258a:0036 / 258a:0033) and Model O
+ * Eternal (3794:a000). Matched by id alone: the settings reports sit on a
+ * 0xff00 vendor collection, which WebHID only matches at top level, so the
+ * driver's isSupported() decides. The classic family is disjoint by product id.
+ */
+export const GLORIOUS_SINOWEALTH_HID_FILTERS = GLORIOUS_SINOWEALTH_PRODUCTS.map(({ vendorId, productId }) => ({
+    vendorId,
+    productId,
+}));
+export const GLORIOUS_CLASSIC_HID_FILTERS = [...GLORIOUS_CLASSIC_PRODUCTS.keys()].flatMap((productId) => [
+    { vendorId: VENDOR_ID.gloriousClassic, productId },
+    { vendorId: VENDOR_ID.gloriousClassicI, productId },
+    { vendorId: VENDOR_ID.gloriousClassicIWired, productId },
+    { vendorId: VENDOR_ID.gloriousO3, productId },
+]);
+// Keychron Nape Pro VIA raw HID. 0x0440 is wired; 0xd026/0xd029 are shared Link-KM receivers.
+export const KEYCHRON_NAPE_PRODUCT_IDS = [0x0440, 0xd026, 0xd029];
+export const KEYCHRON_NAPE_HID_FILTERS = KEYCHRON_NAPE_PRODUCT_IDS.map((productId) => ({ vendorId: VENDOR_ID.keychron, productId, usagePage: 0xff60, usage: 0x61 }));
+// Keychron mice and receivers on Launcher's "8k" (0xffc1) and "1k" (0x8c)
+// protocols. No product IDs: Launcher picks the protocol by collection alone.
+export const KEYCHRON_LAUNCHER_HID_FILTERS = [
+    { vendorId: VENDOR_ID.keychron, usagePage: 0xffc1, usage: 0x01 },
+    { vendorId: VENDOR_ID.keychron, usagePage: 0x8c, usage: 0x01 },
+];
+// Keychron 4K mice and their receiver. No product ID: the receiver's is unknown,
+// and Launcher treats any Keychron device with this collection as a 4K mouse.
+export const KEYCHRON_4K_HID_FILTERS = [
+    { vendorId: VENDOR_ID.keychron, usagePage: 0xff0a, usage: 0x01 },
+];
+// moddoMOUSE exposes its vendor config interface on usage page 0xff, usage 0x01
+// (older firmware answers on usage 0x02). Offer both so the picker lists the
+// control interface; the driver rejects anything without the config report.
+export const MODDO_HID_FILTERS = [
+    { vendorId: VENDOR_ID.moddo, usagePage: 0xff, usage: 0x01 },
+    { vendorId: VENDOR_ID.moddo, usagePage: 0xff, usage: 0x02 },
+];
+// The X3 family's control channel is the Sonix XS-1 interface: a single
+// 64-byte unnumbered feature report on usage page 0xffff. Request that
+// collection directly so the picker lists the control interface instead of the
+// mouse's plain pointer interface, which cannot answer feature reports.
+export const PULSAR_XS1_HID_FILTERS = [...PULSAR_XS1_PRODUCT_IDS].map((productId) => ({ vendorId: VENDOR_ID.pulsar, productId, usagePage: 0xffff, usage: 0x01 }));
+// Viper V2/V3 Pro and Mouse Dock Pro expose their control channel as a Generic
+// Desktop Mouse collection. Limit this broad collection filter to known PIDs so
+// it cannot also surface unrelated Razer keyboards or the Viper V4 Pro's
+// ordinary boot-mouse interfaces.
+export const RAZER_MOUSE_DOCK_PRO_CONTROL_FILTERS = [0x00a4].map((productId) => ({ vendorId: VENDOR_ID.razer, productId, usagePage: 0x01, usage: 0x02 }));
+export const RAZER_VIPER_V2_CONTROL_FILTERS = [0x00a5, 0x00a6].map((productId) => ({ vendorId: VENDOR_ID.razer, productId, usagePage: 0x01, usage: 0x02 }));
+export const RAZER_VIPER_V3_CONTROL_FILTERS = [0x00c0, 0x00c1].map((productId) => ({ vendorId: VENDOR_ID.razer, productId, usagePage: 0x01, usage: 0x02 }));
+/**
+ * Confirmed against real hardware: a user's `navigator.hid.getDevices()` dump
+ * on Windows for a DeathAdder V3 HyperSpeed (0x00c5) showed the un-narrowed
+ * catch-all filter below granting five *other* collections but never the one
+ * that actually answers (usage 0x01:0x02, opened, featureReports [0]) — the
+ * same device's macOS dump did include it, as a separate grant. Without a
+ * dedicated filter, this generation falls to RAZER_REGISTRY_FILTERS, which
+ * offers the whole device with no usage restriction: every top-level
+ * collection appears as an identical, unlabeled checkbox in Chrome's picker,
+ * and picking the wrong one(s) silently fails with no way to tell which was
+ * correct.
+ *
+ * Every other Viper-receiver/HyperSpeed-generation model (`viper-receiver` and
+ * `new-receiver` transports, `vendorControlInterface` false, not `nativeOnly`)
+ * shares this exact interface shape per the driver's own `isMouseControlInterface`
+ * contract, so they get the same narrow filter here rather than waiting for
+ * each one to be separately reported broken. Left OUT of this batch,
+ * deliberately:
+ * - `vendorControlInterface: true` models (the pre-HyperSpeed "standard"
+ *   generation, and the Viper V3 Pro SE) answer on a vendor-defined page
+ *   instead, which is a different filter this evidence says nothing about.
+ * - DeathAdder Essential and DeathAdder V2 keep their existing whole-device
+ *   filters: their control channel is a split interface, not this shape.
+ * - Naga V2 Pro (0x00a7/0x00a8) is already `verified: true` — it demonstrably
+ *   connects via the broad filter today, so it is left alone rather than risk
+ *   narrowing it to the wrong shape.
+ * - Cobra Pro, Naga V2 HyperSpeed, and the Pro Click/Basilisk Mobile
+ *   productivity lines were left out: no report or capture confirms this
+ *   shape for them, and their extra buttons/wheel make a different interface
+ *   layout plausible.
+ */
+// Widened to match Razer's own Synapse Web: intercepting its live
+// navigator.hid.requestDevice() call (synapse.razer.com/dashboard, "Add
+// Device") for the models it currently offers (Viper V4 Pro 0xe5/0xe6,
+// DeathAdder V4 Pro 0xbe/0xbf/0xef/0xf0) showed filters of exactly
+// `{vendorId, productId, usagePage}` — usagePage 0x01 AND 0x0c, with NO
+// `usage` field at all. That already matched RAZER_VIPER_V4_CONTROL_FILTERS
+// below; it did not match this constant, which added a `usage: 0x02`
+// restriction Razer's own reference implementation does not apply. Dropped
+// here to follow the same pattern, on top of razerProbeControlInterface
+// (hid.ts) trying the real protocol against whatever gets granted rather
+// than assuming which single collection is correct.
+export const RAZER_HYPERSPEED_CONTROL_FILTERS = [
+    0x0078, // Viper (see RAZER_VIPER_CONTROL_FILTERS above; kept for the doc trail)
+    0x007a, // Viper Ultimate (Wired)
+    0x007c, 0x007d, // DeathAdder V2 Pro (Wired/wireless) — issue #253
+    0x009e, 0x009f, // Viper Mini Signature Edition (Wired/wireless)
+    0x00b8, // Viper V3 HyperSpeed (already verified: true)
+    0x00c2, 0x00c3, // DeathAdder V3 Pro
+    0x00b6, 0x00b7, // DeathAdder V3 Pro (second SKU pair)
+    0x00c4, 0x00c5, // DeathAdder V3 HyperSpeed (Wired/wireless)
+    0x00aa, 0x00ab, // Basilisk V3 Pro
+    0x00cc, 0x00cd, // Basilisk V3 Pro 35K
+    0x00d6, 0x00d7, // Basilisk V3 Pro 35K Phantom Green
+    0x00be, 0x00bf, // DeathAdder V4 Pro
+    0x00ef, 0x00f0, // DeathAdder V4 Pro Carbon Fiber Edition
+].flatMap((productId) => [0x01, 0x0c].map((usagePage) => ({ vendorId: VENDOR_ID.razer, productId, usagePage })));
+// The Viper Mini answers on the same kind of single Generic Desktop Mouse
+// control interface as the V3 Pro, so it gets the same narrow collection filter.
+export const RAZER_VIPER_MINI_CONTROL_FILTERS = [0x008a].map((productId) => ({ vendorId: VENDOR_ID.razer, productId, usagePage: 0x01, usage: 0x02 }));
+// The original Viper exposes the same single Generic Desktop Mouse control
+// interface, so it gets the same narrow collection filter.
+export const RAZER_VIPER_CONTROL_FILTERS = [0x0078].map((productId) => ({ vendorId: VENDOR_ID.razer, productId, usagePage: 0x01, usage: 0x02 }));
+// Synapse Web exposes the V4 control interface through a single top-level
+// Generic Desktop or Consumer collection with Feature reports. Request both
+// pages so the browser offers that interface, then the driver rejects ordinary
+// mouse/keyboard interfaces that lack the required report.
+export const RAZER_VIPER_V4_CONTROL_FILTERS = [0x00e5, 0x00e6].flatMap((productId) => [0x01, 0x0c].map((usagePage) => ({ vendorId: VENDOR_ID.razer, productId, usagePage })));
+// The DeathAdder Essential family splits its pointer and configuration
+// channels across separate interfaces, and which usage page carries the
+// configuration one varies by hardware revision. Request the whole device so
+// the picker can offer every interface, then the driver rejects the ones that
+// cannot answer. 0x006e is the original, 0x0071 the White Edition, 0x0098 the
+// 2021 revision.
+export const RAZER_DEATHADDER_ESSENTIAL_FILTERS = [0x006e, 0x0071, 0x0098].map((productId) => ({ vendorId: VENDOR_ID.razer, productId }));
+// The Cobra's control interface layout has not been pinned down, so the whole
+// device is requested and the driver accepts whichever interface answers.
+export const RAZER_COBRA_FILTERS = [0x00a3].map((productId) => ({ vendorId: VENDOR_ID.razer, productId }));
+/**
+ * Razer product ids whose control interface is known, and which therefore get a
+ * narrower filter of their own above. Excluded from the catch-all below so a
+ * broad filter cannot quietly widen one that was deliberately narrowed.
+ */
+const RAZER_NARROWED_PRODUCT_IDS = new Set([
+    0x00a4, 0x00a5, 0x00a6, 0x00c0, 0x00c1, 0x006e, 0x0071, 0x0098, 0x0084,
+    // Viper and Viper Mini already had their own narrow filters defined above
+    // (RAZER_VIPER_CONTROL_FILTERS / RAZER_VIPER_MINI_CONTROL_FILTERS) but were
+    // never excluded from the catch-all below, so they carried this same
+    // ambiguous-picker bug the whole time. Excluded here alongside the rest of
+    // RAZER_HYPERSPEED_CONTROL_FILTERS' coverage.
+    0x0078, 0x008a,
+    0x007a, 0x007c, 0x007d, 0x009e, 0x009f, 0x00b8, 0x00c2, 0x00c3, 0x00b6,
+    0x00b7, 0x00c4, 0x00c5, 0x00aa, 0x00ab, 0x00cc, 0x00cd, 0x00d6, 0x00d7,
+    0x00be, 0x00bf, 0x00ef, 0x00f0,
+]);
+/**
+ * Every remaining product in the Razer registry. Which interface carries the
+ * control channel has not been established for these, and it varies by
+ * revision, so the whole device is requested and the picker offers each
+ * interface: the driver rejects the ones that cannot answer, and a model whose
+ * first entry never replies is added again on another entry.
+ *
+ * Products flagged `nativeOnly` in the registry are left out: their control
+ * channel is on a Chrome-protected collection, so no granted interface can
+ * ever answer and offering them just produces a dead picker entry.
+ */
+export const RAZER_REGISTRY_FILTERS = RAZER_PRODUCT_IDS
+    .filter((productId) => !RAZER_NARROWED_PRODUCT_IDS.has(productId))
+    .filter((productId) => !RAZER_PRODUCTS.get(productId)?.nativeOnly)
+    .map((productId) => ({ vendorId: VENDOR_ID.razer, productId }));
+// The DeathAdder V2 keeps the Essential family's split interface layout, so it
+// needs the same whole-device request rather than a single-collection filter.
+export const RAZER_DEATHADDER_V2_FILTERS = [0x0084].map((productId) => ({ vendorId: VENDOR_ID.razer, productId }));
+export const TEEVOLUTION_PRODUCT_IDS = [0xf520, 0xf523, 0xf5bb, 0xf522];
+// Logitech HID++ control interfaces addressed through a receiver slot.
+// 0xc54d is the GPX2/DEX receiver, 0xc543 the G PRO 2 receiver, 0xc547 the
+// Superlight 1 / old-Generic receiver, 0xc539 is HERO-era Lightspeed, 0xc0a8
+// is the PRO X 2 Superstrike USB interface, 0x40bd is its own dedicated
+// Lightspeed receiver (confirmed from a user diagnostic - transportIds
+// {Wireless: "40BD", USB: "C0A8"}), 0xc54f is the PRO X 3 Superstrike's own
+// Lightspeed receiver (a mouse + keyboard + vendor-interface composite that
+// answers HID++ and was rejected as "not a mouse" while unknown; confirmed on
+// hardware - the mouse connects as PRO X3 SUPERSTRIKE on 0x046d:0xc54f),
+// 0xc52b and 0xc532 are Unifying receivers (the receiver speaks HID++ 1.0, but
+// MX Vertical / MX Master 2S / MX Anywhere 2 behind it are HID++ 2.0 on slots
+// 1..6, often past a keyboard paired first), and Bolt product ids live in
+// ./logitech/protocol with the direct-connect list.
+/**
+ * USB product IDs devices re-enumerate as in bootloader/DFU mode. The
+ * 046d:0ad0/ad2/ad3/ad6 set was observed adjacent to the vendor agent's
+ * Yeti bootloader binding; 046d:0ab24 was observed LIVE as a PRO LIGHTSPEED
+ * receiver's bootloader PID (runtime 046d:c54d -> bootloader 046d:ab24 ->
+ * runtime during a real vendor flash). A flasher opens these — never the
+ * runtime PID — once the device has been rebooted into DFU mode.
+ */
+export const LOGITECH_BOOTLOADER_PRODUCT_IDS = [
+    0x0ad0,
+    0x0ad2,
+    0x0ad3,
+    0x0ad6,
+];
+export const LOGITECH_RECEIVER_PRODUCT_IDS = [
+    // Ids confirmed on hardware or from a user diagnostic, with their device
+    // context in the comment above.
+    0xc54d,
+    0xc543,
+    0xc539,
+    0xc0a8,
+    0xc547,
+    0x40bd,
+    0xc54f,
+    0xc52b,
+    0xc532,
+    // The remaining Lightspeed and Nano receivers Solaar documents
+    // (docs/devices.md, "Supported Receivers"). Listing one only changes the
+    // device-index probe order — the picker filter already matches any Logitech
+    // receiver by vendor and usage — so a mouse behind one of these is probed on
+    // its pairing slots first instead of the receiver's own 0xFF endpoint.
+    // 0xc542 is deliberately absent: Solaar notes that receiver does not
+    // implement the HID++ protocol at all. 0xc517 is the 27 MHz generation that
+    // predates HID++.
+    0xc53a, 0xc53d, 0xc53f, 0xc541, 0xc545, // Lightspeed
+    0xc518, 0xc51a, 0xc51b, 0xc521, 0xc525, 0xc526,
+    0xc52e, 0xc52f, 0xc531, 0xc534, 0xc537, // Nano
+    ...LOGITECH_BOLT_PRODUCT_IDS,
+];
+// Every Logitech product with an HID++ control interface, receiver-addressed or
+// not. Direct-connect and Bolt product IDs live in ./logitech/protocol so the
+// driver and these filters cannot disagree about which index a mouse answers on.
+export const LOGITECH_PRODUCT_IDS = [
+    ...LOGITECH_RECEIVER_PRODUCT_IDS,
+    ...LOGITECH_DIRECT_PRODUCT_IDS,
+];
+/**
+ * Every Logitech HID++ control interface, not only the product ids listed
+ * above: a mouse we have never seen should still be offered. Usage 1 is the
+ * short-report HID++ collection used by Lightspeed and for Bolt receiver
+ * registers; usage 2 is the long-report collection Bolt mice need for HID++
+ * 2.0 feature traffic. The driver decides mouse-vs-keyboard after connecting.
+ */
+export const LOGITECH_RECEIVER_FILTERS = [
+    { vendorId: VENDOR_ID.logitech, usagePage: HIDPP_USAGE_PAGE, usage: 0x0001 },
+    { vendorId: VENDOR_ID.logitech, usagePage: HIDPP_USAGE_PAGE, usage: 0x0002 },
+];
+/**
+ * The same protocol reached over Bluetooth, where none of the filters above
+ * match: a paired MX Master exposes one vendor collection on 0xFF43 and nothing
+ * on 0xFF00, so it was listed by the diagnostics scan (which filters by vendor
+ * id alone) while never appearing in the picker at all.
+ *
+ * Matched by page, without a usage, because 0xFF43 is Logitech's own page and
+ * the collection is numbered differently across firmware.
+ */
+export const LOGITECH_BLUETOOTH_FILTERS = [
+    { vendorId: VENDOR_ID.logitech, usagePage: HIDPP_BLUETOOTH_USAGE_PAGE },
+];
+// Retained for existing imports; points at the first supported receiver.
+export const LOGITECH_RECEIVER_FILTER = LOGITECH_RECEIVER_FILTERS[0];
+export const WLMOUSE_PRODUCTS = new Map([
+    [0xa860, { name: "Beast G", wireless: true }],
+    [0xa861, { name: "Beast G", wireless: false }],
+    [0xa863, { name: "Huan", wireless: true }],
+    [0xa864, { name: "Huan", wireless: false }],
+    [0xa866, { name: "Beast Miao", wireless: true }],
+    [0xa867, { name: "Beast Miao", wireless: false }],
+    [0xa868, { name: "Beast Mini Pro", wireless: true }],
+    [0xa869, { name: "Beast Mini Pro", wireless: false }],
+    [0xa870, { name: "Beast X Pro", wireless: true }],
+    [0xa871, { name: "Beast X Pro", wireless: false }],
+    [0xa872, { name: "Strider", wireless: true }],
+    [0xa873, { name: "Strider", wireless: false }],
+    [0xa874, { name: "Ying", wireless: true }],
+    [0xa875, { name: "Ying", wireless: false }],
+    [0xa878, { name: "Sword X", wireless: true }],
+    [0xa879, { name: "Sword X", wireless: false }],
+    [0xa880, { name: "Beast Max", wireless: true }],
+    [0xa881, { name: "Beast Max", wireless: false }],
+    [0xa882, { name: "WLmouse 1K receiver", wireless: true }],
+    [0xa883, { name: "Beast X", wireless: true }],
+    [0xa884, { name: "Beast X", wireless: false }],
+    [0xa885, { name: "Beast Mini", wireless: true }],
+    [0xa886, { name: "Beast Mini", wireless: false }],
+]);
+export const WLMOUSE_MAX_POLLING_HZ = new Map([
+    [0xa882, 1000],
+]);
+// Wooting analog boards expose their command-capable config interface on usage
+// page 0xFF55, usage 0x01. Offer only that page: a board also presents a legacy
+// 0xFF00 collection and the 0xFF53 analog stream, and matching those too would
+// list the same physical keyboard several times in the picker. The driver reads
+// commands through 0xFF55 alone.
+export const WOOTING_HID_FILTERS = WOOTING_PRODUCT_IDS.map((productId) => ({ vendorId: WOOTING_VENDOR_ID, productId, usagePage: WOOTING_CONFIG_USAGE_PAGE, usage: WOOTING_CONFIG_USAGE }));
+export const WALLHACK_HID_FILTERS = [
+    ...[...WALLHACK_MOUSE_PRODUCT_IDS].map((productId) => ({ vendorId: WALLHACK_VENDOR_ID, productId, usagePage: WALLHACK_MOUSE_USAGE_PAGE, usage: WALLHACK_MOUSE_USAGE })),
+    ...[...WALLHACK_KEYBOARD_PRODUCT_IDS].flatMap((productId) => [WALLHACK_VENDOR_ID, WALLHACK_KEYBOARD_ALT_VENDOR_ID].map((vendorId) => ({ vendorId, productId, usagePage: WALLHACK_KEYBOARD_USAGE_PAGE, usage: WALLHACK_KEYBOARD_USAGE }))),
+];
+/**
+ * Lamzu's own vendor id carries the Inca 8K. Unlike the broad 0x373e filter
+ * this one is narrowed to usage page 0xffff, which keeps the mouse, consumer,
+ * system and keyboard collections on MI_00/MI_01 out of the picker on any
+ * platform that exposes a device's interfaces as separate HIDDevices. It
+ * cannot narrow further: the config channel is MI_02, whose usage is 0x0000,
+ * and a WebHID filter cannot pin a zero usage.
+ *
+ * That leaves MI_01's 0xffff/0x01 vendor collection as the only entry this
+ * filter still admits, and the driver's feature-report-0 check rejects it — a
+ * WebHID enumeration of both connections shows that collection declaring no
+ * feature reports at all, while only 0xffff/0x0000 declares report 0. See
+ * docs/lamzu-inca-testing.md.
+ *
+ * On Chrome/Windows the narrowing is moot: all seven collections arrive on a
+ * single HIDDevice, so the device is one picker entry whatever the filter says.
+ */
+export const LAMZU_INCA_HID_FILTERS = [...LAMZU_INCA_PRODUCTS.keys()].map((productId) => ({ vendorId: VENDOR_ID.lamzuInca, productId, usagePage: 0xffff }));
+/**
+ * GearHub-V5 receivers (Lingbao M5 Pro, Attack Shark R2, …) and the wired
+ * product id. 0x3151 is the MicLink/mlzn ODM vendor id, shared with unrelated
+ * keyboards and mice, so these are requested per product id rather than
+ * vendor-wide.
+ */
+export const GEARHUB_HID_FILTERS = [...GEARHUB_PRODUCTS.entries()].map(([productId, profile]) => ({
+    vendorId: GEARHUB_VENDOR_ID,
+    productId,
+    usagePage: profile.transport === "bluetooth" ? GEARHUB_BLUETOOTH_USAGE_PAGE : 0xffff,
+    usage: profile.transport === "bluetooth" ? GEARHUB_BLUETOOTH_USAGE : 0x02,
+}));
+// Corsair NXP-family mice answer on the interface whose collection is usage
+// page 0xffc2, usage 4 (64-byte feature reports on id 0). MI_00 also carries
+// an 0xffc2 collection (usage 3) that never answers, so the usage is required
+// or the picker lists the same mouse twice.
+export const CORSAIR_HID_FILTERS = CORSAIR_PRODUCT_IDS.map((productId) => ({
+    vendorId: CORSAIR_VENDOR_ID,
+    productId,
+    usagePage: CORSAIR_USAGE_PAGE,
+    usage: CORSAIR_CONFIG_USAGE,
+}));
+/**
+ * Bragi mice and their receivers. Interface 2 of the receiver is 0xFF42 as
+ * well (input only), so the picker may list two entries; the driver claims
+ * only the one that takes output reports. The HID report descriptor, and with
+ * it the usage that would tell the two apart here, has not been captured yet.
+ */
+export const CORSAIR_BRAGI_HID_FILTERS = CORSAIR_BRAGI_PRODUCT_IDS.map((productId) => ({
+    vendorId: CORSAIR_VENDOR_ID,
+    productId,
+    usagePage: CORSAIR_BRAGI_USAGE_PAGE,
+}));
+export const MICROSOFT_HID_FILTERS = [
+    { vendorId: VENDOR_ID.microsoft, productId: MICROSOFT_PRODUCT_CLASSIC, usagePage: MICROSOFT_CLASSIC_USAGE_PAGE, usage: MICROSOFT_CLASSIC_USAGE }, // Classic
+    { vendorId: VENDOR_ID.microsoft, productId: MICROSOFT_PRODUCT_PRO, usagePage: MICROSOFT_PRO_USAGE_PAGE, usage: MICROSOFT_PRO_USAGE }, // Pro
+];
+/**
+ * The Incott 8K wireless mouse (and its charging-state product id) answer the
+ * vendor protocol on usage page 0xFF05. Narrowed per product id and usage
+ * page, like the other 0x093a filter above, so the picker offers the
+ * protocol-carrying collection specifically rather than relying only on the
+ * broad Glorious VID-only filter that already happens to admit this VID.
+ */
+export const INCOTT_HID_FILTERS = INCOTT_PRODUCT_IDS.map((productId) => ({
+    vendorId: INCOTT_VENDOR_ID,
+    productId,
+    usagePage: INCOTT_USAGE_PAGE,
+}));
+/**
+ * HyperX Pulsefire Haste family. The config channel is the vendor collection
+ * on usage page 0xFF00 (usage 0x01). The original wired model enumerates
+ * under Kingston VID 0x0951; HP-era models use 0x03F0.
+ */
+export const HYPERX_KINGSTON_HID_FILTERS = [...HYPERX_PULSEFIRE_HASTE_KINGSTON_PIDS].map((productId) => ({ vendorId: VENDOR_ID.hyperxKingston, productId, usagePage: HYPERX_USAGE_PAGE }));
+export const HYPERX_HP_HID_FILTERS = [...HYPERX_PULSEFIRE_HASTE_HP_PIDS].map((productId) => ({ vendorId: VENDOR_ID.hyperxHp, productId, usagePage: HYPERX_USAGE_PAGE }));
+export const HYPERX_HID_FILTERS = [
+    ...HYPERX_KINGSTON_HID_FILTERS,
+    ...HYPERX_HP_HID_FILTERS,
+];
+export const RYUNIX_HID_FILTERS = [...RYUNIX_PRODUCT_IDS].map((productId) => ({
+    vendorId: RYUNIX_VENDOR_ID,
+    productId,
+    usagePage: RYUNIX_USAGE_PAGE,
+    usage: RYUNIX_USAGE,
+}));
+// Both the 2.4 GHz receiver and the mouse on its cable answer on the same
+// usage page and usage, so one filter per product id covers the family.
+export const RAPOO_HID_FILTERS = [...RAPOO_PRODUCT_IDS].map((productId) => ({
+    vendorId: RAPOO_VENDOR_ID,
+    productId,
+    usagePage: RAPOO_CONFIG_USAGE_PAGE,
+    usage: RAPOO_CONFIG_USAGE,
+}));
+export const MOTOSPEED_HID_FILTERS = MOTOSPEED_PRODUCTS.map(({ productId }) => ({
+    vendorId: MOTOSPEED_VENDOR_ID,
+    productId,
+    usagePage: MOTOSPEED_USAGE_PAGE,
+}));
+export const VAXEE_HID_FILTERS = VAXEE_PRODUCT_IDS.map((productId) => ({
+    vendorId: VAXEE_VENDOR_ID, productId, usagePage: VAXEE_USAGE_PAGE, usage: VAXEE_USAGE,
+}));
+export const SUPPORTED_HID_FILTERS = [
+    ...VAXEE_HID_FILTERS,
+    ...ASUS_HID_FILTERS,
+    ...DAREU_HID_FILTERS,
+    ...REDRAGON_HID_FILTERS,
+    ...REDRAGON_M690_PRO_HID_FILTERS,
+    ...FATER_HID_FILTERS,
+    ...MOTOSPEED_HID_FILTERS,
+    ...ZAUNKOENIG_PRODUCT_IDS.map((productId) => ({
+        vendorId: ZAUNKOENIG_VENDOR_ID,
+        productId,
+        usagePage: ZAUNKOENIG_USAGE_PAGE,
+    })),
+    ...CORSAIR_HID_FILTERS,
+    ...CORSAIR_BRAGI_HID_FILTERS,
+    { vendorId: VENDOR_ID.finalmouse, productId: 0x0100, usagePage: 0xff00, usage: 0x0001 },
+    // Starlight X dongles share 0xff00 but the exact usage is not pinned down, so
+    // the picker matches on the page alone (the driver accepts either).
+    ...FINALMOUSE_SLX_DONGLE_PRODUCT_IDS.map((productId) => ({
+        vendorId: VENDOR_ID.finalmouse,
+        productId,
+        usagePage: 0xff00,
+    })),
+    { vendorId: VENDOR_ID.pulsar },
+    ...PULSAR_XS1_HID_FILTERS,
+    // The Pulsar 4K Wireless Receiver enumerates under the shared Teevolution/VGN
+    // vendor id with a Pulsar-specific product id, so the broad VID-only filter
+    // keeps it visible in the picker; the driver disambiguates by product id.
+    // Lamzu's Atlantis generation lands here too — 0x3554 is CompX's ODM id, and
+    // this filter already surfaces it, so it needs no entry of its own.
+    { vendorId: VENDOR_ID.vgn },
+    { vendorId: VENDOR_ID.endgameGear },
+    { vendorId: VENDOR_ID.wlmouse },
+    // 0x373e is the shared CompX ODM vendor id behind Lamzu, CRDRAKO,
+    // LunaFury, Vancer, and Attack Shark. The broad filter surfaces all of them;
+    // each driver rejects interfaces that lack the feature-report-0 control
+    // channel.
+    { vendorId: VENDOR_ID.lamzu },
+    ...LAMZU_INCA_HID_FILTERS,
+    { vendorId: VENDOR_ID.bytech, usagePage: 0xff00, usage: 0x0001 },
+    { vendorId: VENDOR_ID.orbital, usagePage: 0xff0a, usage: 1 },
+    ...[...RAWM_PRODUCT_IDS].map((productId) => ({
+        vendorId: VENDOR_ID.rawm,
+        productId,
+        usagePage: RAWM_USAGE_PAGE,
+        usage: RAWM_USAGE,
+    })),
+    // MCHOSE ships keyboards and audio devices under 0x3837 too, so this stays
+    // narrowed to the mouse configuration collection rather than the whole VID.
+    ...MCHOSE_A5_HID_FILTERS,
+    // Both mouse generations answer on this collection — the A7 V2 with inverted
+    // feature reports, the A7 V3 with its own output-report protocol — so one
+    // filter offers the whole mouse line and the drivers split it by product id.
+    { vendorId: VENDOR_ID.mchose, usagePage: MCHOSE_CONFIG_USAGE_PAGE, usage: MCHOSE_CONFIG_USAGE },
+    // The MagDock is a separate device on its own usage page; it carries the RGB.
+    { vendorId: VENDOR_ID.mchose, productId: MCHOSE_DOCK_PRODUCT_ID, usagePage: MCHOSE_DOCK_USAGE_PAGE, usage: MCHOSE_DOCK_USAGE },
+    ...TEEVOLUTION_PRODUCT_IDS.map((productId) => ({ vendorId: VENDOR_ID.teevolution, productId })),
+    ...TEEVOLUTION_PRODUCT_IDS.map((productId) => ({
+        vendorId: VENDOR_ID.teevolution,
+        productId,
+        usagePage: TEEVOLUTION_LCD_USAGE_PAGE,
+        usage: TEEVOLUTION_LCD_USAGE,
+    })),
+    ...RAZER_MOUSE_DOCK_PRO_CONTROL_FILTERS,
+    ...RAZER_VIPER_V2_CONTROL_FILTERS,
+    ...RAZER_VIPER_V3_CONTROL_FILTERS,
+    ...RAZER_HYPERSPEED_CONTROL_FILTERS,
+    ...RAZER_VIPER_MINI_CONTROL_FILTERS,
+    ...RAZER_VIPER_CONTROL_FILTERS,
+    { vendorId: VENDOR_ID.vgn, productId: 0xfb56 },
+    { vendorId: VENDOR_ID.vgn, productId: 0xfb57 },
+    // ATK/VXE config collection. ATK HUB 3.2.27 targets 0xFF04:0x02 (and
+    // 0xFF05:0x01 on the NearLink generation) on the same composite device and
+    // does not list 0xFF02 at all, yet the driver's hardware captures answered
+    // the 0x55-framed commands on 0xFF02:0x02. Both collections appear to be
+    // present; this filter and AtkHidClient.isSupported use 0xFF02 to match the
+    // verified transport. Re-evaluate with a per-interface collection dump if an
+    // ATK mouse ever fails to appear in the picker.
+    { vendorId: VENDOR_ID.atk, usagePage: 0xff02, usage: 2 },
+    ...BITMOUSE_PRODUCT_IDS.map((productId) => ({ vendorId: VENDOR_ID.atk, productId, usagePage: BITMOUSE_USAGE_PAGE, usage: BITMOUSE_USAGE })),
+    ...ATK_COMPX_PRODUCT_IDS.map((productId) => ({ vendorId: VENDOR_ID.vgn, productId, usagePage: 0xff02, usage: 2 })),
+    { vendorId: VENDOR_ID.attackShark },
+    { vendorId: VENDOR_ID.attackSharkX },
+    ...RAZER_VIPER_V4_CONTROL_FILTERS,
+    ...RAZER_DEATHADDER_ESSENTIAL_FILTERS,
+    ...RAZER_COBRA_FILTERS,
+    ...KEYCHRON_NAPE_HID_FILTERS,
+    ...KEYCHRON_LAUNCHER_HID_FILTERS,
+    ...KEYCHRON_4K_HID_FILTERS,
+    ...RAZER_REGISTRY_FILTERS,
+    ...RAZER_DEATHADDER_V2_FILTERS,
+    ...EGG_WE_HID_FILTERS,
+    ...MODDO_HID_FILTERS,
+    ...WOOTING_HID_FILTERS,
+    ...[...NINJUTSO_LEGACY_MOUSE_PRODUCT_IDS, ...NINJUTSO_LEGACY_RECEIVER_PRODUCT_IDS]
+        .map((productId) => ({ vendorId: NINJUTSO_LEGACY_VENDOR_ID, productId })),
+    ...[...NINJUTSO_MOUSE_PRODUCT_IDS, ...NINJUTSO_RECEIVER_PRODUCT_IDS]
+        .map((productId) => ({ vendorId: NINJUTSO_VENDOR_ID, productId })),
+    ...LOGITECH_RECEIVER_FILTERS,
+    ...LOGITECH_BLUETOOTH_FILTERS,
+    ...GEARHUB_HID_FILTERS,
+    // Fantech mice use vendor usage page 0xFFFF, usage 0x02 for configuration.
+    { vendorId: VENDOR_ID.fantech, usagePage: 0xffff, usage: 0x02 },
+    ...WALLHACK_HID_FILTERS,
+    // The XVI generations' 64-byte feature report is found by shape, not usage
+    // page (see gwolves/xvi-hid.ts and gwolves/xvi-new-hid.ts), so those models
+    // match on product id alone.
+    ...[...GWOLVES_PRODUCTS].map(([productId, product]) => (product.protocol === "gwolves" ? { vendorId: VENDOR_ID.gwolves, productId, usagePage: 0xff02 } : { vendorId: VENDOR_ID.gwolves, productId })),
+    ...STEELSERIES_RIVAL3_FILTERS,
+    { vendorId: VENDOR_ID.glorious },
+    ...GLORIOUS_CLASSIC_HID_FILTERS,
+    ...GLORIOUS_SINOWEALTH_HID_FILTERS,
+    ...GLORIOUS_CORE2_HID_FILTERS,
+    // K-snake X11 exposes its 0x55-framed control channel on 0xFF01:0x10 for
+    // both the wired USB VID and the 2.4 GHz dongle VID.
+    { vendorId: VENDOR_ID.ksnakeUsb, productId: 0x2255, usagePage: 0xff01, usage: 0x10 },
+    { vendorId: VENDOR_ID.ksnakeDongle, productId: 0x2255, usagePage: 0xff01, usage: 0x10 },
+    ...AJAZZ_HID_FILTERS,
+    ...MICROSOFT_HID_FILTERS,
+    ...INCOTT_HID_FILTERS,
+    ...HYPERX_HID_FILTERS,
+    ...RYUNIX_HID_FILTERS,
+    ...RAPOO_HID_FILTERS,
+    { vendorId: VENDOR_ID.coolermaster, usagePage: COOLERMASTER_USAGE_PAGE, usage: COOLERMASTER_USAGE },
+    { vendorId: VENDOR_ID.ajazz, productId: AJAZZ_AK820_WIRED_PID, usagePage: 0xff00 },
+    { vendorId: VENDOR_ID.ajazz, productId: AJAZZ_AK820_WIRED_PID, usagePage: 0xff60 },
+    // No HID descriptor has been captured, so the usage page is unknown; the
+    // driver selects the report-8 input/output collection by shape.
+    ...[...HITSCAN_PRODUCTS.keys()].map((productId) => ({ vendorId: VENDOR_ID.hitscan, productId })),
+];

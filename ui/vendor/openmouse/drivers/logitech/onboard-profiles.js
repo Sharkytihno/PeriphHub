@@ -1,0 +1,1124 @@
+/**
+ * HID++ 0x8100 onboard profile decoding.
+ *
+ * Layouts recovered from Logitech's own registration code and verified against
+ * a Pro X Superlight 2 (profile format 7) — see
+ * docs/logitech-onboard-profiles.md. Pure functions only: the transport lives
+ * in hidpp.ts, so everything here is testable against captured bytes.
+ */
+/** 0x8100 function ids. Write functions are deliberately absent. */
+export const PROFILE_FN = {
+    getInfo: 0x00,
+    setMode: 0x10,
+    getMode: 0x20,
+    setCurrentProfile: 0x30,
+    getCurrentProfile: 0x40,
+    memoryRead: 0x50,
+    memoryAddrWrite: 0x60,
+    memoryWrite: 0x70,
+    memoryWriteEnd: 0x80,
+};
+export const ONBOARD_MODE = { onboard: 0x01, host: 0x02 };
+/**
+ * Names from the library's PROFILE_FORMAT enum, which stops at 6 — the
+ * dispatcher handles 8. Ids 7 and 8 are newer formats the managed wrapper was
+ * never updated for, so they are described by what they carry instead.
+ */
+const PROFILE_FORMAT_NAMES = {
+    1: "PROTOSS_HYJAL",
+    2: "LOGAN",
+    3: "HEAT",
+    4: "HARPY",
+    5: "HOST_LAYER",
+    6: "BAYMAX",
+    7: "FORMAT 7", // (v6 + bunny hopping)
+    8: "FORMAT 8", // (v6 + bunny hopping + analog buttons)
+};
+/**
+ * Formats whose layout has been confirmed by decoding a real profile whose
+ * checksum validates. Everything else is read out of vendor code only — the v6
+ * base was wrong in two ways (DPI offset and endianness) until hardware
+ * corrected it, so treat unverified layouts as display-only.
+ *
+ * Add a format here only after a dump from that device decodes sensibly with a
+ * matching CRC.
+ *
+ * Format 2 (LOGAN) is trusted only for its report-rate field: the v1 base was
+ * recovered from vendor code, the write sequence is the same one format 7
+ * proved on hardware, and the rate byte decodes back as a polling interval. A
+ * hardware sanity check on a G502/G403-family device is still required before
+ * release — see docs/logitech-onboard-profiles.md.
+ */
+/**
+ * Format 8 (PRO X 2 / PRO X 3 Superstrike) joins this set on a CRC-matching
+ * full dump: profile sector 1 from a PRO X 3 diagnostic, all 255 bytes, checks
+ * out against its own stored CRC (0x2a38, identical on the PRO X 2). That
+ * confirms the layout, so profiles can be opened, switched and enabled.
+ */
+const VERIFIED_FORMATS = new Set([2, 3, 4, 7, 8]);
+/**
+ * Format 8 is a testing-phase addition: the same base-v6 stage table and write
+ * sequence format 7 already proved on hardware, and its layout is verified, but
+ * a DPI write to it has been confirmed on hardware (a PRO X 3 Superstrike), and
+ * the per-stage lift-off byte sits in the same 5-byte stage entries. Both are
+ * written; openActiveProfile() still re-reads the live sector and refuses on a
+ * bad CRC. Pull it back out if a write-then-reconnect check does not come back
+ * clean.
+ */
+const WRITABLE_FORMATS = new Set([2, 3, 4, 7, 8]);
+const PROFILE_WRITE_PROBE_FORMATS = new Set([2, 3, 4]);
+const FACTORY_RESET_FORMATS = new Set([7, 8]);
+/** Whether profile-content writes for `profileFormatId` are trusted at all. */
+export function isProfileWritable(profileFormatId) {
+    return profileFormatId !== null && profileFormatId !== undefined && WRITABLE_FORMATS.has(profileFormatId);
+}
+/**
+ * Format 7's per-stage lift-off byte (and the rest of its DPI-stage triplet
+ * layout) was recovered from a Pro X Superlight 2 dump. A PID 0xc094 (the
+ * original G Pro X Superlight, wpid 4093 — Logitech's "PRO X Wireless" in its
+ * own tooling) was then reported to return HID++ error 0x05 ("Logitech
+ * internal error") when a stage's lift-off byte is written, matching an
+ * unresolved report of a differently-shifted DPI stage layout.
+ *
+ * That report was later pinned to format 7: a sector-1 dump from a real
+ * 0xc094 (main app MPM25.01_B0018) reports profile format 4, i.e. the base v1
+ * scalar table, which has no per-stage lift-off field at all — see the "PRO X
+ * Wireless dump" test. The guard therefore cannot fire against a base-v1
+ * layout and only matters if a unit ever reports a v6 format; it is kept for
+ * that case, because lifting it on a real format-7 board would bring the 0x05
+ * back. Everything else a format-7 profile carries — DPI x/y, report rate,
+ * angle-snap, name, buttons — stays writable, and only the lift-off byte for
+ * each stage is left untouched.
+ */
+const UNVERIFIED_LOD_PRODUCT_IDS = new Set([0xc094]);
+/** Whether the per-stage lift-off byte is trusted to write on this specific device. */
+export function isLodWritableForProduct(profileFormatId, productId) {
+    if (!isProfileWritable(profileFormatId))
+        return false;
+    // Base v1 (formats 1-5) stores one scalar DPI per slot and has no lift-off
+    // byte, so there is nothing for the product guard to refuse.
+    if ((profileFormatId ?? 0) < 6)
+        return true;
+    if (productId !== null && productId !== undefined && UNVERIFIED_LOD_PRODUCT_IDS.has(productId))
+        return false;
+    return true;
+}
+/** Whether this format has a reversible guided write probe. */
+export function supportsProfileWriteProbe(profileFormatId) {
+    return profileFormatId !== null
+        && profileFormatId !== undefined
+        && PROFILE_WRITE_PROBE_FORMATS.has(profileFormatId);
+}
+/** Whether a complete, byte-for-byte reset image exists for this format. */
+export function supportsFactoryReset(profileFormatId) {
+    return profileFormatId !== null
+        && profileFormatId !== undefined
+        && FACTORY_RESET_FORMATS.has(profileFormatId);
+}
+export function describeProfileFormat(profileFormatId) {
+    return {
+        id: profileFormatId,
+        name: PROFILE_FORMAT_NAMES[profileFormatId] ?? "unknown",
+        base: profileFormatId >= 6 ? "v6" : "v1",
+        supported: profileFormatId >= 1 && profileFormatId <= 8,
+        verified: VERIFIED_FORMATS.has(profileFormatId),
+        writable: WRITABLE_FORMATS.has(profileFormatId),
+    };
+}
+/** The name region is 0x30 bytes of UTF-16LE: 24 units, one kept for the
+ * terminator so a full-length name still reads back with a clear end. */
+const PROFILE_NAME_BYTES = 0x30;
+export const PROFILE_NAME_MAX_CHARS = PROFILE_NAME_BYTES / 2 - 1;
+/**
+ * Feature 0x2202's lift-off enum: 0 means the sensor has no lift-off control,
+ * and the levels count from one. This belongs to the feature, not to a profile
+ * format — every device that exposes 0x2202 uses the same numbering.
+ *
+ * Confirmed twice over: captured from G HUB writing a Pro X Superlight 2
+ * profile (02 -> 01 for medium to low, 01 -> 03 for low to high), and matching
+ * OpenLogi's Lod enum { NotSupported = 0, Low = 1, Medium = 2, High = 3 }.
+ *
+ * The driver previously counted from zero, which made "Low" write 0 — a value
+ * meaning "unsupported" that the mouse rejects — and reported every level one
+ * step too high.
+ */
+const LOD_ENCODING = { Low: 1, Medium: 2, High: 3 };
+/**
+ * Applied when the mouse does not report a format, or reports one whose limits
+ * were never established.
+ *
+ * Only two levels are offered because no third was ever confirmed on such a
+ * device — not because Low is unreachable. That was the old off-by-one talking:
+ * Low used to write 0, which means "no lift-off control", so it always failed.
+ */
+const DEFAULT_FORMAT_CAPABILITIES = {
+    supportedLods: ["Medium", "High"],
+    lodEncoding: LOD_ENCODING,
+    // Base v1 has a scalar DPI table, but its sensor-specific conversion and
+    // writable range are not verified. Unknown formats therefore offer no edits.
+    dpiStages: null,
+    // Ceilings are a property of the radio and the USB interface, so they cannot
+    // be carried over from another mouse.
+    reportRates: null,
+    maxNameLength: null,
+    bunnyHop: false,
+};
+const FORMAT_CAPABILITIES = {
+    // Format 1 capture: five scalar slots on a 252-4032 grid in steps of 84.
+    1: {
+        supportedLods: [],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 252, maxDpi: 4032, stepDpi: 84 },
+        reportRates: { wirelessMaxHz: 1000, wiredMaxHz: 1000 },
+        maxNameLength: null,
+        bunnyHop: false,
+    },
+    // LOGAN is shared by G502 generations. The HERO capture advertises the
+    // widest observed grid; callers narrow it to the connected sensor's live
+    // DPI list so an older 12K G502 is never offered the HERO's 25.6K ceiling.
+    2: {
+        supportedLods: [],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 100, maxDpi: 25600, stepDpi: 50 },
+        reportRates: { wirelessMaxHz: 1000, wiredMaxHz: 1000 },
+        maxNameLength: PROFILE_NAME_MAX_CHARS,
+        bunnyHop: false,
+    },
+    // A G703 on format 3 reported four of five scalar slots, 50-12000 DPI in
+    // steps of 50, and 125/250/500/1000 Hz. Name, default-slot DPI, and wired
+    // rate writes were applied, confirmed live, and restored.
+    3: {
+        supportedLods: [],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 50, maxDpi: 12000, stepDpi: 50 },
+        reportRates: { wirelessMaxHz: 1000, wiredMaxHz: 1000 },
+        maxNameLength: PROFILE_NAME_MAX_CHARS,
+        bunnyHop: false,
+    },
+    // A G102 LIGHTSYNC on format 4 reported five scalar slots, 50-8000 DPI in
+    // steps of 50, and 125/250/500/1000 Hz through the capability collector.
+    // Its DPI, rate, and name writes were applied, read back live, and restored.
+    4: {
+        supportedLods: [],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 50, maxDpi: 8000, stepDpi: 50 },
+        reportRates: { wirelessMaxHz: 1000, wiredMaxHz: 1000 },
+        maxNameLength: PROFILE_NAME_MAX_CHARS,
+        bunnyHop: false,
+    },
+    // Pro X Superlight 2. Three levels, counted from one. Five slots, from the
+    // 5x5 stage table in the registration and confirmed against a real profile.
+    7: {
+        supportedLods: ["Low", "Medium", "High"],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 100, maxDpi: 32000, stepDpi: 50 },
+        // Reported on hardware: the Lightspeed link runs to 8 kHz, the USB cable
+        // is a 1 kHz charging connection rather than a full-rate wired mode.
+        reportRates: { wirelessMaxHz: 8000, wiredMaxHz: 1000 },
+        maxNameLength: PROFILE_NAME_MAX_CHARS,
+        bunnyHop: true,
+    },
+    // Format 8 carries the analog-button block, so it is the PRO X 2 Superstrike
+    // format. Confirmed from two user diagnostics, a PRO X 2 and a PRO X 3
+    // Superstrike, whose profile sector 1 (raw memory reads) decode to the same
+    // five factory stages - 800/1200/1600/2400/3200, all X=Y linked - at the
+    // same 2-index + 5x5-byte layout base v6 already uses, matching format 7's
+    // geometry exactly. Every stage's stored lift-off byte was 2, which
+    // LOD_ENCODING reads as "Medium" - a level the old two-entry list never
+    // allowed, so it was simply wrong, not just unconfirmed. The DPI range is
+    // the widest grid seen: the PRO X 3's 0x2202 list runs 100-48000 (steps of
+    // 1/2/5/10/20/50/100/125/200 across its ranges), stored as plain 16-bit
+    // values; callers narrow it to the connected sensor's own list, so an older
+    // sensor is never offered the X3's ceiling. Writable as a testing-phase step -
+    // see WRITABLE_FORMATS.
+    8: {
+        supportedLods: ["Low", "Medium", "High"],
+        lodEncoding: LOD_ENCODING,
+        dpiStages: { maxStages: 5, minDpi: 100, maxDpi: 48000, stepDpi: 50 },
+        // Captured behavior: the wireless link reaches 8 kHz while USB is capped
+        // at 1 kHz. Transport selection is resolved from HID++ identity data.
+        reportRates: { wirelessMaxHz: 8000, wiredMaxHz: 1000 },
+        // The name region is part of base v6, which format 8 shares.
+        maxNameLength: PROFILE_NAME_MAX_CHARS,
+        bunnyHop: true,
+    },
+};
+function greatestCommonDivisor(left, right) {
+    let a = Math.abs(left);
+    let b = Math.abs(right);
+    while (b !== 0)
+        [a, b] = [b, a % b];
+    return a;
+}
+/** Narrows format storage limits to the DPI grid advertised by this sensor. */
+export function dpiStageCapabilitiesForOptions(formatCapabilities, dpiOptions) {
+    if (formatCapabilities === null || dpiOptions.length === 0)
+        return formatCapabilities;
+    const values = [...new Set(dpiOptions)]
+        .filter((value) => Number.isInteger(value) && value > 0)
+        .sort((left, right) => left - right);
+    if (values.length === 0)
+        return formatCapabilities;
+    const stepDpi = values.reduce(greatestCommonDivisor);
+    return {
+        maxStages: formatCapabilities.maxStages,
+        minDpi: values[0],
+        maxDpi: values.at(-1),
+        stepDpi: stepDpi || formatCapabilities.stepDpi,
+    };
+}
+export function capabilitiesForFormat(profileFormatId) {
+    if (profileFormatId === null || profileFormatId === undefined)
+        return DEFAULT_FORMAT_CAPABILITIES;
+    return FORMAT_CAPABILITIES[profileFormatId] ?? DEFAULT_FORMAT_CAPABILITIES;
+}
+/** Turns a raw 0x2202 lift-off byte back into a level for the given format. */
+export function decodeLiftOffLevel(raw, capabilities) {
+    if (raw === null || raw === undefined)
+        return null;
+    const level = Object.keys(capabilities.lodEncoding)
+        .find((name) => capabilities.lodEncoding[name] === raw);
+    // 0 is the feature's "not supported" value, and anything else unmapped is
+    // simply unknown. Either way it is reported as no level rather than guessed
+    // at — reading 0 as "Low" is how the off-by-one used to hide itself.
+    return level ?? null;
+}
+/** Encodes the HID++ macro format used by G502 onboard-memory sectors. */
+export function encodeMacroSector(sectorSize, steps) {
+    if (!Number.isInteger(sectorSize) || sectorSize < 6 || !steps.length) {
+        throw new Error("The macro sector geometry or sequence is invalid.");
+    }
+    const records = [];
+    for (const [index, step] of steps.entries()) {
+        if (!Number.isInteger(step.key) || step.key < 1 || step.key > 0xff
+            || !Number.isInteger(step.modifiers) || step.modifiers < 0 || step.modifiers > 0xff
+            || !Number.isInteger(step.delayMs) || step.delayMs < 0 || step.delayMs > 0xffff) {
+            throw new Error("The macro contains an invalid key, modifier, or delay.");
+        }
+        if (index > 0 && step.delayMs > 0)
+            records.push([0x40, step.delayMs >> 8, step.delayMs & 0xff]);
+        const modifiers = Array.from({ length: 8 }, (_, bit) => 1 << bit)
+            .filter((bit) => (step.modifiers & bit) !== 0);
+        for (const modifier of modifiers)
+            records.push([0x43, modifier, 0x00]);
+        records.push([0x43, 0x00, step.key], [0x44, 0x00, step.key]);
+        for (const modifier of modifiers.reverse())
+            records.push([0x44, modifier, 0x00]);
+    }
+    records.push([0xff, 0xff, 0xff]);
+    if (records.length * 3 > sectorSize)
+        throw new Error("That sequence is too long for one onboard macro sector.");
+    const result = new Uint8Array(sectorSize).fill(0xff);
+    records.forEach((record, index) => result.set(record, index * 3));
+    return result;
+}
+export function encodeMacroButtonAssignment(profile, profileFormatId, layer, button, macroSector) {
+    if (!Number.isInteger(macroSector) || macroSector < 1 || macroSector > 0xff) {
+        throw new Error("The macro sector cannot be represented by this profile format.");
+    }
+    const name = layer === "primary" ? "button_functions" : "g_shift_function";
+    const component = componentsForFormat(profileFormatId).find((candidate) => candidate.name === name);
+    if (!component || !Number.isInteger(button) || button < 0 || button >= component.size / 4) {
+        throw new Error("That button is outside this profile format's assignment table.");
+    }
+    const result = profile.slice();
+    result.set([0x00, button & 0xff, macroSector, 0x00], component.offset + button * 4);
+    return applyCrc(result);
+}
+export const LOGITECH_BUTTON_ACTIONS = [
+    "Disabled", "Left click", "Right click", "Middle click", "Back", "Forward",
+    "Tilt left", "Tilt right", "Next DPI", "Previous DPI", "Cycle DPI", "Default DPI",
+    "DPI Shift", "Next profile", "Previous profile", "Cycle profiles", "G-Shift", "Battery indicator",
+];
+const ACTION_RECORDS = {
+    Disabled: [0xff, 0xff, 0xff, 0xff],
+    "Left click": [0x80, 0x01, 0x00, 0x01],
+    "Right click": [0x80, 0x01, 0x00, 0x02],
+    "Middle click": [0x80, 0x01, 0x00, 0x04],
+    Back: [0x80, 0x01, 0x00, 0x08],
+    Forward: [0x80, 0x01, 0x00, 0x10],
+    "Tilt left": [0x90, 0x01, 0x00, 0x00],
+    "Tilt right": [0x90, 0x02, 0x00, 0x00],
+    "Next DPI": [0x90, 0x03, 0x00, 0x00],
+    "Previous DPI": [0x90, 0x04, 0x00, 0x00],
+    "Cycle DPI": [0x90, 0x05, 0x00, 0x00],
+    "Default DPI": [0x90, 0x06, 0x00, 0x00],
+    "DPI Shift": [0x90, 0x07, 0x00, 0x00],
+    "Next profile": [0x90, 0x08, 0x00, 0x00],
+    "Previous profile": [0x90, 0x09, 0x00, 0x00],
+    "Cycle profiles": [0x90, 0x0a, 0x00, 0x00],
+    "G-Shift": [0x90, 0x0b, 0x00, 0x00],
+    "Battery indicator": [0x90, 0x0c, 0x00, 0x00],
+};
+function decodeButtonAssignments(bytes, component) {
+    const result = [];
+    for (let button = 0; button < component.size / 4; button += 1) {
+        const raw = [...bytes.slice(component.offset + button * 4, component.offset + button * 4 + 4)];
+        if (raw.length < 4)
+            break;
+        const action = Object.entries(ACTION_RECORDS)
+            .find(([, record]) => record.every((value, index) => value === raw[index]))?.[0] ?? "Custom";
+        result.push({ button, action, raw });
+    }
+    return result;
+}
+export function encodeButtonAssignment(sector, profileFormatId, layer, button, binding) {
+    const name = layer === "primary" ? "button_functions" : "g_shift_function";
+    const component = componentsForFormat(profileFormatId).find((candidate) => candidate.name === name);
+    if (!component || !Number.isInteger(button) || button < 0 || button >= component.size / 4) {
+        throw new Error("That button is outside this profile format's assignment table.");
+    }
+    const normalized = typeof binding === "string"
+        ? { kind: "action", action: binding }
+        : binding;
+    const record = normalized.kind === "action"
+        ? ACTION_RECORDS[normalized.action]
+        : normalized.kind === "keyboard"
+            ? [0x80, 0x02, normalized.modifiers & 0xff, normalized.key & 0xff]
+            : [0x80, 0x03, (normalized.usage >> 8) & 0xff, normalized.usage & 0xff];
+    const result = sector.slice();
+    result.set(record, component.offset + button * 4);
+    return applyCrc(result);
+}
+/** Report-rate bytes index this table, matching 0x8061's ordering. */
+const REPORT_RATE_HZ = [125, 250, 500, 1000, 2000, 4000, 8000];
+const LAYOUT_V1 = {
+    // Formats 1-5 store one shared report interval, regardless of transport.
+    reportRateWireless: 0x00,
+    reportRateWired: 0x00,
+    dpi: 0x01,
+    angleSnapping: 0x11,
+    powerSaveTimeout: 0x1c,
+    powerOffTimeout: 0x1e,
+    profileName: 0xa0,
+    bunnyHopping: null,
+};
+const LAYOUT_V6 = {
+    reportRateWireless: 0x00,
+    reportRateWired: 0x01,
+    dpi: 0x02,
+    angleSnapping: 0x22,
+    powerSaveTimeout: 0x2c,
+    powerOffTimeout: 0x2e,
+    profileName: 0xa0,
+    bunnyHopping: null,
+};
+export function layoutForFormat(profileFormatId) {
+    const base = profileFormatId >= 6 ? LAYOUT_V6 : LAYOUT_V1;
+    return { ...base, bunnyHopping: profileFormatId >= 7 ? 0x25 : null };
+}
+const COMPONENTS_V1 = [
+    { offset: 0x00, size: 1, name: "report_rate" },
+    { offset: 0x01, size: 0x0c, name: "dpi_v1" },
+    { offset: 0x0d, size: 3, name: "color" },
+    { offset: 0x10, size: 1, name: "power_mode" },
+    { offset: 0x11, size: 1, name: "angle_snapping" },
+    { offset: 0x1c, size: 2, name: "power_save_timeout" },
+    { offset: 0x1e, size: 2, name: "power_off_timeout" },
+    { offset: 0x20, size: 0x40, name: "button_functions" },
+    { offset: 0x60, size: 0x40, name: "g_shift_function" },
+    { offset: 0xa0, size: 0x30, name: "profile_name" },
+];
+const COMPONENTS_V6 = [
+    { offset: 0x00, size: 1, name: "report_rate_wireless" },
+    { offset: 0x01, size: 1, name: "report_rate_wired" },
+    { offset: 0x02, size: 0x1b, name: "dpi_v6" },
+    { offset: 0x1d, size: 4, name: "dpi_delta" },
+    { offset: 0x21, size: 1, name: "power_mode" },
+    { offset: 0x22, size: 1, name: "angle_snapping" },
+    { offset: 0x23, size: 2, name: "write_counter" },
+    { offset: 0x2c, size: 2, name: "power_save_timeout" },
+    { offset: 0x2e, size: 2, name: "power_off_timeout" },
+    { offset: 0x30, size: 0x30, name: "button_functions" },
+    { offset: 0x70, size: 0x30, name: "g_shift_function" },
+    { offset: 0xa0, size: 0x30, name: "profile_name" },
+    { offset: 0xd0, size: 0x0b, name: "lighting cluster_0_active" },
+    { offset: 0xdb, size: 0x0b, name: "lighting cluster_1_active" },
+    { offset: 0xe6, size: 0x0b, name: "lighting cluster_0_passive" },
+    { offset: 0xf1, size: 0x0b, name: "lighting cluster_1_passive" },
+    { offset: 0xfc, size: 1, name: "lighting_flag" },
+];
+const BUNNY_HOPPING = { offset: 0x25, size: 1, name: "bunny_hopping" };
+const ANALOG_BUTTON = { offset: 0x26, size: 6, name: "analog_button" };
+const ANALOG_BUTTON_COUNT = 2;
+const ANALOG_BUTTON_BYTES = 3;
+/**
+ * HITS settings held in a format 8+ profile's `analog_button` block (offset
+ * 0x26, one three-byte entry per primary button). The bytes are the live 0x1B0C
+ * values verbatim: [actuation << 2, rapid trigger << 2 | on, haptics << 2].
+ *
+ * This copy is what the mouse loads at power-on. Writing only the live feature
+ * changes the working values, which a power cycle discards - a PRO X 3
+ * Superstrike booted back to the stored 5 / 2 (off) / 3 after every live-only
+ * change, and its stored block never changed in three captures.
+ */
+export function decodeAnalogButtons(sector, profileFormatId) {
+    if (profileFormatId < 8)
+        return null;
+    return Array.from({ length: ANALOG_BUTTON_COUNT }, (_, button) => {
+        const base = ANALOG_BUTTON.offset + button * ANALOG_BUTTON_BYTES;
+        return {
+            actuation: (sector[base] ?? 0) >> 2,
+            rapidTrigger: (sector[base + 1] ?? 0) >> 2,
+            haptics: (sector[base + 2] ?? 0) >> 2,
+            rapidTriggerEnabled: ((sector[base + 1] ?? 0) & 0x01) === 1,
+        };
+    });
+}
+/**
+ * Writes HITS settings for the named primary buttons into a copy of the
+ * profile, leaving every other byte alone. A button whose `rapidTriggerEnabled`
+ * is left out keeps its stored on/off bit.
+ */
+export function encodeAnalogButtons(sector, profileFormatId, buttons) {
+    if (profileFormatId < 8)
+        throw new Error("This profile format has no analog button settings.");
+    const result = sector.slice();
+    for (const entry of buttons) {
+        if (!Number.isInteger(entry.button) || entry.button < 0 || entry.button >= ANALOG_BUTTON_COUNT) {
+            throw new Error("Analog button settings exist for the left and right primary buttons only.");
+        }
+        for (const value of [entry.actuation, entry.rapidTrigger, entry.haptics]) {
+            // Each value is stored in bits 7..2, so it has six bits.
+            if (!Number.isInteger(value) || value < 0 || value > 0x3f) {
+                throw new Error("An analog button setting is outside what the profile can store.");
+            }
+        }
+        const base = ANALOG_BUTTON.offset + entry.button * ANALOG_BUTTON_BYTES;
+        const enabledBit = entry.rapidTriggerEnabled === undefined
+            ? (result[base + 1] ?? 0) & 0x01
+            : entry.rapidTriggerEnabled ? 1 : 0;
+        result[base] = entry.actuation << 2;
+        result[base + 1] = (entry.rapidTrigger << 2) | enabledBit;
+        result[base + 2] = entry.haptics << 2;
+    }
+    return applyCrc(result);
+}
+export function componentsForFormat(profileFormatId) {
+    const components = profileFormatId >= 6 ? [...COMPONENTS_V6] : [...COMPONENTS_V1];
+    if (profileFormatId >= 7)
+        components.push(BUNNY_HOPPING);
+    if (profileFormatId >= 8)
+        components.push(ANALOG_BUTTON);
+    return components.sort((left, right) => left.offset - right.offset);
+}
+/**
+ * Names the field a byte belongs to, so a diff reads as "dpi_v6 +2" rather
+ * than a bare offset. Returns null for bytes no component claims.
+ */
+export function describeOffset(profileFormatId, offset, sectorSize = 255) {
+    if (offset >= sectorSize - 2)
+        return "checksum";
+    const owner = componentsForFormat(profileFormatId)
+        .find((component) => offset >= component.offset && offset < component.offset + component.size);
+    return owner ? `${owner.name} +${offset - owner.offset}` : null;
+}
+export function parseProfilesInfo(reply) {
+    return {
+        memoryModelId: reply[3] ?? 0,
+        profileFormatId: reply[4] ?? 0,
+        macroFormatId: reply[5] ?? 0,
+        profileCount: reply[6] ?? 0,
+        buttonCount: reply[8] ?? 0,
+        sectorCount: reply[9] ?? 0,
+        sectorSize: ((reply[10] ?? 0) << 8) | (reply[11] ?? 0),
+    };
+}
+/** Directory entries are 4 bytes: sector (big-endian), enabled, reserved. */
+export function parseDirectory(bytes) {
+    const entries = [];
+    for (let offset = 0; offset + 4 <= bytes.length; offset += 4) {
+        const sector = ((bytes[offset] ?? 0) << 8) | (bytes[offset + 1] ?? 0);
+        if (sector === 0xffff || sector === 0x0000)
+            break;
+        entries.push({ sector, enabled: bytes[offset + 2] === 0x01 });
+    }
+    return entries;
+}
+/** CRC-16/CCITT-FALSE over everything but the trailing two checksum bytes. */
+export function profileCrc(bytes) {
+    let crc = 0xffff;
+    for (let index = 0; index < bytes.length - 2; index += 1) {
+        crc ^= (bytes[index] ?? 0) << 8;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+        }
+    }
+    return crc;
+}
+export function storedCrc(bytes) {
+    return ((bytes[bytes.length - 2] ?? 0) << 8) | (bytes[bytes.length - 1] ?? 0);
+}
+/** Writes the checksum into the last two bytes, big-endian. */
+export function applyCrc(bytes) {
+    const crc = profileCrc(bytes);
+    bytes[bytes.length - 2] = (crc >> 8) & 0xff;
+    bytes[bytes.length - 1] = crc & 0xff;
+    return bytes;
+}
+/**
+ * Complete factory profile captured after G HUB/Onboard Memory Manager's
+ * "reset all profiles" action on profile format 7. This is intentionally an
+ * exact sector image rather than a list of guessed defaults: it resets button
+ * assignments, G-Shift, lighting and currently-undecoded fields as well as the
+ * settings OpenMouse exposes in the UI.
+ */
+const FACTORY_PROFILE_FORMAT_7 = `
+  03 03 00 00 20 03 20 03 02 b0 04 b0 04 02 40 06
+  40 06 02 60 09 60 09 02 80 0c 80 0c 02 00 00 00
+  00 ff 00 ff ff ff ff ff ff ff ff ff 3c 00 2c 01
+  80 01 00 01 80 01 00 02 80 01 00 04 80 01 00 08
+  80 01 00 10 ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  03 00 00 00 00 00 1f 40 00 00 00 03 00 00 00 00
+  00 1f 40 00 00 00 03 00 00 00 00 00 1f 40 32 00
+  00 03 00 00 00 00 00 1f 40 32 00 00 03 84 db
+`;
+/**
+ * Complete factory profile for format 8 (PRO X 3 SUPERSTRIKE), captured over USB
+ * while G HUB reset every profile: all five profile sectors received this exact
+ * image, CRC 0x2a38. It includes the HITS defaults (actuation 5, rapid trigger 2
+ * off, haptics 3).
+ */
+const FACTORY_PROFILE_FORMAT_8 = `
+  03 03 00 00 20 03 20 03 02 b0 04 b0 04 02 40 06
+  40 06 02 60 09 60 09 02 80 0c 80 0c 02 00 00 00
+  00 ff 00 ff ff ff 14 08 0c 14 08 0c 3c 00 2c 01
+  80 01 00 01 80 01 00 02 80 01 00 04 80 01 00 08
+  80 01 00 10 ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+  03 00 00 00 00 00 1f 40 00 00 00 03 00 00 00 00
+  00 1f 40 00 00 00 03 00 00 00 00 00 1f 40 32 00
+  00 03 00 00 00 00 00 1f 40 32 00 00 03 2a 38
+`;
+const FACTORY_PROFILES = {
+    7: FACTORY_PROFILE_FORMAT_7,
+    8: FACTORY_PROFILE_FORMAT_8,
+};
+/** Returns a fresh, CRC-valid factory sector only for a captured geometry. */
+export function factoryProfileForFormat(profileFormatId, sectorSize) {
+    if (!supportsFactoryReset(profileFormatId) || sectorSize !== 255)
+        return null;
+    return Uint8Array.from(FACTORY_PROFILES[profileFormatId].trim().split(/\s+/), (byte) => Number.parseInt(byte, 16));
+}
+/** Profile sectors a format 8 mouse ships with: 1 to 5, as G HUB's reset left them. */
+const FACTORY_DIRECTORY_SECTORS_FORMAT_8 = [1, 2, 3, 4, 5];
+/**
+ * The directory (sector 0) of a factory mouse: every profile listed, only the
+ * first enabled, rest of the sector erased. Captured from G HUB's reset on a
+ * PRO X 3 SUPERSTRIKE (CRC 0x4037); only captured for format 8.
+ */
+export function factoryDirectoryForFormat(profileFormatId, sectorSize) {
+    if (profileFormatId !== 8 || sectorSize !== 255)
+        return null;
+    const directory = new Uint8Array(sectorSize).fill(0xff);
+    FACTORY_DIRECTORY_SECTORS_FORMAT_8.forEach((sector, index) => {
+        directory.set([sector >> 8, sector & 0xff, index === 0 ? 0x01 : 0x00, 0xff], index * 4);
+    });
+    return applyCrc(directory);
+}
+/**
+ * True when a directory sector lists no profiles at all, as on a mouse G HUB
+ * has never linked. Erased flash reads 0xffff; a first entry of 0x0000 is the
+ * other terminator parseDirectory stops on.
+ */
+export function isBlankDirectory(sector) {
+    return sector.length >= 4 && parseDirectory(sector).length === 0;
+}
+/**
+ * Returns a copy of the directory sector with one profile's enabled flag
+ * changed and the checksum recomputed. Every other byte is carried through
+ * untouched, so unknown directory fields survive.
+ */
+export function setDirectoryEnabled(sector, profileSector, enabled) {
+    const updated = sector.slice();
+    for (let offset = 0; offset + 4 <= updated.length; offset += 4) {
+        const entry = ((updated[offset] ?? 0) << 8) | (updated[offset + 1] ?? 0);
+        if (entry === 0xffff || entry === 0x0000)
+            break;
+        if (entry === profileSector) {
+            updated[offset + 2] = enabled ? 0x01 : 0x00;
+            return applyCrc(updated);
+        }
+    }
+    throw new Error(`Profile sector ${profileSector} is not listed in the directory.`);
+}
+function readUint16LE(bytes, offset) {
+    const low = bytes[offset];
+    const high = bytes[offset + 1];
+    if (low === undefined || high === undefined)
+        return null;
+    const value = low | (high << 8);
+    // Unwritten flash reads as 0xffff.
+    return value === 0xffff ? null : value;
+}
+/** Profile names are UTF-16LE, despite the library calling them "utf8". */
+function decodeName(bytes, offset) {
+    const slice = bytes.slice(offset, offset + 0x30);
+    if (slice.length === 0 || slice.every((byte) => byte === 0xff))
+        return null;
+    const text = new TextDecoder("utf-16le").decode(slice).split("\0")[0].trim();
+    return text.length > 0 ? text : null;
+}
+function decodeDpi(bytes, offset) {
+    const defaultIndex = bytes[offset] ?? null;
+    const stages = [];
+    for (let stage = 0; stage < 5; stage += 1) {
+        const base = offset + 2 + stage * 5;
+        const x = readUint16LE(bytes, base);
+        const y = readUint16LE(bytes, base + 2);
+        const lod = bytes[base + 4];
+        if (x === null || y === null || lod === undefined || x === 0)
+            continue;
+        stages.push({ x, y, lod });
+    }
+    return { stages, defaultIndex: defaultIndex === 0xff ? null : defaultIndex };
+}
+/** Formats 1-5 store one little-endian DPI value per slot, without X/Y or LOD. */
+function decodeLegacyDpi(bytes, offset) {
+    const rawDefaultIndex = bytes[offset];
+    const stages = [];
+    for (let stage = 0; stage < DPI_STAGE_SLOTS; stage += 1) {
+        const dpi = readUint16LE(bytes, offset + 2 + stage * 2);
+        if (dpi === null || dpi === 0)
+            continue;
+        stages.push({ x: dpi, y: dpi, lod: 0 });
+    }
+    return {
+        stages,
+        defaultIndex: rawDefaultIndex === undefined || rawDefaultIndex === 0xff ? null : rawDefaultIndex,
+    };
+}
+function decodeReportRate(bytes, offset) {
+    if (offset === null)
+        return null;
+    const raw = bytes[offset];
+    return raw === undefined || raw === 0xff ? null : REPORT_RATE_HZ[raw] ?? null;
+}
+/** Formats 1-5 store the USB polling interval in milliseconds. */
+function decodeLegacyReportRate(bytes, offset) {
+    if (offset === null)
+        return null;
+    const intervalMs = bytes[offset];
+    if (intervalMs === undefined || intervalMs === 0xff || intervalMs === 0)
+        return null;
+    const hz = 1000 / intervalMs;
+    return Number.isInteger(hz) ? hz : null;
+}
+/**
+ * USB transport ids (from the mouse's own HID++ identity, so they hold whether
+ * it is on the cable, on its receiver or on Bluetooth) whose cable carries the
+ * full report-rate range instead of the 1 kHz the rest of the format is capped
+ * at. The cap belongs to a product's USB interface, not to its profile format:
+ * the PRO X 2 Superstrike (C0A8) and PRO X 3 Superstrike (C0A9) share format 8,
+ * but a PRO X 3 diagnostic taken on the cable shows its 0x8061 feature
+ * advertising all seven rates through 8000 Hz (mask 0x7f) - the same mask it
+ * reports wirelessly - and G HUB offers 8 kHz on the cable. The PRO X 2's
+ * cable stays at its captured 1 kHz until it shows the same.
+ */
+const FULL_RATE_USB_TRANSPORT_IDS = new Set(["C0A9"]);
+/**
+ * The report-rate ceilings for a mouse: the format's, with the cable lifted to
+ * the wireless ceiling for a product known to run the full range over USB.
+ */
+export function reportRateCapabilitiesFor(profileFormatId, usbTransportId) {
+    const capabilities = capabilitiesForFormat(profileFormatId).reportRates;
+    if (!capabilities || !usbTransportId || !FULL_RATE_USB_TRANSPORT_IDS.has(usbTransportId.toUpperCase())) {
+        return capabilities;
+    }
+    return { ...capabilities, wiredMaxHz: capabilities.wirelessMaxHz };
+}
+/** Rates the byte can index, filtered to the ceiling for that connection. */
+export function reportRatesFor(capabilities, link) {
+    if (!capabilities)
+        return [];
+    const ceiling = link === "wired" ? capabilities.wiredMaxHz : capabilities.wirelessMaxHz;
+    return REPORT_RATE_HZ.filter((rate) => rate <= ceiling);
+}
+/**
+ * Intersects format storage support with the rates advertised by the active
+ * hardware link. Legacy formats share one interval byte, so their live list
+ * applies to the whole profile; v6 formats retain the captured limit for the
+ * inactive link because the mouse cannot advertise that link while disconnected.
+ */
+export function reportRatesForDevice(capabilities, link, liveRates, activeLink, sharedInterval) {
+    const storedRates = reportRatesFor(capabilities, link);
+    if (!sharedInterval && link !== activeLink)
+        return storedRates;
+    return storedRates.filter((rate) => liveRates.includes(rate));
+}
+export function validateReportRate(hz, capabilities, link) {
+    const allowed = reportRatesFor(capabilities, link);
+    if (allowed.length === 0)
+        return "Report rates are not known for this profile format.";
+    if (!allowed.includes(hz)) {
+        return `${link === "wired" ? "Wired" : "Wireless"} report rate must be one of ${allowed.join(", ")} Hz.`;
+    }
+    return null;
+}
+/**
+ * Returns a copy of the sector with one connection's report rate replaced and
+ * the checksum reapplied. The two links are stored separately, so setting one
+ * leaves the other alone.
+ */
+export function encodeReportRate(sector, profileFormatId, link, hz, capabilitiesOverride) {
+    const capabilities = capabilitiesOverride === undefined
+        ? capabilitiesForFormat(profileFormatId).reportRates
+        : capabilitiesOverride;
+    const invalid = validateReportRate(hz, capabilities, link);
+    if (invalid)
+        throw new Error(invalid);
+    const layout = layoutForFormat(profileFormatId);
+    const offset = link === "wired" ? layout.reportRateWired : layout.reportRateWireless;
+    if (offset === null)
+        throw new Error("This profile format has no report-rate setting.");
+    const result = sector.slice();
+    // Base v1 (formats 1-5) stores the USB polling interval in milliseconds, the
+    // same encoding legacy 0x8060 uses; base v6 and later index the rate table
+    // 0x8061 shares. Writing the wrong one would read back as another rate.
+    result[offset] = profileFormatId < 6
+        ? Math.round(1000 / hz)
+        : REPORT_RATE_HZ.indexOf(hz);
+    return applyCrc(result);
+}
+/** Returns why a profile name cannot be stored, or null when it fits. */
+export function validateProfileName(name, maxLength) {
+    if (maxLength === null)
+        return "This profile format has no name field.";
+    const trimmed = name.trim();
+    if (trimmed.length === 0)
+        return "Enter a profile name.";
+    if (trimmed.length > maxLength)
+        return `Profile names are at most ${maxLength} characters.`;
+    // The region is UTF-16 code units, so anything outside the BMP takes two of
+    // them and would be cut in half by the length check above.
+    if ([...trimmed].some((character) => (character.codePointAt(0) ?? 0) > 0xffff)) {
+        return "Profile names cannot contain emoji or other characters outside the basic range.";
+    }
+    return null;
+}
+/**
+ * Returns a copy of the sector with the profile name replaced and the checksum
+ * reapplied. The region is zero-filled first so a shorter name cannot leave the
+ * tail of the previous one behind it.
+ */
+export function encodeProfileName(sector, profileFormatId, name, maxLengthOverride) {
+    const maxLength = maxLengthOverride === undefined
+        ? capabilitiesForFormat(profileFormatId).maxNameLength
+        : maxLengthOverride;
+    const invalid = validateProfileName(name, maxLength);
+    if (invalid)
+        throw new Error(invalid);
+    const offset = layoutForFormat(profileFormatId).profileName;
+    const result = sector.slice();
+    result.fill(0, offset, offset + PROFILE_NAME_BYTES);
+    const trimmed = name.trim();
+    for (let index = 0; index < trimmed.length; index += 1) {
+        const code = trimmed.charCodeAt(index);
+        result[offset + index * 2] = code & 0xff;
+        result[offset + index * 2 + 1] = (code >> 8) & 0xff;
+    }
+    return applyCrc(result);
+}
+export const BUNNY_HOP_LIMITS = { minMs: 100, maxMs: 1000, stepMs: 10 };
+/**
+ * Returns why a bunny-hop time is invalid, or null when it is acceptable.
+ * The byte stores ms / 10, so anything off-step cannot be represented.
+ */
+export function validateBunnyHoppingMs(milliseconds) {
+    if (!Number.isFinite(milliseconds) || !Number.isInteger(milliseconds)) {
+        return "Enter a whole number of milliseconds.";
+    }
+    if (milliseconds % BUNNY_HOP_LIMITS.stepMs !== 0) {
+        return `Bunny hop time must be a multiple of ${BUNNY_HOP_LIMITS.stepMs} ms.`;
+    }
+    if (milliseconds === 0)
+        return null; // off
+    if (milliseconds < BUNNY_HOP_LIMITS.minMs || milliseconds > BUNNY_HOP_LIMITS.maxMs) {
+        return `Bunny hop time must be between ${BUNNY_HOP_LIMITS.minMs} and ${BUNNY_HOP_LIMITS.maxMs} ms, or off.`;
+    }
+    return null;
+}
+/** The stage table always has room for five records; how many a format allows
+ * is a per-format limit, so this is only the size of the region to clear. */
+const DPI_STAGE_SLOTS = 5;
+/**
+ * Returns why a stage plan cannot be written to this format, or null when it
+ * is writable. Every limit comes from the format, so an older mouse holding
+ * fewer slots or a narrower DPI range is checked against its own numbers.
+ */
+export function validateDpiStagePlan(plan, capabilities, legacyScalar = false) {
+    if (capabilities === null) {
+        return "DPI slots are not known for this profile format.";
+    }
+    const { maxStages, minDpi, maxDpi, stepDpi } = capabilities;
+    if (plan.stages.length < 1 || plan.stages.length > maxStages) {
+        return `This profile holds 1 to ${maxStages} DPI slots.`;
+    }
+    if (!Number.isInteger(plan.defaultIndex) || plan.defaultIndex < 0 || plan.defaultIndex >= plan.stages.length) {
+        return "The default slot must be one of the slots in use.";
+    }
+    for (const [index, stage] of plan.stages.entries()) {
+        for (const [axis, value] of [["X", stage.x], ["Y", stage.y]]) {
+            if (!Number.isInteger(value) || value < minDpi || value > maxDpi) {
+                return `Slot ${index + 1} ${axis} DPI must be between ${minDpi} and ${maxDpi}.`;
+            }
+            if (value % stepDpi !== 0) {
+                return `Slot ${index + 1} ${axis} DPI must be a multiple of ${stepDpi}.`;
+            }
+        }
+        if (legacyScalar) {
+            if (stage.x !== stage.y)
+                return `Slot ${index + 1} must use the same X and Y DPI.`;
+            // Lift-off is not stored here and the writer ignores it, so UI defaults must not fail the flash.
+        }
+        else if (!Number.isInteger(stage.lod) || stage.lod < 1 || stage.lod > 3) {
+            // 0 is the "unused stage" marker on formats with per-stage lift-off.
+            return `Slot ${index + 1} has an invalid lift-off level.`;
+        }
+    }
+    return null;
+}
+/**
+ * Levels as stored inside a stage record, where 0 means the stage is unused.
+ * This is a property of the record itself, so it does not vary with whatever
+ * encoding feature 0x2202 happens to use on a given format.
+ */
+export const PROFILE_STAGE_LOD = { Low: 1, Medium: 2, High: 3 };
+export function stageLodLevel(lod) {
+    return Object.keys(PROFILE_STAGE_LOD)
+        .find((level) => PROFILE_STAGE_LOD[level] === lod) ?? null;
+}
+/** Snaps a typed DPI onto the step and into the range the format allows. */
+export function clampDpi(value, capabilities) {
+    const { minDpi, maxDpi, stepDpi } = capabilities;
+    if (!Number.isFinite(value))
+        return minDpi;
+    const stepped = Math.round(value / stepDpi) * stepDpi;
+    return Math.min(maxDpi, Math.max(minDpi, stepped));
+}
+/**
+ * Returns a copy of the sector with the DPI stage table replaced and the
+ * checksum reapplied. Slots past the plan are zeroed, which is how the vendor
+ * marks a stage unused, so the slot count is simply how many stages are set.
+ */
+export function encodeDpiStages(sector, profileFormatId, plan, capabilitiesOverride, 
+/**
+ * False on hardware where the per-stage lift-off byte is unverified (see
+ * isLodWritableForProduct): the stage's x/y still get the plan's values,
+ * but its lift-off byte is left exactly as read rather than overwritten,
+ * since this format may not have lift-off storage there at all.
+ */
+writeLod = true) {
+    const legacyScalar = profileFormatId < 6;
+    const capabilities = capabilitiesOverride === undefined
+        ? capabilitiesForFormat(profileFormatId).dpiStages
+        : capabilitiesOverride;
+    const invalid = validateDpiStagePlan(plan, capabilities, legacyScalar);
+    if (invalid)
+        throw new Error(invalid);
+    const layout = layoutForFormat(profileFormatId);
+    if (layout.dpi === null)
+        throw new Error("This profile format has no DPI stages.");
+    const result = sector.slice();
+    result[layout.dpi] = plan.defaultIndex;
+    // 0x03 is the g-shift index. It is left alone unless it now points past the
+    // slots in use, in which case it would select a zeroed stage.
+    const gShift = result[layout.dpi + 1] ?? 0;
+    if (gShift >= plan.stages.length)
+        result[layout.dpi + 1] = plan.defaultIndex;
+    if (legacyScalar) {
+        for (let stage = 0; stage < DPI_STAGE_SLOTS; stage += 1) {
+            writeUint16LE(result, layout.dpi + 2 + stage * 2, plan.stages[stage]?.x ?? 0);
+        }
+        return applyCrc(result);
+    }
+    for (let stage = 0; stage < DPI_STAGE_SLOTS; stage += 1) {
+        const base = layout.dpi + 2 + stage * 5;
+        const entry = plan.stages[stage];
+        if (!entry) {
+            result[base] = 0;
+            result[base + 1] = 0;
+            result[base + 2] = 0;
+            result[base + 3] = 0;
+            if (writeLod)
+                result[base + 4] = 0;
+            continue;
+        }
+        writeUint16LE(result, base, entry.x);
+        writeUint16LE(result, base + 2, entry.y);
+        if (writeLod)
+            result[base + 4] = entry.lod;
+    }
+    return applyCrc(result);
+}
+/**
+ * Snaps a typed bunny-hop time into the range and step the byte can hold.
+ * A number field only enforces min/max/step for its spinner, so a typed value
+ * has to be corrected here instead of being rejected.
+ */
+export function clampBunnyHopMs(milliseconds) {
+    const { minMs, maxMs, stepMs } = BUNNY_HOP_LIMITS;
+    if (!Number.isFinite(milliseconds))
+        return minMs;
+    const stepped = Math.round(milliseconds / stepMs) * stepMs;
+    return Math.min(maxMs, Math.max(minMs, stepped));
+}
+/** Stored as ms / 10: G HUB's 100-1000 ms range is 0x0a-0x64. */
+function decodeBunnyHoppingMs(bytes, offset) {
+    if (offset === null)
+        return null;
+    const raw = bytes[offset];
+    return raw === undefined || raw === 0xff ? null : raw * 10;
+}
+function writeUint16LE(bytes, offset, value) {
+    bytes[offset] = value & 0xff;
+    bytes[offset + 1] = (value >> 8) & 0xff;
+}
+/**
+ * Rebuilds `before` with every field we can encode set to the value found in
+ * `after`, then fixes the checksum.
+ *
+ * This is how a write path is proven without writing: if the result is
+ * byte-identical to what the vendor software actually produced, our encoding,
+ * offsets and CRC are all correct. Any byte that differs is something we either
+ * model wrongly or cannot write yet.
+ */
+export function reproduceProfile(before, after, profileFormatId) {
+    const layout = layoutForFormat(profileFormatId);
+    const result = before.slice();
+    const legacyLayout = profileFormatId < 6;
+    const isErased = (offset, size) => after.slice(offset, offset + size).every((byte) => byte === 0xff);
+    const copyRate = (offset) => {
+        if (offset === null)
+            return;
+        const hz = legacyLayout ? decodeLegacyReportRate(after, offset) : decodeReportRate(after, offset);
+        if (hz === null)
+            return;
+        if (legacyLayout)
+            result[offset] = 1000 / hz;
+        else {
+            const index = REPORT_RATE_HZ.indexOf(hz);
+            if (index >= 0)
+                result[offset] = index;
+        }
+    };
+    copyRate(layout.reportRateWireless);
+    copyRate(layout.reportRateWired);
+    if (layout.dpi !== null) {
+        const dpi = legacyLayout ? decodeLegacyDpi(after, layout.dpi) : decodeDpi(after, layout.dpi);
+        if (dpi.defaultIndex !== null)
+            result[layout.dpi] = dpi.defaultIndex;
+        result[layout.dpi + 1] = after[layout.dpi + 1];
+        // Stages are re-encoded from decoded values, not copied, so their
+        // little-endian representation is what is actually under test.
+        let stage = 0;
+        for (const { x, y, lod } of dpi.stages) {
+            const base = layout.dpi + 2 + stage * (legacyLayout ? 2 : 5);
+            writeUint16LE(result, base, x);
+            if (!legacyLayout) {
+                writeUint16LE(result, base + 2, y);
+                result[base + 4] = lod;
+            }
+            stage += 1;
+        }
+    }
+    const angleSnapping = after[layout.angleSnapping];
+    if (angleSnapping !== undefined)
+        result[layout.angleSnapping] = angleSnapping;
+    if (layout.bunnyHopping !== null) {
+        const milliseconds = decodeBunnyHoppingMs(after, layout.bunnyHopping);
+        if (milliseconds !== null)
+            result[layout.bunnyHopping] = Math.round(milliseconds / 10);
+        // Factory reset returns the optional component to erased flash rather than
+        // encoding "off" as zero. That distinction is visible in a vendor diff.
+        else if (after[layout.bunnyHopping] === 0xff)
+            result[layout.bunnyHopping] = 0xff;
+    }
+    for (const offset of [layout.powerSaveTimeout, layout.powerOffTimeout]) {
+        if (offset === null)
+            continue;
+        const seconds = readUint16LE(after, offset);
+        if (seconds !== null)
+            writeUint16LE(result, offset, seconds);
+    }
+    const name = profileFormatId === 1 ? null : decodeName(after, layout.profileName);
+    if (name !== null) {
+        const encoded = new Uint8Array(0x30);
+        encoded.set(after.slice(layout.profileName, layout.profileName + 0x30).map(() => 0));
+        for (let index = 0; index < name.length && index * 2 + 1 < 0x30; index += 1) {
+            const code = name.charCodeAt(index);
+            encoded[index * 2] = code & 0xff;
+            encoded[index * 2 + 1] = (code >> 8) & 0xff;
+        }
+        result.set(encoded, layout.profileName);
+    }
+    else if (isErased(layout.profileName, PROFILE_NAME_BYTES)) {
+        // An unnamed factory profile uses erased bytes, not a zero-filled empty
+        // UTF-16 string. Reproduce that representation exactly so its CRC matches.
+        result.fill(0xff, layout.profileName, layout.profileName + PROFILE_NAME_BYTES);
+    }
+    // Reset-to-factory erases the complete G-Shift assignment component. We do
+    // not claim to encode individual assignments yet, but an all-0xff target is
+    // unambiguous and safe to reproduce for capture verification.
+    const gShift = componentsForFormat(profileFormatId).find((component) => component.name === "g_shift_function");
+    if (gShift && isErased(gShift.offset, gShift.size)) {
+        result.fill(0xff, gShift.offset, gShift.offset + gShift.size);
+    }
+    return applyCrc(result);
+}
+export function decodeOnboardProfile(bytes, profileFormatId, entry, isCurrent) {
+    const layout = layoutForFormat(profileFormatId);
+    const legacyLayout = profileFormatId < 6;
+    const dpi = layout.dpi === null
+        ? { stages: [], defaultIndex: null }
+        : legacyLayout ? decodeLegacyDpi(bytes, layout.dpi) : decodeDpi(bytes, layout.dpi);
+    const angleSnappingByte = bytes[layout.angleSnapping];
+    const components = componentsForFormat(profileFormatId);
+    const buttons = components.find((component) => component.name === "button_functions");
+    const gShift = components.find((component) => component.name === "g_shift_function");
+    return {
+        sector: entry.sector,
+        enabled: entry.enabled,
+        isCurrent,
+        // The v1 region is byte text, not UTF-16. This G402 capture contains
+        // non-text device data there, so do not manufacture a mojibake name.
+        name: profileFormatId === 1 ? null : decodeName(bytes, layout.profileName),
+        dpiStages: dpi.stages,
+        defaultDpiIndex: dpi.defaultIndex,
+        reportRateWireless: legacyLayout
+            ? decodeLegacyReportRate(bytes, layout.reportRateWireless)
+            : decodeReportRate(bytes, layout.reportRateWireless),
+        reportRateWired: legacyLayout
+            ? decodeLegacyReportRate(bytes, layout.reportRateWired)
+            : decodeReportRate(bytes, layout.reportRateWired),
+        angleSnapping: angleSnappingByte === undefined || angleSnappingByte === 0xff
+            ? null
+            : angleSnappingByte !== 0,
+        powerSaveTimeoutSeconds: layout.powerSaveTimeout === null
+            ? null
+            : readUint16LE(bytes, layout.powerSaveTimeout),
+        powerOffTimeoutSeconds: layout.powerOffTimeout === null
+            ? null
+            : readUint16LE(bytes, layout.powerOffTimeout),
+        bunnyHoppingMs: decodeBunnyHoppingMs(bytes, layout.bunnyHopping),
+        buttonAssignments: decodeButtonAssignments(bytes, buttons),
+        gShiftAssignments: decodeButtonAssignments(bytes, gShift),
+        crcValid: bytes.length > 2 && profileCrc(bytes) === storedCrc(bytes),
+        raw: bytes,
+    };
+}
