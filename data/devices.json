@@ -60,5 +60,21 @@
     "name": "Razer (protocole Chroma)",
     "status": "experimental",
     "plugin": "razer-chroma"
+  },
+  {
+    "vid": "3554",
+    "pid": "*",
+    "name": "Souris à puce CompX (VXE, ATK, MCHOSE, Scyrox…)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "scyrox"
+  },
+  {
+    "vid": "258A",
+    "pid": "*",
+    "name": "Souris à puce Sinowealth",
+    "kind": "souris",
+    "status": "planned",
+    "plugin": ""
   }
 ]

@@ -9,7 +9,15 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
 // Liste blanche : seuls les appareils déclarés dans data/devices.json (VID + PID, ou PID « * »)
-// peuvent être ouverts. Un module ne parle jamais à un appareil qu'il ne connaît pas.
+// peuvent être ouverts, plus la collection VIA des claviers QMK / Vial (page 0xFF60, usage 0x61 :
+// une interface faite exprès pour les configurateurs, quel que soit le fabricant).
+// Un module ne parle jamais à un appareil qu'il ne connaît pas.
+const VIA_USAGE: (u16, u16) = (0xFF60, 0x61);
+
+fn allowed_info(d: &hidapi::DeviceInfo) -> bool {
+    allowed(d.vendor_id(), d.product_id()) || (d.usage_page(), d.usage()) == VIA_USAGE
+}
+
 fn allowed(vid: u16, pid: u16) -> bool {
     static LIST: std::sync::OnceLock<Vec<(u16, Option<u16>)>> = std::sync::OnceLock::new();
     LIST.get_or_init(|| {
@@ -72,7 +80,7 @@ pub fn hid_devices(hid: State<'_, Hid>) -> Result<Vec<HidInfo>, String> {
         api.refresh_devices().map_err(|e| e.to_string())?;
         let mut out: Vec<HidInfo> = api
             .device_list()
-            .filter(|d| allowed(d.vendor_id(), d.product_id()))
+            .filter(|d| allowed_info(d))
             .map(|d| HidInfo {
                 path: d.path().to_string_lossy().to_string(),
                 vid: d.vendor_id(),
@@ -95,7 +103,7 @@ pub fn hid_open(app: AppHandle, hid: State<'_, Hid>, path: String, unnumbered: b
     let (writer, reader) = with_api(&hid, |api| {
         // Seulement les périphériques des fabricants pris en charge (comme la liste de hid_devices)
         api.refresh_devices().map_err(|e| e.to_string())?;
-        if !api.device_list().any(|d| d.path() == cpath.as_c_str() && allowed(d.vendor_id(), d.product_id())) {
+        if !api.device_list().any(|d| d.path() == cpath.as_c_str() && allowed_info(d)) {
             return Err("périphérique non pris en charge".into());
         }
         let w = api.open_path(&cpath).map_err(|e| e.to_string())?;

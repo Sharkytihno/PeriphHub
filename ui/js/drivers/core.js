@@ -194,7 +194,7 @@ function drvRender(inst) {
   if (c.light && s.light) {
     const l = s.light;
     rows.push(field('Éclairage',
-      segmented(c.light.effects.map(v => ({ v, label: LIGHT_LABEL[v] || v })), l.effect, v => drvSet(inst, 'Éclairage', 'light', { ...l, effect: v })),
+      segmented(c.light.effects.map(v => ({ v, label: c.light.labels?.[v] || LIGHT_LABEL[v] || v })), l.effect, v => drvSet(inst, 'Éclairage', 'light', { ...l, effect: v })),
       c.light.color && l.effect === 'static' ? h('div', { class: 'row-inline' },
         SWATCHES.map(col => h('button', { class: 'swatch' + (col === l.color ? ' on' : ''), style: `background:${col}`, title: col,
           onclick: () => drvSet(inst, 'Couleur', 'light', { ...l, color: col }) })),

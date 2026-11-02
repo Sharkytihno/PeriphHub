@@ -60,7 +60,18 @@ batterie, retour micro, volume et filtre du micro, réduction de bruit, prérég
 éclairage, annonces vocales, extinction automatique, ChatMix. Ces casques ne relisent pas leurs
 réglages : PeriphHub retient les choix et les renvoie quand le casque se rallume.
 
-## 0.6+ — Autres marques, en portant les protocoles libres existants
+## 0.6 — Claviers VIA / Vial, souris CompX ✅
+
+- `ui/js/drivers/via.js` : tout clavier QMK qui expose la collection VIA (page 0xFF60, usage 0x61),
+  quel que soit le fabricant (la passerelle HID l'autorise en plus de data/devices.json). Éclairage
+  RGB Matrix / RGBLight / rétroéclairage : luminosité, fixe / éteint / effet en cours, couleur,
+  enregistré dans le clavier (0x09). La disposition des touches reste du ressort de VIA / Vial.
+- Souris CompX (VID 0x3554 : VXE, ATK, MCHOSE, Scyrox…) : la page souris accepte toute la famille,
+  marquée « Expérimental » hors des modèles confirmés.
+- Sinowealth (VID 0x258A) : reconnue, « Bientôt » (configuration par blocs entiers, à faire avec
+  un appareil sous la main pour ne rien dérégler).
+
+## Plus loin — en portant les protocoles libres existants
 
 | Famille | Source | Couverture attendue |
 |---|---|---|

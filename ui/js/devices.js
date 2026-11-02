@@ -26,6 +26,15 @@ async function deviceName(dev) {
 async function setTitle(tab, dev) {
   const name = await deviceName(dev);
   if (name) $(tab + 'Title').textContent = name;
+  // modèle reconnu seulement par sa famille (pid « * ») : prévenir que ce n'est pas confirmé
+  const hex = n => n.toString(16).toUpperCase().padStart(4, '0');
+  const list = await catalog;
+  const exact = list.some(d => d.vid === hex(dev.vendorId) && d.pid === hex(dev.productId));
+  const head = $(tab + 'Title').closest('.phead')?.querySelector('.pact');
+  head?.querySelector('.chip.experimental')?.remove();
+  if (!exact && list.some(d => d.vid === hex(dev.vendorId) && d.pid === '*')) {
+    head?.prepend(h('span', { class: 'chip experimental', title: 'Même famille que les modèles testés, mais ce modèle précis n’est pas encore confirmé' }, 'Expérimental'));
+  }
   if (typeof refreshHome === 'function') refreshHome();
 }
 
