@@ -202,7 +202,7 @@ enum Op {
 }
 
 fn sc(args: &[&str]) -> Result<(), String> {
-    let out = Command::new("sc.exe")
+    let out = Command::new(crate::sign::system_exe("sc.exe"))
         .args(args)
         .creation_flags(NO_WINDOW)
         .output()
@@ -241,7 +241,7 @@ fn run_op(op: &Op) -> Result<(), String> {
         Op::SvcStop { name } => sc(&["stop", name]),
         Op::SvcStart { name } => sc(&["start", name]),
         Op::Task { name, enable } => {
-            let st = Command::new("schtasks")
+            let st = Command::new(crate::sign::system_exe("schtasks.exe"))
                 .args(["/change", "/tn", name, if *enable { "/enable" } else { "/disable" }])
                 .creation_flags(NO_WINDOW)
                 .output()

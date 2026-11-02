@@ -70,6 +70,7 @@ fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://gi
 | 0.9 | Interface en **anglais** (choix de la langue dans Options, anglais par défaut hors Windows en français) ; signature de l'installeur prête (SignPath Foundation) | ✅ |
 | 0.10 | Souris de ~50 marques via **OpenMouse** ; base de 1 400+ appareils nommés avec leur niveau de prise en charge | ✅ |
 | 0.11 | Claviers **Wooting** et **SteelSeries Apex Pro** (point d'activation, rapid trigger) via OpenMouse ; 108 casques reconnus (HeadsetControl) | ✅ |
+| 0.12 | Éclairage des casques **Razer Kraken** filaires (OpenRazer) ; durcissements de sécurité (outils Windows appelés par chemin absolu, DLL THX verrouillée pendant sa vérification, clés FIDO jamais accessibles) ; paquet Microsoft Store (MSIX) | ✅ |
 | 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).

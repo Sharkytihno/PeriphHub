@@ -188,7 +188,7 @@ fn services() -> Vec<Entry> {
 // `schtasks /query /fo csv /v /nh` : colonne 1 = nom de la tâche, colonne 8 = programme lancé,
 // colonne 11 = état (« Activée » / « Désactivée », « Enabled » / « Disabled » selon la langue)
 fn tasks() -> Vec<Entry> {
-    let Ok(o) = Command::new("schtasks")
+    let Ok(o) = Command::new(crate::sign::system_exe("schtasks.exe"))
         .args(["/query", "/fo", "csv", "/v", "/nh"])
         .creation_flags(NO_WINDOW)
         .output()

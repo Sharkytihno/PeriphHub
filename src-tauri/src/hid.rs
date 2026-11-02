@@ -25,6 +25,9 @@ const OPENMOUSE_VIDS: &[u16] = &[
     0x3837, 0x3879, 0xA8A4, 0xA8A5,
 ];
 
+// Clés de sécurité FIDO / U2F : jamais visibles, même chez un fabricant de la liste
+const FIDO_PAGE: u16 = 0xF1D0;
+
 // Modes de mise à jour (bootloader / DFU) : jamais visibles, quelle que soit la liste.
 // PeriphHub n'écrit jamais de firmware.
 const NEVER: &[(u16, u16)] = &[(0x373B, 0x215C)];
@@ -38,7 +41,7 @@ fn bootloader(d: &hidapi::DeviceInfo) -> bool {
 }
 
 fn allowed_info(d: &hidapi::DeviceInfo) -> bool {
-    if bootloader(d) {
+    if bootloader(d) || d.usage_page() == FIDO_PAGE {
         return false;
     }
     allowed(d.vendor_id(), d.product_id())

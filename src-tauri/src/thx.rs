@@ -31,13 +31,26 @@ impl ThxWorker {
             return Ok(tx.clone());
         }
         let path = find_dll().ok_or("DLL THX introuvable (ThxV3Native_*.dll)")?;
-        // Elle vient d'un dossier modifiable sans droits admin alors que PeriphHub tourne souvent
-        // en administrateur : on ne charge qu'une DLL signée par Razer
+        // Elle vient d'un dossier modifiable sans droits administrateur : on ne charge qu'une DLL
+        // signée par Razer, et le fichier reste verrouillé (ni écriture, ni renommage, ni
+        // suppression) de la vérification jusqu'au chargement, pour qu'on ne puisse pas
+        // l'échanger entre les deux.
+        let lock = {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_SHARE_READ: u32 = 1;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_READ)
+                .open(&path)
+                .map_err(|e| format!("DLL THX inaccessible : {e}"))?
+        };
         crate::sign::check_signature(&path, "razer").map_err(|e| format!("DLL THX refusée : {e}"))?;
         let (tx, rx) = channel::<Job>();
         let (ready_tx, ready_rx) = channel::<Result<(), String>>();
         std::thread::spawn(move || {
-            let lib = match unsafe { Library::new(&path) } {
+            let lib = unsafe { Library::new(&path) };
+            drop(lock); // une fois chargée, Windows protège lui-même l'image en mémoire
+            let lib = match lib {
                 Ok(l) => l,
                 Err(e) => return ready_tx.send(Err(e.to_string())).unwrap_or(()),
             };
@@ -75,8 +88,8 @@ fn find_dll() -> Option<PathBuf> {
         }
     }
     for d in dirs {
-        let mut found: Vec<PathBuf> = std::fs::read_dir(&d)
-            .ok()?
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let mut found: Vec<PathBuf> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| {
                 let n = p.file_name().unwrap_or_default().to_string_lossy().to_string();

@@ -6,9 +6,24 @@ use std::process::Command;
 
 const NO_WINDOW: u32 = 0x0800_0000;
 
+/// Chemin absolu d'un outil de Windows (System32). Jamais résolu par nom : Windows chercherait
+/// d'abord dans le dossier de PeriphHub, modifiable sans droits administrateur (installation par
+/// utilisateur), où un faux `sc.exe` serait lancé par l'instance administrateur.
+pub fn system_exe(rel: &str) -> std::path::PathBuf {
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+    let mut buf = [0u16; 260];
+    let n = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    let dir = if n > 0 && n < buf.len() {
+        String::from_utf16_lossy(&buf[..n])
+    } else {
+        r"C:\Windows\System32".to_string()
+    };
+    std::path::Path::new(&dir).join(rel)
+}
+
 /// Signature valide ET émise pour l'éditeur attendu. Renvoie le nom de l'éditeur.
 pub fn check_signature(file: &Path, expected: &str) -> Result<String, String> {
-    let out = Command::new("powershell")
+    let out = Command::new(system_exe(r"WindowsPowerShell\v1.0\powershell.exe"))
         .args([
             "-NoProfile",
             "-NonInteractive",
