@@ -61,6 +61,39 @@ async function deviceDiag(vid, pid, extra = []) {
   return [...lines, ...extra].join('\n');
 }
 
+// Diagnostic de tout le PC, pour « Un appareil manque ou ne marche pas ? » : chaque appareil USB
+// branché (sans numéro de série ni chemin), ce que PeriphHub en sait et pourquoi il ne l'a pas connecté.
+async function globalDiag() {
+  const lines = [`PeriphHub ${report?.version || '?'} · ${navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows'}`];
+  if (!report) lines.push('Analyse non terminée');
+  if (report?.hid_blocked || nativeHid.blocked) lines.push('Liste USB bloquée par un appareil qui ne répond pas');
+  const ifs = 'hid' in navigator ? await navigator.hid.getDevices().catch(e => (lines.push('Liste HID : ' + e), [])) : [];
+  lines.push(`${(report?.devices || []).length} appareils USB/HID à l’analyse, ${ifs.length} interfaces HID accessibles`);
+  const devs = (report?.devices || []).slice().sort((a, b) => (a.status === 'unknown') - (b.status === 'unknown'));
+  let hidden = 0;
+  for (const d of devs) {
+    const id = d.vid + ':' + d.pid;
+    if (d.status === 'unknown' && !['souris', 'clavier', 'casque', 'manette'].includes(d.kind)) { hidden++; continue; }
+    const live = [...drvLive.values()].find(i => i.dev && devId(i.dev) === id);
+    const n = ifs.filter(x => devId(x) === id).length;
+    lines.push(`- ${id} ${d.product || d.catalog_name || '?'} · ${d.kind} · ${d.status}${d.plugin ? ' (' + d.plugin + ')' : ''} · ${n} interfaces`
+      + (live ? ` · connecté (${live.driver?.id || '?'})` : ''));
+    for (const e of drvErrors.get(id) || []) lines.push('  échec ' + e);
+  }
+  if (hidden) lines.push(`(+ ${hidden} autres appareils sans réglages : hubs, puces internes…)`);
+  if (typeof hsStatus !== 'undefined') lines.push('Module casques : ' + hsStatus);
+  return lines.join('\n');
+}
+
+async function reportProblem() {
+  try {
+    await nativeInvoke('report_device', { model: 'Appareil manquant ou qui ne marche pas', version: report?.version || '', report: await globalDiag() });
+    toast('Formulaire ouvert dans le navigateur : dites quels appareils vous avez et ce qui ne marche pas, puis publiez.', 'ok');
+  } catch (e) {
+    toast('Erreur : ' + (e.message || e), 'err');
+  }
+}
+
 // Ouvre le formulaire GitHub prérempli : l'utilisateur relit et publie lui-même
 async function reportDevice(name, vid, pid) {
   try {

@@ -591,6 +591,10 @@ const I18N_EN = {
   'Vérification…': 'Checking…',
   'Vérifier maintenant': 'Check now',
   'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.': 'PeriphHub checks GitHub for a new version and offers it in one click. Nothing about your computer or devices is sent; updates are signed and verified before installing.',
+  'Aucun de vos appareils n’est encore réglable directement ici. Ceux que PeriphHub a détectés sont listés juste en dessous, avec ce qu’il est possible d’en faire.': 'None of your devices can be adjusted directly here yet. The ones PeriphHub detected are listed just below, with what can be done with them.',
+  'Un appareil manque ou ne marche pas ? Ce bouton ouvre un ticket GitHub prérempli avec le diagnostic de votre PC (liste des appareils USB, sans numéro de série) : vous le relisez avant de le publier.': 'A device is missing or not working? This button opens a pre-filled GitHub issue with your PC’s diagnostics (list of USB devices, no serial numbers): you review it before posting.',
+  'Signaler un problème': 'Report a problem',
+  'Formulaire ouvert dans le navigateur : dites quels appareils vous avez et ce qui ne marche pas, puis publiez.': 'Form opened in your browser: say which devices you have and what does not work, then post it.',
 };
 
 // {} = variable part (translated in turn when it is a known text)

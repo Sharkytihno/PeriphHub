@@ -258,8 +258,13 @@ function refreshHome() {
     h('section', { class: 'block' },
       h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils')),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
-        : h('div', { class: 'empty' }, report ? 'Aucun appareil pris en charge n’est branché. Les appareils reconnus apparaissent ici tout seuls.' : 'Recherche des appareils…')),
-    otherDevices()].filter(Boolean));
+        : h('div', { class: 'empty' }, !report ? 'Recherche des appareils…'
+          : otherDevices() ? 'Aucun de vos appareils n’est encore réglable directement ici. Ceux que PeriphHub a détectés sont listés juste en dessous, avec ce qu’il est possible d’en faire.'
+          : 'Aucun appareil pris en charge n’est branché. Les appareils reconnus apparaissent ici tout seuls.')),
+    otherDevices(),
+    NATIVE && report ? h('div', { class: 'notice' },
+      h('p', { class: 'muted small' }, 'Un appareil manque ou ne marche pas ? Ce bouton ouvre un ticket GitHub prérempli avec le diagnostic de votre PC (liste des appareils USB, sans numéro de série) : vous le relisez avant de le publier.'),
+      h('button', { class: 'ghost', onclick: reportProblem }, 'Signaler un problème')) : null].filter(Boolean));
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment

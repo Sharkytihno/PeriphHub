@@ -69,6 +69,7 @@ function hsInstance(d) {
 }
 
 let hsPolling = null;
+let hsStatus = 'pas encore interrogé'; // dernier résultat de HeadsetControl (pour les signalements)
 
 // Renvoie au casque les réglages choisis (il ne les relit pas : on les renvoie tous)
 async function hsReapply(inst) {
@@ -83,6 +84,7 @@ function headsetsPoll() {
   hsPolling ||= (async () => {
     try {
       const r = await nativeInvoke('headset_list');
+      hsStatus = (r.devices || []).map(d => `${d.device || '?'} (${d.id_vendor}:${d.id_product}, ${d.status || 'ok'}${d.battery ? ', batterie ' + d.battery.status : ''})`).join(' ; ') || 'aucun casque trouvé';
       const seen = new Set();
       for (const d of r.devices || []) {
         const id = `${d.id_vendor}:${d.id_product}`.replace(/0x/g, '').toUpperCase();
@@ -110,6 +112,7 @@ function headsetsPoll() {
       }
       for (const [id, inst] of hsLive) if (!seen.has(id)) { hsLive.delete(id); drvRelease(inst.dev); }
     } catch (e) {
+      hsStatus = 'erreur : ' + e;
       // module absent (compilation sans HeadsetControl) ou aucun casque : rien à afficher
       if (!/absent/.test(String(e))) console.warn('[PeriphHub] casques', e);
     } finally {
