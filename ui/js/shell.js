@@ -51,8 +51,13 @@ function toast(text, kind = 'ok') {
 
 // ---------- Navigation ----------
 
+let settleTimer = 0;
 function showTab(name) {
   if (!$(name) || document.querySelector(`nav [data-tab="${name}"]`)?.hidden) name = 'home';
+  // Entrées en cascade à l'ouverture d'une page seulement (pas à chaque actualisation)
+  document.body.classList.remove('settled');
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => document.body.classList.add('settled'), 900);
   for (const b of document.querySelectorAll('nav [data-tab]')) b.classList.toggle('on', b.dataset.tab === name);
   for (const sec of document.querySelectorAll('main > section')) sec.hidden = sec.id !== name;
   try { localStorage.setItem('tab', name); } catch {}
@@ -72,6 +77,7 @@ let scanning = false;
 async function rescan() {
   if (!NATIVE || scanning) return;
   scanning = true;
+  document.body.classList.add('scanning');
   $('rescan').disabled = true;
   setStatus('slimStatus', 'Analyse…');
   try {
@@ -83,6 +89,7 @@ async function rescan() {
     setStatus('slimStatus', 'Analyse impossible : ' + e, 'err');
   } finally {
     scanning = false;
+    document.body.classList.remove('scanning');
     $('rescan').disabled = false;
   }
   // Appareils pris en charge détectés : leur page apparaît dans la barre latérale
@@ -139,6 +146,19 @@ function deviceTiles() {
 // Mémoire libérée : mesurée juste avant et juste après chaque allègement
 const gained = () => journal.reduce((s, l) => s + Math.max(0, l.before_bytes - l.after_bytes), 0);
 
+// Compteur qui monte jusqu'à la valeur, à l'ouverture de la page seulement
+function countUp(el, bytes) {
+  if (document.body.classList.contains('settled') || matchMedia('(prefers-reduced-motion: reduce)').matches || !bytes) return el;
+  const t0 = performance.now(), dur = 700;
+  const step = t => {
+    const k = Math.min(1, (t - t0) / dur);
+    el.textContent = mo(bytes * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  return el;
+}
+
 function ramHero() {
   const r = report;
   if (!r) return h('div', { class: 'hero' }, h('div', { class: 'muted' }, NATIVE ? 'Analyse du PC…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'));
@@ -150,7 +170,7 @@ function ramHero() {
   return h('div', { class: 'hero' },
     h('div', { class: 'hleft' },
       h('div', { class: 'hlabel' }, 'Mémoire des logiciels constructeurs'),
-      h('div', { class: 'hvalue' + (r.vendor_bytes ? '' : ' zero') }, mo(r.vendor_bytes)),
+      countUp(h('div', { class: 'hvalue' + (r.vendor_bytes ? '' : ' zero') }, mo(r.vendor_bytes)), r.vendor_bytes),
       h('div', { class: 'muted small' }, running.length
         ? `${plural(running.length, 'logiciel ouvert', 'logiciels ouverts')} en arrière-plan : ${running.map(v => v.name).join(', ')}.`
         : 'Aucun logiciel constructeur connu ne tourne : votre PC est déjà léger.'),

@@ -1,26 +1,34 @@
 /* PeriphHub — thèmes clair et sombre (attribut data-theme posé par js/theme.js avant l'affichage).
    Pas de flou ni d'ombres lourdes : l'interface doit rester légère. */
 :root {
-  --bg: #101216; --nav: #0b0d10; --card: #16191e; --card2: #1c1f25; --hover: #23272e; --inset: #111317;
-  --line: #22262d; --line2: #2f343c; --line3: #3c424c; --fg: #eceef1; --muted: #8b919b; --faint: #5f6570;
-  --accent: #7b61ff; --accent2: #8f79ff; --accentfg: #a593ff; --accentbg: rgba(123, 97, 255, .15);
-  --ok: #3ccf7a; --okbg: rgba(60, 207, 122, .12); --err: #ff5d5d; --errbg: rgba(255, 93, 93, .12);
-  --warn: #f5b041; --warnbg: rgba(245, 176, 65, .12); --info: #5ab0ff;
-  --sh1: 0 1px 2px rgba(0, 0, 0, .35); --sh2: 0 12px 32px rgba(0, 0, 0, .45); --overlay: rgba(4, 5, 7, .6);
-  --thumb: #fff; --key1: #22262d; --key2: #1b1e24; --keysel1: #262049; --keysel2: #1d1839; --grid: rgba(255, 255, 255, .06);
-  --avl: 22%; --avt: 72%; --scroll: #2a2e36;
-  --r: 14px; --rs: 10px;
+  /* Identité « Orbit » : iris → cyan. Neutres légèrement bleutés ; ambre = mémoire consommée, vert = gain. */
+  --iris: #7c6cff; --cyan: #22c8ee; --grad: linear-gradient(135deg, #8b5cff 0%, #5b7bff 48%, #22c8ee 100%);
+  --cost: #ff9a5c;
+  --bg: #0c0e14; --nav: #090b10; --card: #131620; --card2: #191d29; --hover: #1e2230; --inset: #0f1219;
+  --line: #1f2433; --line2: #2a3043; --line3: #3a4157; --fg: #eef0f6; --muted: #8d93a8; --faint: #5d6379;
+  --accent: #7c6cff; --accent2: #8f82ff; --accentfg: #a99fff; --accentbg: rgba(124, 108, 255, .16);
+  --ok: #3ddc97; --okbg: rgba(61, 220, 151, .12); --err: #ff5f6d; --errbg: rgba(255, 95, 109, .12);
+  --warn: #ffb547; --warnbg: rgba(255, 181, 71, .12); --info: #4cc3ff;
+  --sh1: 0 1px 2px rgba(0, 0, 0, .4); --sh2: 0 18px 44px rgba(0, 0, 0, .5); --overlay: rgba(4, 6, 12, .62);
+  --glow: rgba(124, 108, 255, .10); --glow2: rgba(34, 200, 238, .06);
+  --thumb: #fff; --key1: #1f2433; --key2: #181c27; --keysel1: #272259; --keysel2: #1d1a44; --grid: rgba(255, 255, 255, .06);
+  --avl: 22%; --avt: 72%; --scroll: #262b3b;
+  --r: 16px; --rs: 10px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
   color-scheme: dark;
 }
 :root[data-theme=light] {
-  --bg: #f6f7f9; --nav: #eef0f3; --card: #ffffff; --card2: #f6f7f9; --hover: #eceef2; --inset: #f2f3f6;
-  --line: #e5e7eb; --line2: #d6d9df; --line3: #c2c6ce; --fg: #15171c; --muted: #5d6470; --faint: #9a9fa8;
-  --accent: #6246ea; --accent2: #7158f0; --accentfg: #5236d8; --accentbg: rgba(98, 70, 234, .1);
-  --ok: #17924d; --okbg: rgba(23, 146, 77, .1); --err: #d63838; --errbg: rgba(214, 56, 56, .09);
-  --warn: #b7700b; --warnbg: rgba(214, 140, 20, .12); --info: #1f6fd1;
-  --sh1: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .04); --sh2: 0 16px 40px rgba(16, 24, 40, .16); --overlay: rgba(20, 24, 32, .32);
-  --thumb: #fff; --key1: #ffffff; --key2: #f3f4f7; --keysel1: #f2efff; --keysel2: #e7e1ff; --grid: rgba(0, 0, 0, .06);
-  --avl: 92%; --avt: 38%; --scroll: #cfd3da;
+  --iris: #5b4bf0; --cyan: #0aa5cc; --grad: linear-gradient(135deg, #7a4dff 0%, #4f6bff 48%, #10b4dc 100%);
+  --cost: #e8702a;
+  --bg: #f5f6fb; --nav: #eef0f7; --card: #ffffff; --card2: #f6f7fc; --hover: #e9ebf4; --inset: #f1f2f8;
+  --line: #e3e6ef; --line2: #d3d7e4; --line3: #bcc2d3; --fg: #131628; --muted: #596079; --faint: #979db2;
+  --accent: #5b4bf0; --accent2: #6d5ef4; --accentfg: #4b3be0; --accentbg: rgba(91, 75, 240, .1);
+  --ok: #12925c; --okbg: rgba(18, 146, 92, .1); --err: #d93349; --errbg: rgba(217, 51, 73, .09);
+  --warn: #b26b00; --warnbg: rgba(214, 140, 20, .12); --info: #0b78c9;
+  --sh1: 0 1px 2px rgba(19, 22, 40, .06), 0 1px 3px rgba(19, 22, 40, .05); --sh2: 0 18px 44px rgba(19, 22, 40, .16); --overlay: rgba(19, 22, 40, .32);
+  --glow: rgba(91, 75, 240, .07); --glow2: rgba(10, 165, 204, .05);
+  --thumb: #fff; --key1: #ffffff; --key2: #f3f4f9; --keysel1: #f0eeff; --keysel2: #e4e0ff; --grid: rgba(0, 0, 0, .06);
+  --avl: 92%; --avt: 38%; --scroll: #cdd2df;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -505,3 +513,71 @@ nav button[hidden], .ngroup[hidden] { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .overlay, .dialog, .htrack > i { animation: none; transition: none; } }
 .stack { display: grid; gap: 14px; width: 100%; }
+
+/* =================================================================================================
+   Identité « Orbit » — dégradé iris → cyan, logo moyeu + satellites, mouvements courts et nets.
+   ================================================================================================= */
+h1, h2, h3, .brand, .hvalue, .tname, .vname, .wdone .big { font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+h2 { letter-spacing: -.025em; }
+
+/* Halo discret de la marque en haut de page */
+main { background: radial-gradient(900px 340px at 18% -60px, var(--glow), transparent 70%), radial-gradient(700px 300px at 92% -80px, var(--glow2), transparent 70%); }
+
+/* Logo */
+.brand { gap: 11px; }
+.brand .mark { width: 30px; height: 30px; flex: none; filter: drop-shadow(0 4px 10px rgba(91, 75, 240, .35)); }
+.brand .mark .orbit { transform-origin: 32px 32px; transition: transform .8s var(--ease); }
+.brand:hover .mark .orbit { transform: rotate(120deg); }
+body.scanning .brand .mark .orbit { animation: orbit 1.6s linear infinite; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.brand .wm { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
+.brand .wm b { font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Boutons principaux : dégradé de la marque */
+button:not(.ghost):not(.mini):not(.swatch):not(.x):not(.tile):not(.dot):not(.key):not(.eff):not(.preset) {
+  background-image: var(--grad); background-size: 140% 100%; background-position: 0 0; border: 0;
+  transition: background-position .3s var(--ease), transform .12s, box-shadow .2s, filter .2s; }
+nav button, .seg button, .tabs button { background-image: none !important; }
+button:not(.ghost):not(nav button):not(.seg button):hover { background-position: 100% 0; }
+button:active:not(:disabled) { transform: scale(.97); }
+.cta { box-shadow: 0 10px 24px -10px rgba(91, 75, 240, .7); }
+button.ghost { background: var(--card); border: 1px solid var(--line2); color: var(--fg); }
+button.ghost:hover { border-color: var(--line3); background: var(--hover); }
+
+/* Navigation : barre de sélection au dégradé */
+nav button.on::before { content: ""; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--grad); }
+nav button.on .ic { stroke: var(--iris); }
+.badge { background: var(--grad); }
+
+/* Héros mémoire */
+.hero { background: radial-gradient(120% 140% at 0% 0%, var(--accentbg), transparent 55%) padding-box, linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(135deg, rgba(124, 108, 255, .45), rgba(34, 200, 238, .25) 50%, var(--line) 80%) border-box;
+  border: 1px solid transparent; }
+.hvalue { color: var(--cost); }
+.hvalue.zero, .wdone .big { background: linear-gradient(135deg, var(--ok), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hbar.vendor .htrack > i { background: linear-gradient(90deg, var(--cost), #ffc36b); }
+.hbar.self .htrack > i { background: var(--grad); }
+.htrack > i { transition: width .9s var(--ease); }
+.gain { color: var(--ok); }
+
+/* Tuiles et cartes */
+.tile.live .tico, .tico.live { background: var(--accentbg); color: var(--iris); }
+.tile.live { background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(135deg, rgba(124, 108, 255, .35), var(--line) 45%) border-box; border-color: transparent; }
+.meter > i { background: linear-gradient(90deg, var(--ok), #6ee7b7); transition: width .6s var(--ease); }
+.toggle input:checked + .sw, .dpi.active .dot, .eff.on { background: var(--grad); border-color: transparent; }
+.seg button.on { background: var(--card); color: var(--fg); box-shadow: var(--sh1), inset 0 -2px 0 var(--iris); }
+.chip.experimental { color: var(--warn); }
+
+/* Entrées en cascade (accueil, allègement) */
+.tiles > *, .vcards > *, .devlist > * { animation: rise .42s var(--ease) both; }
+.tiles > :nth-child(2), .vcards > :nth-child(2), .devlist > :nth-child(2) { animation-delay: .05s; }
+.tiles > :nth-child(3), .vcards > :nth-child(3), .devlist > :nth-child(3) { animation-delay: .1s; }
+.tiles > :nth-child(4), .vcards > :nth-child(4), .devlist > :nth-child(4) { animation-delay: .15s; }
+.tiles > :nth-child(n+5), .vcards > :nth-child(n+5), .devlist > :nth-child(n+5) { animation-delay: .2s; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+body.settled .tiles > *, body.settled .vcards > *, body.settled .devlist > * { animation: none; }
+main > section { animation: pagein .26s var(--ease); }
+@keyframes pagein { from { opacity: 0; transform: translateY(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tiles > *, .vcards > *, .devlist > *, main > section, .brand .mark .orbit, .htrack > i, .meter > i { animation: none !important; transition: none !important; }
+}

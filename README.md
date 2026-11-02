@@ -1,6 +1,19 @@
-# PeriphHub
+<p align="center">
+  <img src="assets/logo.svg" width="96" height="96" alt="Logo PeriphHub">
+</p>
+<h1 align="center">PeriphHub</h1>
+<p align="center"><strong>Un seul logiciel léger pour tous vos périphériques.</strong></p>
+<p align="center">
+  <a href="https://github.com/Sharkytihno/PeriphHub/releases"><img alt="Dernière version" src="https://img.shields.io/github/v/release/Sharkytihno/PeriphHub?include_prereleases&color=6d5ef4"></a>
+  <a href="LICENSE"><img alt="Licence GPL-3.0" src="https://img.shields.io/badge/licence-GPL--3.0-22c8ee"></a>
+  <img alt="Windows 10 et 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-5b7bff">
+  <a href="https://github.com/Sharkytihno/PeriphHub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Sharkytihno/PeriphHub/actions/workflows/ci.yml/badge.svg"></a>
+</p>
 
-**Un seul logiciel léger pour tous vos périphériques.**
+<p align="center">
+  <img src="docs/screenshots/accueil-sombre.png" width="49%" alt="Accueil, thème sombre">
+  <img src="docs/screenshots/accueil-clair.png" width="49%" alt="Accueil, thème clair">
+</p>
 
 Razer Synapse, Logitech G HUB, Corsair iCUE, SteelSeries GG, Armoury Crate… Chaque marque installe
 son logiciel, qui démarre avec Windows et occupe souvent plusieurs centaines de Mo de mémoire vive,
@@ -16,6 +29,24 @@ PeriphHub vise à les remplacer par une seule petite application :
    accord et toujours de façon réversible, d'empêcher les logiciels constructeurs de tourner en
    permanence. Ils restent installés et s'ouvrent à la demande pour les réglages rares.
 
+<p align="center"><img src="docs/screenshots/allegement-sombre.png" width="80%" alt="Allègement guidé"></p>
+
+## Pris en charge
+
+| Famille | Comment | Réglages | Statut |
+|---|---|---|---|
+| Souris CompX (Scyrox, VXE, ATK, MCHOSE…) | Protocole observé | DPI, fréquence jusqu'à 8 kHz, boutons, macros, veille | ✅ Scyrox V6 · 🧪 autres |
+| Claviers VIA / Vial (Keychron, Akko, NuPhy, REKT…) | Protocole VIA | Éclairage enregistré dans le clavier ; REKT : touches, rapid trigger, macros | ✅ REKT · 🧪 autres |
+| Logitech (HID++ 2.0) | D'après Solaar / libratbag | DPI, fréquence, SmartShift, molette, batterie | 🧪 |
+| Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
+| Casques Razer BlackShark V2 HyperSpeed | Protocole observé | Égaliseur, retour micro, veille, THX | ✅ |
+| Casques SteelSeries, Corsair, HyperX, Logitech, Audeze, Sony… | [HeadsetControl](https://github.com/Sapd/HeadsetControl) | Batterie, retour micro, égaliseur, extinction auto… | 🧪 |
+| RGB carte mère GIGABYTE | Protocole RGB Fusion 2 | Effets, couleurs | ✅ |
+| Tout ce que gère OpenRGB (1 000+ appareils) | Serveur SDK d'OpenRGB | Couleur unie | 🧪 |
+
+✅ testé sur l'appareil · 🧪 expérimental : écrit à partir de projets libres, à confirmer. Un modèle
+fonctionne (ou pas) ? Ouvrez un ticket avec le rapport de la page Allègement.
+
 ## État du projet
 
 | Version | Contenu | État |
@@ -27,7 +58,8 @@ PeriphHub vise à les remplacer par une seule petite application :
 | 0.5 | Casques SteelSeries Arctis, Corsair Void / Virtuoso, HyperX Cloud, Logitech G / Astro, Audeze, Sony INZONE… via [HeadsetControl](https://github.com/Sapd/HeadsetControl) : batterie, retour micro, égaliseur, extinction auto, éclairage (**expérimental**) | ✅ |
 | 0.6 | Claviers QMK **VIA / Vial** de toutes marques (Keychron, Akko, Epomaker, NuPhy…) : éclairage enregistré dans le clavier ; souris à puce **CompX** (VXE, ATK, MCHOSE…) sur la page souris (**expérimental**) | ✅ |
 | 0.7 | Passerelle **OpenRGB** : si OpenRGB tourne (serveur SDK), couleur unie sur tous ses appareils ou appareil par appareil | ✅ |
-| 1.0 | Identité visuelle (logo, couleurs, animations), README illustré, signature de l'installeur | 🗺️ |
+| 0.8 | Identité visuelle « Orbit » : logo, dégradé iris → cyan, thèmes clair et sombre accordés, animations ; README illustré | ✅ |
+| 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, installeur signé (SignPath) | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
 
@@ -65,6 +97,7 @@ Prérequis : [Rust](https://rustup.rs), Node.js 20+, Visual Studio Build Tools (
 
 ```bash
 npm install
+powershell -File scripts/fetch-headsetcontrol.ps1   # module casques, empreinte vérifiée
 npm run dev        # lancement en développement
 npm run build      # installeur dans src-tauri/target/release/bundle/nsis/
 ```
