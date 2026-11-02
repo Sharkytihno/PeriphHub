@@ -6,7 +6,7 @@
 
 const LG = {
   ROOT: 0x0000, NAME: 0x0005, FW: 0x0003, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004,
-  DPI: 0x2201, RATE: 0x8060, EXT_RATE: 0x8061, SMARTSHIFT: 0x2110, SMARTSHIFT2: 0x2111, HIRES: 0x2121,
+  DPI: 0x2201, EXT_DPI: 0x2202, RATE: 0x8060, EXT_RATE: 0x8061, SMARTSHIFT: 0x2110, SMARTSHIFT2: 0x2111, HIRES: 0x2121,
   PROFILES: 0x8100,
 };
 const LG_SW = 0x0B;                    // id logiciel (4 bits) : distingue nos réponses des notifications
@@ -101,7 +101,7 @@ class LogitechDevice {
 
   // Liste des DPI : valeurs sur 16 bits ; 0xE000 | pas = « de la valeur précédente à la suivante, par ce pas »
   async probeDpi() {
-    if (!await this.feature(LG.DPI)) return;
+    if (!await this.feature(LG.DPI)) return this.probeExtDpi();
     const r = await this.call(LG.DPI, 1, [0]);
     const vals = [];
     let step = 0;
@@ -116,6 +116,49 @@ class LogitechDevice {
     this.caps.dpi = step
       ? { min, max, step, presets: [400, 800, 1200, 1600, 3200, 6400].filter(p => p >= min && p <= max && (p - min) % step === 0) }
       : { min, max, step: 0, presets: vals.length <= 12 ? vals : vals.filter((_, i) => i % Math.ceil(vals.length / 10) === 0), list: vals };
+  }
+
+  // DPI étendu (0x2202 : PRO X Superlight 2 et modèles récents), d'après Solaar (ExtendedAdjustableDpi).
+  // Fonctions : 1 = capacités du capteur, 2 = liste des DPI (par pages), 5 = lecture, 6 = écriture.
+  // Valeurs sur 16 bits (gros-boutiste) ; même codage de liste que 0x2201, la liste commence à l'octet 3.
+  async probeExtDpi() {
+    if (!await this.feature(LG.EXT_DPI)) return;
+    const flags = (await this.call(LG.EXT_DPI, 1, [0]))[2] || 0;
+    this.extDpi = { y: !!(flags & 1), lod: !!(flags & 2) };
+    let bytes = [];
+    for (let page = 0; page < 16; page++) {
+      bytes = bytes.concat([...(await this.call(LG.EXT_DPI, 2, [0, 0, page])).slice(3)]);
+      if (bytes.length >= 2 && !bytes[bytes.length - 1] && !bytes[bytes.length - 2]) break;
+    }
+    const vals = [];
+    for (let i = 0; i + 1 < bytes.length;) {
+      const v = (bytes[i] << 8) | bytes[i + 1];
+      if (!v) break;
+      if (v >> 13 === 0b111) {
+        const step = v & 0x1FFF, last = (bytes[i + 2] << 8) | bytes[i + 3];
+        if (!step || !vals.length || last <= vals[vals.length - 1]) break; // liste incohérente : on s'arrête là
+        for (let d = vals[vals.length - 1] + step; d <= last; d += step) vals.push(d);
+        i += 4;
+      } else {
+        vals.push(v);
+        i += 2;
+      }
+    }
+    if (!vals.length) return;
+    const min = vals[0], max = vals[vals.length - 1];
+    const step = vals.length > 1 ? vals[1] - vals[0] : 0;
+    const regular = step > 0 && vals.every((d, i) => d === min + i * step);
+    this.caps.dpi = regular
+      ? { min, max, step, presets: [400, 800, 1200, 1600, 3200, 6400].filter(p => p >= min && p <= max && (p - min) % step === 0) }
+      : { min, max, step: 0, presets: vals.length <= 12 ? vals : vals.filter((_, i) => i % Math.ceil(vals.length / 10) === 0), list: vals };
+    this.caps.dpi.values = vals;
+  }
+
+  async readExtDpi() {
+    const r = await this.call(LG.EXT_DPI, 5, [0]);
+    const w = i => (r[i] << 8) | r[i + 1];
+    this.extDpi.cur = { x: w(1) || w(3), y: w(5) || w(7), lod: r[9] };
+    return this.extDpi.cur.x;
   }
 
   async probeRate() {
@@ -150,7 +193,7 @@ class LogitechDevice {
 
   async refresh() {
     const s = this.state;
-    if (this.caps.dpi) s.dpi = (r => (r[1] << 8) | r[2])(await this.call(LG.DPI, 2, [0]));
+    if (this.caps.dpi) s.dpi = this.extDpi ? await this.readExtDpi() : (r => (r[1] << 8) | r[2])(await this.call(LG.DPI, 2, [0]));
     if (this.caps.rate) {
       s.rate = this.rateExt ? LG_EXT_RATES[(await this.call(LG.EXT_RATE, 2))[0]] : 1000 / (await this.call(LG.RATE, 1))[0];
     }
@@ -170,7 +213,16 @@ class LogitechDevice {
     if (cap === 'dpi') {
       let dpi = Math.round(v);
       if (this.caps.dpi.list) dpi = this.caps.dpi.list.reduce((a, b) => Math.abs(b - dpi) < Math.abs(a - dpi) ? b : a);
-      await this.call(LG.DPI, 3, [0, dpi >> 8, dpi & 0xFF]);
+      if (this.extDpi) {
+        const c = this.caps.dpi;
+        if (c.step) dpi = Math.min(c.max, Math.max(c.min, c.min + Math.round((dpi - c.min) / c.step) * c.step));
+        // Valeur hors de la liste annoncée par la souris : refusée plutôt qu'envoyée
+        if (!this.caps.dpi.values.includes(dpi)) throw new Error('valeur hors limites');
+        const cur = this.extDpi.cur || {};
+        const y = this.extDpi.y ? dpi : 0; // même sensibilité sur les deux axes
+        await this.call(LG.EXT_DPI, 6, [0, dpi >> 8, dpi & 0xFF, y >> 8, y & 0xFF, this.extDpi.lod ? (cur.lod ?? 0) : 0]);
+        this.extDpi.cur = { ...cur, x: dpi, y };
+      } else await this.call(LG.DPI, 3, [0, dpi >> 8, dpi & 0xFF]);
     } else if (cap === 'rate') {
       if (this.rateExt) await this.call(LG.EXT_RATE, 3, [LG_EXT_RATES.indexOf(v)]);
       else await this.call(LG.RATE, 2, [Math.round(1000 / v)]);
