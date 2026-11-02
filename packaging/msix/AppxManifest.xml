@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paquet MSIX pour le Microsoft Store, construit par scripts/build-msix.ps1.
+     {IDENTITY_NAME}, {PUBLISHER} et {PUBLISHER_NAME} : valeurs données par le Partner Center
+     (Produit > Identité du produit), passées au script ou via les variables du dépôt GitHub. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap rescap desktop6">
+  <Identity Name="{IDENTITY_NAME}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>PeriphHub</DisplayName>
+    <PublisherDisplayName>{PUBLISHER_NAME}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- L'Allègement modifie le démarrage automatique des logiciels constructeurs (registre, dossiers) :
+         sans ceci, Windows redirigerait ces écritures vers une copie privée au paquet, sans effet réel -->
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <Description>Tous vos périphériques gaming dans une seule appli légère et libre, sans les logiciels constructeurs.</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="fr-FR" />
+    <Resource Language="en-US" />
+  </Resources>
+  <Applications>
+    <Application Id="PeriphHub" Executable="periphhub.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="PeriphHub" Description="PeriphHub"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <!-- L'Allègement relance PeriphHub en administrateur (UAC), seulement sur demande de l'utilisateur -->
+    <rescap:Capability Name="allowElevation" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

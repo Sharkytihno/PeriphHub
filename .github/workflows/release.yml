@@ -105,7 +105,26 @@ jobs:
             if ($s.Status -ne 'Valid') { throw "signature invalide : $f" }
           }
 
-      # 5. Release (brouillon) avec l'installeur et son empreinte
+      # 5. Paquet MSIX pour le Microsoft Store (non signé : le Store le signe lui-même).
+      #    Identité : variables du dépôt MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_NAME
+      #    (Partner Center > Identité du produit) ; sans elles, paquet provisoire. docs/MICROSOFT-STORE.md
+      - name: Paquet Microsoft Store (MSIX)
+        id: msix
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_NAME: ${{ vars.MSIX_PUBLISHER_NAME }}
+        run: |
+          $a = @{}
+          if ($env:MSIX_IDENTITY_NAME) { $a.IdentityName = $env:MSIX_IDENTITY_NAME }
+          if ($env:MSIX_PUBLISHER) { $a.Publisher = $env:MSIX_PUBLISHER }
+          if ($env:MSIX_PUBLISHER_NAME) { $a.PublisherName = $env:MSIX_PUBLISHER_NAME }
+          ./scripts/build-msix.ps1 @a
+          $f = Get-ChildItem src-tauri/target/release/*.msix | Select-Object -First 1
+          "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
+
+      # 6. Release (brouillon) avec l'installeur et son empreinte
       - name: Installeur (lancement manuel, sans release)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
@@ -140,8 +159,10 @@ jobs:
           {WARN}
 
           SHA-256 : `{HASH}`
+
+          Le fichier .msix sert uniquement à la publication sur le Microsoft Store. / The .msix file is only for the Microsoft Store submission.
           '@
           $body = $body.Replace('{NAME}', '${{ steps.setup.outputs.name }}').Replace('{WARN}', $warn).Replace('{HASH}', $hash)
           $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           Set-Content -Path $notes -Value $body -Encoding utf8
-          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" --draft --title 'PeriphHub ${{ github.ref_name }}' --notes-file $notes
+          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" '${{ steps.msix.outputs.path }}' --draft --title 'PeriphHub ${{ github.ref_name }}' --notes-file $notes
