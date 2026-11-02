@@ -179,6 +179,12 @@ for brand, model, status, pids in re.findall(r'brand:\s*"([^"]+)",\s*model:\s*"(
             add(v, pid, f"{brand} {model}", "souris", "openmouse", "openmouse" if good else "", "experimental" if good else None)
 
 
+# ---- Razer Kraken filaires : éclairage par ui/js/drivers/razer-kraken.js (protocole OpenRazer) ----
+for pid, name in {"0501": "Razer Kraken 7.1 Classic", "0506": "Razer Kraken 7.1 Classic", "0504": "Razer Kraken 7.1 Chroma",
+                  "0510": "Razer Kraken 7.1 V2", "0520": "Razer Kraken Tournament Edition",
+                  "0527": "Razer Kraken Ultimate", "0560": "Razer Kraken Kitty V2"}.items():
+    add("1532", pid, name, "casque", "openrazer", "razer-kraken", "experimental")
+
 # ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro ----
 kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
 t = rd(os.path.join(kbv, "wooting", "index.js"))
