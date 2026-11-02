@@ -26,7 +26,8 @@ PeriphHub vise à les remplacer par une seule petite application :
 | 0.4 | Pilotes génériques **expérimentaux** : Logitech HID++ 2.0 (DPI, fréquence, molette SmartShift / haute résolution, batterie) et Razer (DPI, fréquence, éclairage, batterie). Page de réglages construite automatiquement, réglages d'origine gardés | ✅ |
 | 0.5 | Casques SteelSeries Arctis, Corsair Void / Virtuoso, HyperX Cloud, Logitech G / Astro, Audeze, Sony INZONE… via [HeadsetControl](https://github.com/Sapd/HeadsetControl) : batterie, retour micro, égaliseur, extinction auto, éclairage (**expérimental**) | ✅ |
 | 0.6 | Claviers QMK **VIA / Vial** de toutes marques (Keychron, Akko, Epomaker, NuPhy…) : éclairage enregistré dans le clavier ; souris à puce **CompX** (VXE, ATK, MCHOSE…) sur la page souris (**expérimental**) | ✅ |
-| 1.0 | Passerelle OpenRGB, souris Sinowealth, signature de l'installeur | 🗺️ |
+| 0.7 | Passerelle **OpenRGB** : si OpenRGB tourne (serveur SDK), couleur unie sur tous ses appareils ou appareil par appareil | ✅ |
+| 1.0 | Identité visuelle (logo, couleurs, animations), README illustré, signature de l'installeur | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
 

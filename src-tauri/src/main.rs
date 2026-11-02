@@ -4,6 +4,7 @@
 mod devices;
 mod headset;
 mod hid;
+mod openrgb;
 mod procs;
 mod scan;
 mod sign;
@@ -69,6 +70,17 @@ async fn headset_list(app: tauri::AppHandle) -> Result<Value, String> {
 #[tauri::command]
 async fn headset_set(app: tauri::AppHandle, vid: u16, pid: u16, setting: String, value: Value) -> Result<Value, String> {
     blocking(move || headset::set(&app, vid, pid, &setting, &value)).await
+}
+
+// Éclairage via OpenRGB (serveur SDK local, s'il est lancé)
+#[tauri::command]
+async fn openrgb_list() -> Result<Value, String> {
+    blocking(openrgb::list).await
+}
+
+#[tauri::command]
+async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
+    blocking(move || openrgb::set_color(index, rgb)).await
 }
 
 // Effets THX des casques Razer (DLL Razer signée, facultative)
@@ -139,6 +151,8 @@ fn main() {
             hid::hid_get_feature,
             headset_list,
             headset_set,
+            openrgb_list,
+            openrgb_color,
             thx_state,
             thx_set,
             ui_theme,

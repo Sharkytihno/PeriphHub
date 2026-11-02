@@ -239,4 +239,5 @@ function driversStart() {
   navigator.hid?.addEventListener('disconnect', e => drvRelease(e.device));
   driversScan();
   if (typeof headsetsPoll === 'function') headsetsPoll();
+  if (typeof openrgbPoll === 'function') openrgbPoll();
 }
