@@ -19,6 +19,19 @@ individuel (depuis septembre 2025).
    `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER`, `MSIX_PUBLISHER_NAME` avec ces trois valeurs
    (ce ne sont pas des secrets).
 
+## Identité réservée (2026-11-02)
+
+| Champ | Valeur |
+|---|---|
+| Store ID | `9N0SL017556M` — <https://apps.microsoft.com/detail/9N0SL017556M> |
+| `Package/Identity/Name` | `Sharkytihno.PeriphHub` |
+| `Package/Identity/Publisher` | `CN=3EB06729-0E0E-4944-9842-53A3A0E97D46` |
+| `PublisherDisplayName` | `Sharkytihno` |
+| Package Family Name | `Sharkytihno.PeriphHub_y0wz1hb3kxsq8` |
+
+Déjà enregistrées dans les variables du dépôt et comme valeurs par défaut de `scripts/build-msix.ps1`.
+Le nom doit être soumis au Store dans les 3 mois suivant la réservation.
+
 ## À chaque version
 
 La release GitHub (tag `v*`) contient `PeriphHub_<version>_x64.msix`, construit par

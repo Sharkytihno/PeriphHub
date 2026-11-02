@@ -1,14 +1,14 @@
-# Construit le paquet MSIX destiné au Microsoft Store (non signé : le Store le signe lui-même).
+﻿# Construit le paquet MSIX destiné au Microsoft Store (non signé : le Store le signe lui-même).
 # À lancer après « npx tauri build --no-bundle » et scripts/fetch-headsetcontrol.ps1.
 #
-#   ./scripts/build-msix.ps1 -IdentityName 12345Sharky.PeriphHub -Publisher "CN=XXXXXXXX-..." -PublisherName "Sharky"
+#   ./scripts/build-msix.ps1   (identité du Store par défaut, voir docs/MICROSOFT-STORE.md)
 #
 # Les trois valeurs viennent du Partner Center (Produit > Gestion du produit > Identité du produit).
-# Sans elles, des valeurs provisoires sont utilisées : le paquet se construit mais le Store le refusera.
+# Par défaut : l'identité réservée pour PeriphHub (Store ID 9N0SL017556M).
 param(
-  [string]$IdentityName = 'PeriphHub.Provisoire',
-  [string]$Publisher = 'CN=PeriphHub',
-  [string]$PublisherName = 'Sharky',
+  [string]$IdentityName = 'Sharkytihno.PeriphHub',
+  [string]$Publisher = 'CN=3EB06729-0E0E-4944-9842-53A3A0E97D46',
+  [string]$PublisherName = 'Sharkytihno',
   [string]$Out = ''
 )
 $ErrorActionPreference = 'Stop'
