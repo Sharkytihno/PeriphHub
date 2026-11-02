@@ -1,0 +1,37 @@
+name: Release
+
+# Pousser un tag « v0.1.0 » compile l'installeur Windows et prépare une Release (brouillon à publier)
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'PeriphHub ${{ github.ref_name }}'
+          releaseBody: |
+            Téléchargez **PeriphHub_..._x64-setup.exe** ci-dessous.
+            Windows peut afficher « Windows a protégé votre ordinateur » (programme pas encore signé) :
+            cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+          releaseDraft: true
+          prerelease: false

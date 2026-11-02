@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PeriphHub</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◆</span>
+      <div>
+        <h1>PeriphHub</h1>
+        <p class="sub">Un seul logiciel léger pour tous vos périphériques</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="copy" class="ghost" disabled>Copier le rapport</button>
+      <button id="rescan">Relancer l'analyse</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary" id="summary" aria-live="polite">
+      <div class="stat big">
+        <span class="label">Logiciels constructeurs en mémoire</span>
+        <span class="value" id="vendorRam">…</span>
+        <span class="hint" id="vendorHint">Analyse en cours</span>
+      </div>
+      <div class="stat">
+        <span class="label">PeriphHub</span>
+        <span class="value" id="selfRam">…</span>
+        <span class="hint">fenêtre ouverte</span>
+      </div>
+      <div class="stat">
+        <span class="label">Périphériques détectés</span>
+        <span class="value" id="devCount">…</span>
+        <span class="hint" id="devHint"></span>
+      </div>
+    </section>
+
+    <p class="notice">Version 0.1 : PeriphHub <strong>analyse sans rien modifier</strong>. La désactivation
+      guidée et les réglages des périphériques arrivent dans les prochaines versions.</p>
+
+    <section>
+      <h2>Logiciels constructeurs</h2>
+      <div id="vendors" class="cards"></div>
+    </section>
+
+    <section>
+      <h2>Périphériques branchés</h2>
+      <div class="filters">
+        <label><input type="checkbox" id="showOther"> Afficher aussi les appareils sans réglages (hubs, puces internes…)</label>
+      </div>
+      <div id="devices" class="devlist"></div>
+    </section>
+  </main>
+
+  <footer>
+    PeriphHub est un logiciel libre (GPL-3.0). Votre appareil ou votre logiciel n'est pas reconnu ?
+    Copiez le rapport et ouvrez un ticket sur GitHub : c'est comme ça que la liste s'agrandit.
+  </footer>
+</body>
+</html>

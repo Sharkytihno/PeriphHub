@@ -1,0 +1,29 @@
+name: Appareil ou logiciel non reconnu
+description: PeriphHub ne reconnaît pas votre souris, clavier, casque ou le logiciel de votre marque
+labels: [base de données]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Modèle exact
+      placeholder: ex. Logitech G Pro X Superlight 2, Razer DeathAdder V3 Pro…
+    validations:
+      required: true
+  - type: input
+    id: software
+    attributes:
+      label: Logiciel du fabricant utilisé
+      placeholder: ex. G HUB, Synapse 4, pilote web sur le site du fabricant…
+  - type: textarea
+    id: settings
+    attributes:
+      label: Réglages que vous utilisez dans ce logiciel
+      placeholder: ex. DPI, éclairage, macros, égaliseur…
+  - type: textarea
+    id: report
+    attributes:
+      label: Rapport PeriphHub
+      description: Bouton « Copier le rapport » dans PeriphHub, puis collez ici (les chemins sont anonymisés).
+      render: json
+    validations:
+      required: true

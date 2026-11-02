@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fichiers de données JSON valides
+        shell: pwsh
+        run: Get-ChildItem data/*.json | ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json | Out-Null; "$($_.Name) OK" }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy -- -D warnings

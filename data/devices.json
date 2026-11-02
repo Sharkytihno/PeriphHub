@@ -1,0 +1,8 @@
+[
+  { "vid": "3554", "pid": "F5F7", "name": "Scyrox V6 (dongle 8K)", "kind": "souris", "status": "planned", "plugin": "scyrox" },
+  { "vid": "3554", "pid": "F5F6", "name": "Scyrox V6 (filaire)", "kind": "souris", "status": "planned", "plugin": "scyrox" },
+  { "vid": "373B", "pid": "1194", "name": "REKT Shogun68 HE", "kind": "clavier", "status": "planned", "plugin": "via-he" },
+  { "vid": "1532", "pid": "0565", "name": "Razer BlackShark V2 HyperSpeed (dongle)", "kind": "casque", "status": "planned", "plugin": "razer-audio" },
+  { "vid": "1532", "pid": "056E", "name": "Razer BlackShark V2 HyperSpeed", "kind": "casque", "status": "planned", "plugin": "razer-audio" },
+  { "vid": "048D", "pid": "5702", "name": "Contrôleur RGB GIGABYTE (ITE)", "kind": "rgb", "status": "planned", "plugin": "gigabyte-fusion2" }
+]
