@@ -96,15 +96,21 @@ function omInterfaces(devices) {
   });
 }
 
-function omBest(devices) {
-  let best = null, score = 0;
+// Interfaces qu'OpenMouse sait piloter, de la plus probable à la moins probable.
+// Certains pilotes (Rival 3…) acceptent toutes les interfaces du modèle et ne savent qu'à l'usage
+// laquelle répond : à score égal, on essaie d'abord celles des constructeurs (page ≥ 0xFF00),
+// puis les numéros d'interface les plus hauts (l'interface 0 est presque toujours la souris elle-même).
+function omCandidates(devices) {
+  const vendorPage = c => (c.collections || []).some(x => x.usagePage >= 0xFF00) ? 1 : 0;
+  const list = [];
   for (const c of omInterfaces(devices)) {
     let s = 0;
     try { s = clientSupportScore(c); } catch {}
-    if (s > score) { best = c; score = s; }
+    if (s > 0) list.push({ c, s, v: vendorPage(c), i: c.info?.interface ?? -1 });
   }
-  return best;
+  return list.sort((a, b) => b.s - a.s || b.v - a.v || b.i - a.i).map(x => x.c);
 }
+const omBest = devices => omCandidates(devices)[0] || null;
 
 // ---------- Réglages ----------
 
@@ -152,6 +158,11 @@ function omMap(inst, st) {
     const opts = omCall(c, 'getSleepOptions');
     if (opts?.length) { s.sleep = st.sleepTimeout; caps.sleep = opts; }
   }
+  // Souris qui ne savent pas dire leurs réglages (Rival 3…) : on ne fait pas semblant de les avoir lus
+  inst.note = ui.valuesVerified === false
+    ? 'Cette souris ne sait pas indiquer ses réglages actuels : les valeurs affichées sont les dernières envoyées par PeriphHub, ou celles par défaut. '
+      + 'Choisir un DPI ici remplace les paliers du bouton DPI de la souris par cette seule valeur.'
+    : undefined;
   inst.meta = [st.connectionType === 'Wireless' ? 'Sans fil' : st.connectionType === 'Wired' ? 'Filaire' : null,
     st.firmware?.length ? 'firmware ' + st.firmware.join(' / ') : null].filter(Boolean).join(' · ');
 }
@@ -198,11 +209,23 @@ function omRows(inst) {
 }
 
 async function omConnect(group) {
-  const dev = omBest(group);
-  if (!dev) throw new Error('modèle non reconnu par OpenMouse');
+  const cands = omCandidates(group);
+  if (!cands.length) throw new Error('modèle non reconnu par OpenMouse');
+  // Souris sans fil endormie : on lui laisse quelques secondes pour répondre (3 tours)
+  let err = null;
+  for (let round = 0; round < 3; round++) {
+    for (const dev of cands) {
+      try { return await omTry(dev, group); } catch (e) { err = e; }
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  throw err;
+}
+
+async function omTry(dev, group) {
   const client = createSupportedClient(dev);
   if (!client) throw new Error('modèle non reconnu par OpenMouse');
-  await client.open();
+  try { await client.open(); } catch (e) { await client.close?.().catch(() => {}); throw e; }
   const inst = {
     key: 'om-' + omHex(dev.vendorId) + omHex(dev.productId),
     name: dev.productName || 'Souris',
@@ -220,12 +243,7 @@ async function omConnect(group) {
     await f(client, v, inst);
   };
   inst.rows = () => omRows(inst);
-  // Souris sans fil endormie : on lui laisse quelques secondes pour répondre
-  let err = null;
-  for (let i = 0; i < 3; i++) {
-    try { await inst.refresh(); err = null; break; } catch (e) { err = e; await new Promise(r => setTimeout(r, 1000)); }
-  }
-  if (err) { await client.close?.().catch(() => {}); throw err; }
+  try { await inst.refresh(); } catch (e) { await client.close?.().catch(() => {}); throw e; }
   return [inst];
 }
 

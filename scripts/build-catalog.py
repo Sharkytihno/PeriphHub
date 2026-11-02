@@ -185,6 +185,10 @@ for pid, name in {"0501": "Razer Kraken 7.1 Classic", "0506": "Razer Kraken 7.1 
                   "0527": "Razer Kraken Ultimate", "0560": "Razer Kraken Kitty V2"}.items():
     add("1532", pid, name, "casque", "openrazer", "razer-kraken", "experimental")
 
+# ---- SteelSeries Apex 3 : éclairage par ui/js/drivers/steelseries-apex.js (protocole OpenRGB) ----
+add("1038", "161A", "SteelSeries Apex 3", "clavier", "openrgb", "steelseries-apex", "experimental")
+add("1038", "1622", "SteelSeries Apex 3 TKL", "clavier", "openrgb", "steelseries-apex", "experimental")
+
 # ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro, Keychron HE ----
 kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
 t = rd(os.path.join(kbv, "wooting", "index.js"))

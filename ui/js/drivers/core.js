@@ -38,6 +38,38 @@ const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb:
 // ---------- Connexion automatique ----------
 
 let drvScanning = false;
+const drvErrors = new Map(); // « VID:PID » → derniers échecs de pilotes (pour les signalements)
+
+// ---------- Signalement : diagnostic technique, sans numéro de série ni chemin ----------
+async function deviceDiag(vid, pid, extra = []) {
+  const id = (vid + ':' + pid).toUpperCase();
+  const hex = n => '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0');
+  const ifs = ('hid' in navigator ? await navigator.hid.getDevices().catch(() => []) : []).filter(d => devId(d) === id);
+  const ids = (cs, k) => [...new Set(hidAllCollections(cs || []).flatMap(c => (c[k] || []).map(r => r.reportId)))].join(',') || '-';
+  const lines = [`USB ${id}`, `PeriphHub ${report?.version || '?'} · ${navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows'}`];
+  const cat = (await catalog).find(c => (c.vid + ':' + c.pid).toUpperCase() === id);
+  if (cat) lines.push(`Catalogue : ${cat.name} · ${cat.status}${cat.via ? ' (' + cat.via + ')' : ''} · sources ${cat.src.join(', ')}`);
+  else lines.push('Absent du catalogue');
+  const live = [...drvLive.values()].find(i => i.dev && devId(i.dev) === id);
+  if (live) lines.push(`Pilote connecté : ${live.driver?.id || '?'} · réglages ${Object.keys(live.caps || {}).join(', ') || 'aucun'}`);
+  for (const e of drvErrors.get(id) || []) lines.push('Échec ' + e);
+  for (const d of ifs) {
+    const cs = d.parsed || d.collections;
+    lines.push(`Interface ${d.info?.interface ?? '?'} · page ${hex(d.info?.usage_page ?? cs?.[0]?.usagePage ?? 0)} usage ${hex(d.info?.usage ?? cs?.[0]?.usage ?? 0)} · rapports entrée ${ids(cs, 'inputReports')} sortie ${ids(cs, 'outputReports')} fonction ${ids(cs, 'featureReports')}`);
+  }
+  if (!ifs.length) lines.push('Aucune interface HID accessible à PeriphHub');
+  return [...lines, ...extra].join('\n');
+}
+
+// Ouvre le formulaire GitHub prérempli : l'utilisateur relit et publie lui-même
+async function reportDevice(name, vid, pid) {
+  try {
+    await nativeInvoke('report_device', { model: name, version: report?.version || '', report: await deviceDiag(vid, pid) });
+    toast('Formulaire ouvert dans le navigateur : dites ce qui marche ou pas, puis publiez.', 'ok');
+  } catch (e) {
+    toast('Erreur : ' + (e.message || e), 'err');
+  }
+}
 async function driversScan() {
   if (!('hid' in navigator) || drvScanning) return;
   drvScanning = true;
@@ -51,11 +83,12 @@ async function driversScan() {
     }
     // Pilotes essayés du plus précis au plus général : le premier qui répond garde l'appareil
     const order = DRIVERS.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
-    for (const [, group] of groups) {
+    for (const [id, group] of groups) {
       if (group.some(d => drvBusy.has(d.info?.path))) continue;
       const candidates = order.filter(x => group.some(x.match));
       if (!candidates.length) continue;
       group.forEach(d => drvBusy.add(d.info?.path));
+      drvErrors.delete(id);
       for (const drv of candidates) {
         try {
           const list = await drv.connect(group.find(drv.match), group);
@@ -64,6 +97,7 @@ async function driversScan() {
           break;
         } catch (e) {
           console.warn('[PeriphHub] pilote', drv.id, devId(group[0]), e.message);
+          drvErrors.set(id, [...(drvErrors.get(id) || []), `${drv.id} : ${e.message}`].slice(-8));
           // On ne réessaie qu'au prochain branchement (pas en boucle)
         }
       }
@@ -214,7 +248,8 @@ function drvRender(inst) {
     h('div', { class: 'field' }, h('div', { class: 'flabel' }, 'Sécurité'), h('div', { class: 'fctl' },
       h('div', { class: 'muted small' }, inst.source || ('Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
         'Les réglages d’origine sont gardés avant la première modification.')),
-      o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString(LOCALE)}`) : null)));
+      o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString(LOCALE)}`) : null,
+      NATIVE && inst.dev ? h('button', { class: 'ghost', onclick: () => reportDevice(inst.name, hex4(inst.dev.vendorId), hex4(inst.dev.productId)) }, 'Signaler si ça marche ou pas') : null)));
 }
 
 // ---------- Accueil ----------

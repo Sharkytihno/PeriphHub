@@ -81,7 +81,9 @@ async function rescan() {
   $('rescan').disabled = true;
   setStatus('slimStatus', 'Analyse…');
   try {
-    [report, journal] = await Promise.all([nativeInvoke('scan'), nativeInvoke('slim_journal')]);
+    // Garde-fou : l'analyse a ses propres délais côté Rust, mais l'écran ne doit jamais tourner à l'infini
+    const late = new Promise((_, no) => setTimeout(() => no(new Error('l’analyse ne répond pas (plus de 60 s)')), 60000));
+    [report, journal] = await Promise.race([Promise.all([nativeInvoke('scan'), nativeInvoke('slim_journal')]), late]);
     setStatus('slimStatus', '');
     $('copyReport').disabled = false;
   } catch (e) {
@@ -200,7 +202,7 @@ function deviceTool(d) {
 }
 
 function deviceHintText(d) {
-  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser.';
+  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Signaler » envoie le diagnostic pour qu’on corrige.';
   if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB (lancé avec le serveur SDK). Ses autres réglages restent dans son logiciel d’origine.';
   if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
   return 'Son logiciel d’origine reste nécessaire pour le régler.';
@@ -219,7 +221,10 @@ function otherDevices() {
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
         h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', d.kind, `USB ${d.vid}:${d.pid}`].join(' · ')),
         ...deviceHint(d)),
-      h('span', { class: 'chip ' + d.status }, STATUS[d.status] || d.status)))));
+      h('div', { class: 'dside' },
+        h('span', { class: 'chip ' + d.status }, STATUS[d.status] || d.status),
+        NATIVE ? h('button', { class: 'mini ghost', title: 'Ouvre un ticket GitHub prérempli avec le diagnostic de cet appareil',
+          onclick: () => reportDevice(d.product || `Appareil ${d.vid}:${d.pid}`, d.vid, d.pid) }, 'Signaler') : null)))));
 }
 
 function refreshHome() {
@@ -247,12 +252,25 @@ function refreshHome() {
   $('homeLead').textContent = live ? `${plural(live, 'appareil connecté', 'appareils connectés')} · réglages enregistrés dans les appareils eux-mêmes`
     : 'Tous vos périphériques, d’un coup d’œil.';
   $('homeBody').replaceChildren(...[
+    hidBlockedNotice(),
     ramHero(),
     h('section', { class: 'block' },
       h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils')),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
         : h('div', { class: 'empty' }, report ? 'Aucun appareil pris en charge n’est branché. Les appareils reconnus apparaissent ici tout seuls.' : 'Recherche des appareils…')),
     otherDevices()].filter(Boolean));
+}
+
+// Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment
+navigator.hid?.addEventListener('blocked', () => refreshHome());
+function hidBlockedNotice() {
+  if (!report?.hid_blocked && !nativeHid.blocked) return null;
+  return h('div', { class: 'notice warn' },
+    h('strong', {}, 'Un périphérique USB ne répond pas à Windows'),
+    h('p', { class: 'muted small' }, 'Windows reste bloqué en interrogeant l’un de vos appareils, donc PeriphHub ne peut pas lister les autres. '
+      + 'Débranchez vos appareils un par un (dongles sans fil, manettes, casques, hubs) jusqu’à ce que ce message disparaisse : '
+      + 'le dernier débranché est le coupable. Un redémarrage du PC règle souvent le problème.'),
+    h('p', { class: 'muted small' }, 'PeriphHub réessaie tout seul toutes les 30 secondes.'));
 }
 
 // ---------- Allègement ----------

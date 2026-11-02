@@ -188,14 +188,13 @@ fn services() -> Vec<Entry> {
 // `schtasks /query /fo csv /v /nh` : colonne 1 = nom de la tâche, colonne 8 = programme lancé,
 // colonne 11 = état (« Activée » / « Désactivée », « Enabled » / « Disabled » selon la langue)
 fn tasks() -> Vec<Entry> {
-    let Ok(o) = Command::new(crate::sign::system_exe("schtasks.exe"))
-        .args(["/query", "/fo", "csv", "/v", "/nh"])
-        .creation_flags(NO_WINDOW)
-        .output()
-    else {
+    // Délai : le Planificateur de tâches peut rester figé (service bloqué, tâches corrompues)
+    let mut cmd = Command::new(crate::sign::system_exe("schtasks.exe"));
+    cmd.args(["/query", "/fo", "csv", "/v", "/nh"]).creation_flags(NO_WINDOW);
+    let Some(stdout) = crate::watchdog::output(cmd, std::time::Duration::from_secs(20)) else {
         return Vec::new();
     };
-    let text = String::from_utf8_lossy(&o.stdout);
+    let text = String::from_utf8_lossy(&stdout);
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for line in text.lines() {

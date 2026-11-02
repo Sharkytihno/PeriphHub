@@ -91,7 +91,10 @@ pub fn run() -> Value {
     }
 
     let entries = startup::all();
-    let devs = devices::list();
+    // Un appareil qui ne répond pas bloquerait l'analyse pour toujours : on n'attend pas plus de 12 s
+    let devs_r = crate::watchdog::hid(std::time::Duration::from_secs(12), devices::list);
+    let hid_blocked = devs_r.is_err();
+    let devs = devs_r.unwrap_or_default();
 
     let mut out_vendors = Vec::new();
     let mut total = 0u64;
@@ -179,6 +182,7 @@ pub fn run() -> Value {
         "periphhub_bytes": own_bytes,
         "vendors": out_vendors,
         "devices": out_devices,
+        "hid_blocked": hid_blocked,
     })
 }
 

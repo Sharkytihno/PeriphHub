@@ -49,17 +49,14 @@ fn exe(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn run(app: &AppHandle, args: &[String]) -> Result<Value, String> {
-    let out = Command::new(exe(app)?)
-        .args(args)
-        .creation_flags(NO_WINDOW)
-        .output()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe(app)?);
+    cmd.args(args).creation_flags(NO_WINDOW);
+    // HeadsetControl interroge l'USB lui aussi : un casque qui ne répond pas ne doit pas le figer
+    let stdout = crate::watchdog::output(cmd, std::time::Duration::from_secs(15))
+        .ok_or("HeadsetControl ne répond pas (casque ou périphérique USB bloqué)")?;
     // Le JSON est écrit même quand une demande échoue (code de sortie non nul)
-    let text = String::from_utf8_lossy(&out.stdout);
-    let start = text.find('{').ok_or_else(|| {
-        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        if err.is_empty() { "réponse vide de HeadsetControl".to_string() } else { err }
-    })?;
+    let text = String::from_utf8_lossy(&stdout);
+    let start = text.find('{').ok_or("réponse vide de HeadsetControl")?;
     serde_json::from_str(&text[start..]).map_err(|e| e.to_string())
 }
 

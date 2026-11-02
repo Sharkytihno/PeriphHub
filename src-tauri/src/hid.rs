@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // Liste blanche : seuls les appareils déclarés dans data/devices.json (VID + PID, ou PID « * »)
 // peuvent être ouverts, plus la collection VIA des claviers QMK / Vial (page 0xFF60, usage 0x61 :
@@ -119,9 +119,21 @@ fn with_api<T>(hid: &Hid, f: impl FnOnce(&mut hidapi::HidApi) -> Result<T, Strin
     f(guard.as_mut().unwrap())
 }
 
+// Toutes les commandes HID tournent hors du fil de la fenêtre : un appareil qui ne répond pas ne doit
+// jamais figer PeriphHub (« Ne répond pas »). L'énumération et l'ouverture ont en plus un délai.
+const HID_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
-pub fn hid_devices(hid: State<'_, Hid>) -> Result<Vec<HidInfo>, String> {
-    with_api(&hid, |api| {
+pub async fn hid_devices(app: AppHandle) -> Result<Vec<HidInfo>, String> {
+    off_main(move || crate::watchdog::hid(HID_LIMIT, move || devices_now(&app.state::<Hid>()))?).await
+}
+
+fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
+    with_api(hid, |api| {
         api.refresh_devices().map_err(|e| e.to_string())?;
         let mut cache = hid.descriptors.lock().unwrap();
         let infos: Vec<hidapi::DeviceInfo> = api.device_list().filter(|d| allowed_info(d)).cloned().collect();
@@ -150,7 +162,12 @@ pub fn hid_devices(hid: State<'_, Hid>) -> Result<Vec<HidInfo>, String> {
 }
 
 #[tauri::command]
-pub fn hid_open(app: AppHandle, hid: State<'_, Hid>, path: String, unnumbered: bool) -> Result<u32, String> {
+pub async fn hid_open(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
+    off_main(move || crate::watchdog::hid(HID_LIMIT, move || open_now(app, path, unnumbered))?).await
+}
+
+fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
+    let hid = app.state::<Hid>();
     let cpath = std::ffi::CString::new(path).map_err(|e| e.to_string())?;
     let (writer, reader) = with_api(&hid, |api| {
         // Seulement les périphériques des fabricants pris en charge (comme la liste de hid_devices)
@@ -165,6 +182,7 @@ pub fn hid_open(app: AppHandle, hid: State<'_, Hid>, path: String, unnumbered: b
     let handle = hid.next.fetch_add(1, Ordering::SeqCst) + 1;
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
+    let app2 = app.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 1025];
         while !stop2.load(Ordering::Relaxed) {
@@ -178,10 +196,10 @@ pub fn hid_open(app: AppHandle, hid: State<'_, Hid>, path: String, unnumbered: b
                     } else {
                         InputEvent { handle, report_id: buf[0], data: buf[1..n].to_vec() }
                     };
-                    let _ = app.emit("hid-input", ev);
+                    let _ = app2.emit("hid-input", ev);
                 }
                 Err(_) => {
-                    let _ = app.emit("hid-closed", handle);
+                    let _ = app2.emit("hid-closed", handle);
                     break;
                 }
             }
@@ -206,28 +224,40 @@ fn frame(report_id: u8, data: &[u8]) -> Vec<u8> {
 }
 
 #[tauri::command]
-pub fn hid_send(hid: State<'_, Hid>, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    let open = hid.open.lock().unwrap();
-    let o = open.get(&handle).ok_or("périphérique fermé")?;
-    let dev = o.writer.lock().unwrap();
-    dev.write(&frame(report_id, &data)).map(|_| ()).map_err(|e| e.to_string())
+pub async fn hid_send(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
+    off_main(move || {
+        let hid = app.state::<Hid>();
+        let open = hid.open.lock().unwrap();
+        let o = open.get(&handle).ok_or("périphérique fermé")?;
+        let dev = o.writer.lock().unwrap();
+        dev.write(&frame(report_id, &data)).map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn hid_send_feature(hid: State<'_, Hid>, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    let open = hid.open.lock().unwrap();
-    let o = open.get(&handle).ok_or("périphérique fermé")?;
-    let dev = o.writer.lock().unwrap();
-    dev.send_feature_report(&frame(report_id, &data)).map_err(|e| e.to_string())
+pub async fn hid_send_feature(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
+    off_main(move || {
+        let hid = app.state::<Hid>();
+        let open = hid.open.lock().unwrap();
+        let o = open.get(&handle).ok_or("périphérique fermé")?;
+        let dev = o.writer.lock().unwrap();
+        dev.send_feature_report(&frame(report_id, &data)).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn hid_get_feature(hid: State<'_, Hid>, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
-    let open = hid.open.lock().unwrap();
-    let o = open.get(&handle).ok_or("périphérique fermé")?;
-    let dev = o.writer.lock().unwrap();
-    let mut buf = vec![0u8; len.min(4096) + 1];
-    buf[0] = report_id;
-    let n = dev.get_feature_report(&mut buf).map_err(|e| e.to_string())?;
-    Ok(buf[1..n].to_vec())
+pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
+    off_main(move || {
+        let hid = app.state::<Hid>();
+        let open = hid.open.lock().unwrap();
+        let o = open.get(&handle).ok_or("périphérique fermé")?;
+        let dev = o.writer.lock().unwrap();
+        let mut buf = vec![0u8; len.min(4096) + 1];
+        buf[0] = report_id;
+        let n = dev.get_feature_report(&mut buf).map_err(|e| e.to_string())?;
+        Ok(buf[1..n].to_vec())
+    })
+    .await
 }

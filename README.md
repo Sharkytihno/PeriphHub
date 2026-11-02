@@ -71,7 +71,7 @@ fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://gi
 | 0.10 | Souris de ~50 marques via **OpenMouse** ; base de 1 400+ appareils nommés avec leur niveau de prise en charge | ✅ |
 | 0.11 | Claviers **Wooting** et **SteelSeries Apex Pro** (point d'activation, rapid trigger) via OpenMouse ; 108 casques reconnus (HeadsetControl) | ✅ |
 | 0.12 | Éclairage des casques **Razer Kraken** filaires (OpenRazer) ; durcissements de sécurité (outils Windows appelés par chemin absolu, DLL THX verrouillée pendant sa vérification, clés FIDO jamais accessibles) ; paquet Microsoft Store (MSIX) | ✅ |
-| 0.13 | Claviers magnétiques **Keychron HE** (169 modèles : point d'activation et rapid trigger communs à toutes les touches, seulement si aucune touche n'a de réglage propre) | 🧪 |
+| 0.13 | **Plus jamais de blocage** : un périphérique USB qui ne répond pas à Windows ne fige plus l'appli ni l'analyse (délais partout, message clair) ; souris **SteelSeries Rival 3** corrigée (bonne interface USB) ; éclairage des claviers **SteelSeries Apex 3 / 3 TKL** ; claviers magnétiques **Keychron HE** (169 modèles) ; bouton **Signaler** qui ouvre un ticket GitHub prérempli avec le diagnostic | 🧪 |
 | 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).

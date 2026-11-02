@@ -73,6 +73,7 @@ const nativeHid = {
   byHandle: new Map(),
   known: new Map(), // chemin → NativeHIDDevice (même objet d'un appel à l'autre)
   events: new EventTarget(),
+  blocked: false,    // un périphérique ne répond pas à Windows : la liste ne peut pas être lue
 };
 
 if (NATIVE) {
@@ -95,7 +96,15 @@ if (NATIVE) {
     (f.usage == null || f.usage === d.collections[0].usage));
 
   const list = async () => {
-    const infos = await nativeInvoke('hid_devices');
+    let infos;
+    try {
+      infos = await nativeInvoke('hid_devices');
+    } catch (e) {
+      // Ne surtout pas conclure que tout est débranché : la liste est seulement illisible
+      if (!nativeHid.blocked) { nativeHid.blocked = true; nativeHid.events.dispatchEvent(new Event('blocked')); }
+      throw e;
+    }
+    if (nativeHid.blocked) { nativeHid.blocked = false; nativeHid.events.dispatchEvent(new Event('blocked')); }
     const seen = new Set();
     const out = infos.map(info => {
       seen.add(info.path);
@@ -130,11 +139,14 @@ if (NATIVE) {
 
   // Branchements / débranchements : on relit la liste toutes les 2 s, fenêtre visible seulement
   // (chaque relecture ouvre tous les périphériques HID : inutile en arrière-plan)
-  let count = -1;
+  // Si un appareil bloque Windows, on ne réessaie que toutes les 30 s
+  let count = -1, tick = 0;
   setInterval(async () => {
-    if (document.hidden) return;
-    const n = (await list()).length;
-    if (count !== -1 && n > count) nativeHid.events.dispatchEvent(new Event('connect'));
-    count = n;
+    if (document.hidden || (nativeHid.blocked && ++tick % 15)) return;
+    try {
+      const n = (await list()).length;
+      if (count !== -1 && n > count) nativeHid.events.dispatchEvent(new Event('connect'));
+      count = n;
+    } catch {}
   }, 2000);
 }

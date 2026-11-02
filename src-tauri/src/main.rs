@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod devices;
+mod feedback;
 mod headset;
 mod hid;
 mod openrgb;
@@ -12,6 +13,7 @@ mod slim;
 mod startup;
 mod thx;
 mod vendors;
+mod watchdog;
 
 use serde_json::Value;
 use tauri::State;
@@ -111,6 +113,12 @@ fn ui_log(level: String, text: String) {
     eprintln!("[ui:{level}] {text}");
 }
 
+// Ouvre le formulaire de ticket GitHub prérempli (adresse fixe, voir feedback.rs)
+#[tauri::command]
+fn report_device(model: String, version: String, report: String) -> Result<(), String> {
+    feedback::open_issue(&model, &version, &report)
+}
+
 // Barre de titre assortie au thème choisi dans l'interface (None : comme Windows)
 #[tauri::command]
 fn ui_theme(window: tauri::WebviewWindow, theme: Option<String>) {
@@ -163,7 +171,8 @@ fn main() {
             slim_open,
             slim_close,
             slim_journal,
-            ui_log
+            ui_log,
+            report_device
         ])
         .run(tauri::generate_context!())
         .expect("PeriphHub n'a pas pu démarrer");
