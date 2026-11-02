@@ -22,7 +22,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 |---|---|---|
 | 0.1 | Analyseur (lecture seule : ne modifie rien) | ✅ |
 | 0.2 | Nouvelle interface, premiers appareils réglables : souris Scyrox, clavier REKT (VIA, effet Hall), casque Razer BlackShark V2 HyperSpeed (+ THX), RGB GIGABYTE | ✅ |
-| 0.3 | Allègement guidé et réversible des lancements automatiques, lancement à la demande | 🔜 |
+| 0.3 | Allègement guidé et réversible (interrupteurs officiels de Windows, services en manuel, tâches), journal d'annulation, ouverture à la demande, gain mesuré | ✅ |
 | 0.4+ | Logitech (HID++), Razer (protocole OpenRazer), passerelles OpenRGB, HeadsetControl, LibreHardwareMonitor | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).

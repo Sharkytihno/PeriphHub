@@ -13,18 +13,17 @@ const HELPERS: &[&str] = &[
     "crashpad_handler.exe",
 ];
 
-pub fn run() -> Value {
-    let vendors = vendors::all();
-    let usb = vendors::usb();
-    let support = vendors::support();
-    let list = procs::list();
+/// Logiciel constructeur auquel appartient chaque processus (None : aucun, ou PeriphHub lui-même).
+/// Les moteurs web (WebView2, CEF…) sont rattachés au logiciel qui les a lancés.
+pub fn attribute(list: &[procs::Proc], vendors: &[vendors::Vendor]) -> Vec<Option<usize>> {
     let me = procs::current_pid();
     let by_pid: HashMap<u32, usize> = list.iter().enumerate().map(|(i, p)| (p.pid, i)).collect();
-
-    // Logiciel constructeur auquel appartient chaque processus
     let direct: Vec<Option<usize>> = list
         .iter()
         .map(|p| {
+            if vendors::protected(&p.name) {
+                return None;
+            }
             vendors
                 .iter()
                 .position(|v| v.matches_process(&p.name, p.path.as_deref()))
@@ -51,6 +50,25 @@ pub fn run() -> Value {
         }
         None
     };
+    (0..list.len())
+        .map(|i| {
+            if list[i].pid == me || owner_is_self(list, &by_pid, i, me) {
+                None
+            } else {
+                owner(i)
+            }
+        })
+        .collect()
+}
+
+pub fn run() -> Value {
+    let vendors = vendors::all();
+    let usb = vendors::usb();
+    let support = vendors::support();
+    let list = procs::list();
+    let me = procs::current_pid();
+    let by_pid: HashMap<u32, usize> = list.iter().enumerate().map(|(i, p)| (p.pid, i)).collect();
+    let owners = attribute(&list, &vendors);
 
     let mut own_bytes = 0u64;
     // vendor → nom de processus → (nombre, octets)
@@ -60,7 +78,7 @@ pub fn run() -> Value {
             own_bytes += p.bytes;
             continue;
         }
-        if let Some(v) = owner(i) {
+        if let Some(v) = owners[i] {
             let e = found
                 .entry(v)
                 .or_default()
@@ -80,14 +98,14 @@ pub fn run() -> Value {
         let procs_found = found.remove(&vi).unwrap_or_default();
         let auto: Vec<Value> = entries
             .iter()
-            .filter(|e| {
-                (e.kind == "service" && v.services.iter().any(|s| s.eq_ignore_ascii_case(&e.name)))
-                    || v.matches_path(&e.target)
-                    || (e.kind == "dossier" && e.name.to_lowercase().contains(&v.brand.to_lowercase()))
-            })
+            .filter(|e| v.owns_entry(e))
             .map(|e| json!({ "kind": e.kind, "name": e.name, "target": anon(&e.target), "mode": e.mode }))
             .collect();
-        let dev_count = devs.iter().filter(|d| v.has_vid(d.vid)).count();
+        let dev_ids: Vec<String> = devs
+            .iter()
+            .filter(|d| v.has_vid(d.vid))
+            .map(|d| format!("{:04X}:{:04X}", d.vid, d.pid))
+            .collect();
         if procs_found.is_empty() && auto.is_empty() {
             continue;
         }
@@ -98,7 +116,7 @@ pub fn run() -> Value {
         out_vendors.push(json!({
             "id": v.id, "name": v.name, "brand": v.brand, "bytes": bytes,
             "processes": ps.into_iter().map(|(n, (c, b))| json!({ "name": n, "count": c, "bytes": b })).collect::<Vec<_>>(),
-            "startup": auto, "devices": dev_count,
+            "startup": auto, "devices": dev_ids.len(), "device_ids": dev_ids,
             "keeps": v.keeps, "loses": v.loses, "verified": v.verified,
         }));
     }

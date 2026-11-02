@@ -472,3 +472,34 @@ nav button[hidden], .ngroup[hidden] { display: none; }
   .hero { grid-template-columns: 1fr; }
   .hvalue { font-size: 36px; }
 }
+
+/* Allègement : actions des cartes, fenêtre en étapes */
+.gain { margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--ok); }
+.vact { display: grid; gap: 8px; justify-items: start; padding-top: 2px; }
+.vdone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.overlay { position: fixed; inset: 0; z-index: 50; background: var(--overlay); display: grid; place-items: center; padding: 24px; animation: fadein .15s ease-out; }
+@keyframes fadein { from { opacity: 0; } }
+.dialog { width: min(640px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; background: var(--card); border: 1px solid var(--line2); border-radius: 18px;
+  box-shadow: var(--sh2); padding: 22px 24px; display: grid; gap: 18px; animation: popin .18s cubic-bezier(.2, .8, .2, 1); }
+@keyframes popin { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+.dhead { display: flex; justify-content: space-between; align-items: center; }
+.dhead h3 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+.dhead .x { background: transparent; color: var(--muted); font-size: 22px; line-height: 1; padding: 4px 10px; }
+.dhead .x:hover { color: var(--fg); background: var(--hover); }
+.wstep { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 14px; }
+.wnum { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--accentbg); color: var(--accentfg); }
+.wbody { display: grid; gap: 8px; min-width: 0; }
+.wbody h4 { margin: 4px 0 2px; font-size: 14.5px; }
+.wcheck { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card2); cursor: pointer; }
+.wcheck:hover { border-color: var(--line3); }
+.wcheck input { margin-top: 3px; }
+.wcheck span { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.wcheck small { color: var(--muted); font-size: 11.5px; }
+.wdevs { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.dfoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
+.wbusy, .wdone { display: grid; gap: 10px; justify-items: center; text-align: center; padding: 26px 10px; }
+.wdone .big { font-size: 46px; font-weight: 750; letter-spacing: -.03em; color: var(--ok); }
+.warnline { margin: 0; color: var(--warn); font-size: 13px; }
+.spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line2); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .overlay, .dialog, .htrack > i { animation: none; transition: none; } }

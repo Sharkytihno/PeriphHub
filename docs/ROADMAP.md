@@ -21,7 +21,7 @@ utilisateur (avant / après), jamais estimé.
 - Casques Razer sans fil (égaliseur matériel, retour micro, veille) + effets THX si présents.
 - RGB des cartes mères GIGABYTE (ITE Fusion 2).
 
-## 0.3 — Allègement guidé
+## 0.3 — Allègement guidé ✅
 
 Pour chaque logiciel constructeur, un parcours en étapes :
 

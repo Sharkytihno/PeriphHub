@@ -66,6 +66,7 @@ for (const b of document.querySelectorAll('nav [data-tab]')) b.onclick = () => s
 // ---------- Analyse (logiciels constructeurs, appareils branchés) ----------
 
 let report = null;
+let journal = [];   // logiciels allégés : actions faites, état d'avant, mémoire avant / après
 let scanning = false;
 
 async function rescan() {
@@ -74,7 +75,7 @@ async function rescan() {
   $('rescan').disabled = true;
   setStatus('slimStatus', 'Analyse…');
   try {
-    report = await nativeInvoke('scan');
+    [report, journal] = await Promise.all([nativeInvoke('scan'), nativeInvoke('slim_journal')]);
     setStatus('slimStatus', '');
     $('copyReport').disabled = false;
   } catch (e) {
@@ -135,6 +136,9 @@ function deviceTiles() {
   return tiles;
 }
 
+// Mémoire libérée : mesurée juste avant et juste après chaque allègement
+const gained = () => journal.reduce((s, l) => s + Math.max(0, l.before_bytes - l.after_bytes), 0);
+
 function ramHero() {
   const r = report;
   if (!r) return h('div', { class: 'hero' }, h('div', { class: 'muted' }, NATIVE ? 'Analyse du PC…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'));
@@ -150,7 +154,8 @@ function ramHero() {
       h('div', { class: 'muted small' }, running.length
         ? `${plural(running.length, 'logiciel ouvert', 'logiciels ouverts')} en arrière-plan : ${running.map(v => v.name).join(', ')}.`
         : 'Aucun logiciel constructeur connu ne tourne : votre PC est déjà léger.'),
-      running.length ? h('button', { class: 'cta', onclick: () => showTab('slim') }, 'Voir comment alléger') : null),
+      gained() > 0 ? h('div', { class: 'gain' }, `${mo(gained())} libérés grâce à l’allègement`) : null,
+      running.length && $('slim').hidden ? h('button', { class: 'cta', onclick: () => showTab('slim') }, 'Voir comment alléger') : null),
     h('div', { class: 'hright' },
       bar('vendor', 'Logiciels constructeurs', r.vendor_bytes),
       bar('self', 'PeriphHub (cette fenêtre)', r.periphhub_bytes),
@@ -224,11 +229,142 @@ function vendorCard(v) {
     h('div', { class: 'vgrid' },
       v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, v.keeps)) : null,
       v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, v.loses)) : null),
+    vendorActions(v),
     v.processes.length || v.startup.length ? h('details', {},
       h('summary', {}, 'Détails techniques'),
       h('ul', {},
         v.processes.map(p => h('li', {}, `${p.name} ×${p.count} — ${mo(p.bytes)}`)),
         v.startup.map(s => h('li', {}, `${AUTO_LABEL[s.kind] || s.kind} : ${s.name}${s.mode ? ` (${s.mode})` : ''}`)))) : null);
+}
+
+const fmtDate = s => new Date(s * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+
+function vendorActions(v) {
+  const log = journal.find(l => l.vendor === v.id);
+  const active = v.startup.filter(s => s.mode === 'actif' || s.mode === 'auto').length;
+  if (log) {
+    const freed = Math.max(0, log.before_bytes - log.after_bytes);
+    return h('div', { class: 'vact' },
+      h('div', { class: 'vdone' }, h('span', { class: 'chip supported' }, 'Allégé le ' + fmtDate(log.date)),
+        freed ? h('span', { class: 'muted small' }, mo(freed) + ' libérés') : null),
+      h('div', { class: 'row-inline' },
+        v.bytes ? h('button', { class: 'ghost', onclick: () => slimRun('slim_close', v, 'Fermeture') }, 'Refermer')
+          : log.launch ? h('button', { class: 'ghost', onclick: () => slimRun('slim_open', v, 'Ouverture') }, 'Ouvrir pour un réglage') : null,
+        active ? h('button', { class: 'ghost', onclick: () => slimWizard(v) }, 'Alléger encore') : null,
+        h('button', { class: 'ghost', onclick: () => slimRun('slim_undo', v, 'Annulation') }, 'Annuler l’allègement')));
+  }
+  if (!v.bytes && !active) return h('div', { class: 'vact' }, h('span', { class: 'muted small' }, 'Ne tourne pas et ne démarre pas avec Windows : rien à faire.'));
+  return h('div', { class: 'vact' }, h('button', { onclick: () => slimWizard(v) }, 'Alléger…'));
+}
+
+// Ouvrir, refermer, annuler : résultat en notification puis nouvelle analyse
+async function slimRun(cmd, v, label) {
+  setStatus('slimStatus', label + ' de ' + v.name + '…');
+  try {
+    const r = await nativeInvoke(cmd, { vendor: v.id });
+    if (r.cancelled) toast('Validation Windows refusée : ce qui en avait besoin n’a pas été modifié', 'err');
+    else if (cmd === 'slim_undo') toast(r.failed?.length ? `Remis en partie : ${r.failed.join(', ')} à réessayer` : `${v.name} : tout est revenu comme avant`, r.failed?.length ? 'err' : 'ok');
+    else if (cmd === 'slim_open') toast(`${v.name} est ouvert. Refermez-le ici une fois le réglage fait.`);
+    else toast(`${v.name} refermé · ${mo(Math.max(0, r.before_bytes - r.after_bytes))} libérés`);
+  } catch (e) {
+    console.error('[PeriphHub]', e);
+    toast(label + ' impossible : ' + e, 'err');
+  }
+  setStatus('slimStatus', '');
+  rescan();
+}
+
+// ----- Parcours d'allègement (fenêtre en étapes) -----
+
+const ITEM_LABEL = {
+  run: n => `Ne plus lancer « ${n} » avec Windows`,
+  dossier: n => `Retirer « ${n} » du démarrage de Windows`,
+  service: n => `Service « ${n} » : démarrage à la demande au lieu d’automatique`,
+  'tâche': n => `Désactiver la tâche planifiée « ${n} »`,
+};
+
+function brandDevices(v) {
+  const ids = v.device_ids || [];
+  return (report?.devices || []).filter(d => ids.includes(d.vid + ':' + d.pid));
+}
+
+function modal(...kids) {
+  const ov = h('div', { class: 'overlay' }, h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true' }, ...kids));
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc); };
+  const esc = e => { if (e.key === 'Escape' && !ov.querySelector('.spin')) close(); };
+  ov.addEventListener('click', e => { if (e.target === ov && !ov.querySelector('.spin')) close(); });
+  document.addEventListener('keydown', esc);
+  document.body.append(ov);
+  return { close, box: ov.firstChild };
+}
+
+async function slimWizard(v) {
+  const m = modal(h('div', { class: 'wbusy' }, h('div', { class: 'spin' }), h('div', { class: 'muted' }, 'Préparation…')));
+  let plan;
+  try {
+    plan = await nativeInvoke('slim_plan', { vendor: v.id });
+  } catch (e) {
+    m.close();
+    return toast('Préparation impossible : ' + e, 'err');
+  }
+  const picked = new Set(plan.items.map(i => i.id));
+  let close = plan.running > 0;
+  const devs = brandDevices(v);
+  const step = (n, title, ...body) => h('section', { class: 'wstep' }, h('div', { class: 'wnum' }, String(n)),
+    h('div', { class: 'wbody' }, h('h4', {}, title), ...body));
+  const check = (on, label, hint, onChange) => h('label', { class: 'wcheck' },
+    h('input', { type: 'checkbox', checked: on, onchange: e => onChange(e.target.checked) }),
+    h('span', {}, label, hint ? h('small', {}, hint) : null));
+
+  const go = async () => {
+    m.box.replaceChildren(h('div', { class: 'wbusy' }, h('div', { class: 'spin' }), h('div', {}, 'Allègement de ' + plan.name + '…'),
+      h('div', { class: 'muted small' }, 'Acceptez la fenêtre de validation Windows si elle apparaît.')));
+    let r;
+    try {
+      r = await nativeInvoke('slim_apply', { vendor: v.id, ids: [...picked], close });
+    } catch (e) {
+      console.error('[PeriphHub]', e);
+      m.close();
+      return toast('Allègement impossible : ' + e, 'err');
+    }
+    const freed = Math.max(0, (r.before_bytes || 0) - (r.after_bytes || 0));
+    m.box.replaceChildren(h('div', { class: 'wdone' },
+      h('div', { class: 'big' }, freed ? mo(freed) : '✓'),
+      h('div', {}, freed ? 'de mémoire libérée, mesurés à l’instant.' : plural(r.done || 0, 'modification faite', 'modifications faites') + '.'),
+      r.cancelled ? h('p', { class: 'warnline' }, 'Validation Windows refusée : seules les modifications possibles sans elle ont été faites.') : null,
+      r.failed?.length ? h('p', { class: 'warnline' }, 'Pas modifié : ' + r.failed.join(', ')) : null,
+      h('p', { class: 'muted small' }, `Besoin de ${plan.name} pour un réglage ? « Ouvrir pour un réglage » sur sa carte, puis « Refermer ».`),
+      h('button', { onclick: m.close }, 'Terminer')));
+    rescan();
+  };
+
+  const draw = () => {
+    const admin = plan.items.some(i => i.admin && picked.has(i.id)) || close;
+    m.box.replaceChildren(
+      h('header', { class: 'dhead' }, h('h3', {}, 'Alléger ' + plan.name),
+        h('button', { class: 'x', title: 'Fermer', onclick: m.close }, '×')),
+      step(1, 'Ce qui change',
+        v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, v.keeps)) : null,
+        v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, v.loses)) : null,
+        devs.length ? h('ul', { class: 'wdevs' }, devs.map(d => h('li', {},
+          h('span', { class: 'chip ' + d.status }, d.status === 'supported' ? 'Réglable dans PeriphHub' : 'Pas encore dans PeriphHub'), ' ',
+          d.product || d.vid + ':' + d.pid))) : null,
+        devs.some(d => d.status !== 'supported') ? h('p', { class: 'muted small' },
+          `Pour les appareils pas encore réglables ici, gardez ${plan.name} installé : vous l’ouvrirez à la demande depuis cette page, le temps d’un réglage.`) : null),
+      step(2, 'Ce que PeriphHub va faire',
+        plan.items.map(i => check(picked.has(i.id), ITEM_LABEL[i.kind]?.(i.name) || i.name, i.admin ? 'validation Windows' : '',
+          on => { if (on) picked.add(i.id); else picked.delete(i.id); draw(); })),
+        plan.running ? check(close, `Fermer ${plan.name} maintenant`, `${plural(plan.running, 'processus', 'processus')} · ${mo(plan.bytes)}`,
+          on => { close = on; draw(); }) : null,
+        !plan.items.length && !plan.running ? h('p', { class: 'muted' }, 'Rien à faire : ce logiciel ne tourne pas et ne démarre plus avec Windows.') : null,
+        h('p', { class: 'muted small' }, 'Rien n’est supprimé ni désinstallé. Chaque modification est notée : « Annuler l’allègement » remet tout comme avant.')),
+      h('footer', { class: 'dfoot' },
+        admin ? h('span', { class: 'muted small' }, 'Windows vous demandera une validation (droits administrateur).') : h('span'),
+        h('div', { class: 'row-inline' },
+          h('button', { class: 'ghost', onclick: m.close }, 'Annuler'),
+          h('button', { disabled: !picked.size && !close, onclick: go }, 'Alléger'))));
+  };
+  draw();
 }
 
 function renderSlim() {

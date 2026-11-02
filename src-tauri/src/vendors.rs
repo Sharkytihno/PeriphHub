@@ -53,6 +53,16 @@ impl Vendor {
             })
     }
 
+    /// Lancement automatique (Run, dossier Démarrage, service, tâche) appartenant à ce logiciel
+    pub fn owns_entry(&self, e: &crate::startup::Entry) -> bool {
+        if protected(&e.name) || protected(&e.target) {
+            return false;
+        }
+        (e.kind == "service" && self.services.iter().any(|s| s.eq_ignore_ascii_case(&e.name)))
+            || self.matches_path(&e.target)
+            || (e.kind == "dossier" && e.name.to_lowercase().contains(&self.brand.to_lowercase()))
+    }
+
     pub fn has_vid(&self, vid: u16) -> bool {
         self.usb_vids
             .iter()
@@ -100,4 +110,16 @@ pub struct Support {
 pub fn support() -> Vec<Support> {
     serde_json::from_str(include_str!("../../data/devices.json"))
         .expect("data/devices.json invalide")
+}
+
+/// Anti-triche et protections système : PeriphHub n'y touche jamais, même si une entrée de la
+/// base de données les désignait par erreur (risque de bannissement en jeu).
+pub fn protected(text: &str) -> bool {
+    const NEVER: &[&str] = &[
+        "vgc", "vgk", "vanguard", "valorant", "easyanticheat", "battleye", "beservice",
+        "faceit", "riotclient", "riot games", "eseaclient", "eaanticheat", "anticheat", "anti-cheat", "xigncode", "nprotect",
+        "gameguard", "ace-base", "msmpeng", "windefend", "securityhealth",
+    ];
+    let t = text.to_lowercase();
+    NEVER.iter().any(|n| t.contains(n))
 }

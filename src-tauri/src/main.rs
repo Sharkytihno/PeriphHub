@@ -6,6 +6,7 @@ mod hid;
 mod procs;
 mod scan;
 mod sign;
+mod slim;
 mod startup;
 mod thx;
 mod vendors;
@@ -19,6 +20,43 @@ async fn scan() -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(scan::run)
         .await
         .map_err(|e| e.to_string())
+}
+
+// Allègement : plan, application, annulation, ouverture et fermeture à la demande
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn slim_plan(vendor: String) -> Result<Value, String> {
+    blocking(move || slim::plan(&vendor)).await
+}
+
+#[tauri::command]
+async fn slim_apply(vendor: String, ids: Vec<String>, close: bool) -> Result<Value, String> {
+    blocking(move || slim::apply(&vendor, &ids, close)).await
+}
+
+#[tauri::command]
+async fn slim_undo(vendor: String) -> Result<Value, String> {
+    blocking(move || slim::undo(&vendor)).await
+}
+
+#[tauri::command]
+async fn slim_open(vendor: String) -> Result<Value, String> {
+    blocking(move || slim::open(&vendor)).await
+}
+
+#[tauri::command]
+async fn slim_close(vendor: String) -> Result<Value, String> {
+    blocking(move || slim::close(&vendor)).await
+}
+
+#[tauri::command]
+fn slim_journal() -> Vec<slim::VendorLog> {
+    slim::journal()
 }
 
 // Effets THX des casques Razer (DLL Razer signée, facultative)
@@ -61,6 +99,11 @@ fn ui_theme(window: tauri::WebviewWindow, theme: Option<String>) {
 }
 
 fn main() {
+    // Instance administrateur lancée par l'allègement (fenêtre de validation Windows)
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "--elevated" {
+        std::process::exit(slim::elevated_main(&args[2]));
+    }
     // `--scan` : affiche l'analyse en JSON dans la console (tests, rapports de bug)
     if std::env::args().any(|a| a == "--scan") {
         // l'exe de version finale n'a pas de console : on se rattache à celle qui l'a lancé
@@ -86,6 +129,12 @@ fn main() {
             thx_set,
             ui_theme,
             catalog,
+            slim_plan,
+            slim_apply,
+            slim_undo,
+            slim_open,
+            slim_close,
+            slim_journal,
             ui_log
         ])
         .run(tauri::generate_context!())
