@@ -52,6 +52,6 @@ Sans ces secrets, le workflow publie un installeur non signé, comme avant. La c
 Dans PowerShell :
 
 ```powershell
-Get-AuthenticodeSignature .\PeriphHub_0.9.0_x64-setup.exe | Format-List Status, SignerCertificate
-Get-FileHash .\PeriphHub_0.9.0_x64-setup.exe -Algorithm SHA256   # à comparer au fichier .sha256 de la Release
+Get-AuthenticodeSignature .\PeriphHub_0.9.1_x64-setup.exe | Format-List Status, SignerCertificate
+Get-FileHash .\PeriphHub_0.9.1_x64-setup.exe -Algorithm SHA256   # à comparer au fichier .sha256 de la Release
 ```

@@ -122,11 +122,26 @@ jobs:
           $setup = '${{ steps.setup.outputs.path }}'
           $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           "$hash  ${{ steps.setup.outputs.name }}" | Out-File -Encoding ascii "$setup.sha256"
+          # texte littéral (here-string '@) : aucun guillemet du texte n'est interprété par PowerShell
           if ($env:SIGNED -eq 'true') {
-            $warn = "L'installeur est signé (SignPath Foundation). / The installer is signed (SignPath Foundation)."
+            $warn = @'
+          L'installeur est signé (SignPath Foundation). / The installer is signed (SignPath Foundation).
+          '@
           } else {
-            $warn = "Windows peut afficher « Windows a protégé votre ordinateur » (programme pas encore signé) : « Informations complémentaires » puis « Exécuter quand même ».`n`n" +
-                    "Windows may show “Windows protected your PC” (not signed yet): click “More info”, then “Run anyway”."
+            $warn = @'
+          Windows peut afficher « Windows a protégé votre ordinateur » (programme pas encore signé) : « Informations complémentaires » puis « Exécuter quand même ».
+
+          Windows may show "Windows protected your PC" (not signed yet): click "More info", then "Run anyway".
+          '@
           }
-          $body = "Téléchargez / Download **${{ steps.setup.outputs.name }}**.`n`n$warn`n`nSHA-256 : ``$hash``"
-          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" --draft --title 'PeriphHub ${{ github.ref_name }}' --notes $body
+          $body = @'
+          Téléchargez / Download **{NAME}**.
+
+          {WARN}
+
+          SHA-256 : `{HASH}`
+          '@
+          $body = $body.Replace('{NAME}', '${{ steps.setup.outputs.name }}').Replace('{WARN}', $warn).Replace('{HASH}', $hash)
+          $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
+          Set-Content -Path $notes -Value $body -Encoding utf8
+          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" --draft --title 'PeriphHub ${{ github.ref_name }}' --notes-file $notes
