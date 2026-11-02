@@ -9,6 +9,8 @@
     "usb_vids": ["1532"],
     "keeps": "La plupart des souris et casques récents gardent en mémoire le DPI, la fréquence d'interrogation, l'éclairage de base et l'égaliseur matériel.",
     "loses": "Effets Chroma animés et synchronisés, macros logicielles, profils liés aux jeux, et certains effets audio THX selon les modèles.",
+    "keeps_en": "Most recent mice and headsets keep DPI, polling rate, basic lighting and the hardware equaliser in memory.",
+    "loses_en": "Animated and synced Chroma effects, software macros, game-linked profiles, and some THX audio effects depending on the model.",
     "verified": true
   },
   {
@@ -21,6 +23,8 @@
     "usb_vids": ["046D"],
     "keeps": "Avec la « mémoire intégrée » activée, la souris garde DPI, fréquence, boutons et éclairage.",
     "loses": "En mode logiciel (par défaut), les réglages et macros ne s'appliquent que si G HUB tourne. Il faut d'abord les copier dans la mémoire intégrée.",
+    "keeps_en": "With “onboard memory” enabled, the mouse keeps DPI, polling rate, buttons and lighting.",
+    "loses_en": "In software mode (the default), settings and macros only apply while G HUB is running. Copy them to onboard memory first.",
     "verified": true
   },
   {
@@ -33,6 +37,8 @@
     "usb_vids": ["046D"],
     "keeps": "Vitesse du pointeur et boutons de base sur la plupart des souris MX.",
     "loses": "Gestes, boutons personnalisés par application, Flow (partage entre plusieurs PC), Smart Actions.",
+    "keeps_en": "Pointer speed and basic buttons on most MX mice.",
+    "loses_en": "Gestures, per-app custom buttons, Flow (sharing across several PCs), Smart Actions.",
     "verified": false
   },
   {
@@ -45,6 +51,8 @@
     "usb_vids": ["046D"],
     "keeps": "Les profils enregistrés dans la mémoire intégrée de la souris.",
     "loses": "Profils et macros logiciels.",
+    "keeps_en": "Profiles saved in the mouse’s onboard memory.",
+    "loses_en": "Software profiles and macros.",
     "verified": true
   },
   {
@@ -57,6 +65,8 @@
     "usb_vids": ["1B1C"],
     "keeps": "Les profils enregistrés en mémoire matérielle (« hardware lighting / hardware profile »).",
     "loses": "Éclairage logiciel synchronisé, contrôle des ventilateurs et pompes Commander/iCUE Link, capteurs, macros logicielles.",
+    "keeps_en": "Profiles saved in hardware memory (“hardware lighting / hardware profile”).",
+    "loses_en": "Synced software lighting, fan and pump control for Commander/iCUE Link, sensors, software macros.",
     "verified": false
   },
   {
@@ -69,6 +79,8 @@
     "usb_vids": ["1038"],
     "keeps": "DPI, fréquence et éclairage de base enregistrés dans la souris ou le clavier.",
     "loses": "Sonar (égaliseur et micro virtuels), Moments (enregistrement), éclairage synchronisé avec les jeux.",
+    "keeps_en": "DPI, polling rate and basic lighting saved in the mouse or keyboard.",
+    "loses_en": "Sonar (virtual equaliser and mic), Moments (recording), lighting synced with games.",
     "verified": false
   },
   {
@@ -81,6 +93,8 @@
     "usb_vids": ["0951", "03F0"],
     "keeps": "Les profils enregistrés dans l'appareil (souvent 3 à 5 emplacements).",
     "loses": "Effets d'éclairage logiciels, son surround virtuel selon les casques.",
+    "keeps_en": "Profiles saved in the device (often 3 to 5 slots).",
+    "loses_en": "Software lighting effects, virtual surround on some headsets.",
     "verified": false
   },
   {
@@ -93,6 +107,8 @@
     "usb_vids": ["0B05"],
     "keeps": "L'éclairage de base de la carte mère et des périphériques ROG.",
     "loses": "Aura Sync (éclairage synchronisé), profils de ventilateurs logiciels, mises à jour de pilotes.",
+    "keeps_en": "Basic lighting of the motherboard and ROG peripherals.",
+    "loses_en": "Aura Sync (synced lighting), software fan profiles, driver updates.",
     "verified": false
   },
   {
@@ -105,6 +121,8 @@
     "usb_vids": ["1462"],
     "keeps": "L'éclairage de base de la carte mère.",
     "loses": "Mystic Light Sync, modes de performance et profils de ventilateurs MSI.",
+    "keeps_en": "Basic motherboard lighting.",
+    "loses_en": "Mystic Light Sync, MSI performance modes and fan profiles.",
     "verified": false
   },
   {
@@ -117,6 +135,8 @@
     "usb_vids": ["048D"],
     "keeps": "L'éclairage de la carte mère (contrôleur ITE) et les courbes de ventilateurs réglées dans le BIOS.",
     "loses": "Courbes de ventilateurs logicielles et éclairage synchronisé.",
+    "keeps_en": "Motherboard lighting (ITE controller) and fan curves set in the BIOS.",
+    "loses_en": "Software fan curves and synced lighting.",
     "verified": false
   },
   {
@@ -129,6 +149,8 @@
     "usb_vids": ["1E7D", "10F5"],
     "keeps": "Les profils enregistrés dans l'appareil.",
     "loses": "Effets AIMO synchronisés, macros logicielles.",
+    "keeps_en": "Profiles saved in the device.",
+    "loses_en": "Synced AIMO effects, software macros.",
     "verified": false
   },
   {
@@ -141,6 +163,8 @@
     "usb_vids": ["2516"],
     "keeps": "Les profils enregistrés dans l'appareil.",
     "loses": "Éclairage synchronisé et macros logicielles.",
+    "keeps_en": "Profiles saved in the device.",
+    "loses_en": "Synced lighting and software macros.",
     "verified": false
   },
   {
@@ -153,6 +177,8 @@
     "usb_vids": ["1E71"],
     "keeps": "Rien sur la plupart des contrôleurs : ils reviennent à un mode par défaut.",
     "loses": "Courbes de pompe et ventilateurs, écran du kit AIO, éclairage. À garder si vous avez un watercooling NZXT.",
+    "keeps_en": "Nothing on most controllers: they fall back to a default mode.",
+    "loses_en": "Pump and fan curves, AIO kit screen, lighting. Keep it if you have NZXT liquid cooling.",
     "verified": false
   },
   {
@@ -165,6 +191,8 @@
     "usb_vids": ["0CF2"],
     "keeps": "Le dernier mode d'éclairage sur certains contrôleurs.",
     "loses": "Courbes des ventilateurs UNI FAN, éclairage synchronisé.",
+    "keeps_en": "The last lighting mode on some controllers.",
+    "loses_en": "UNI FAN fan curves, synced lighting.",
     "verified": false
   },
   {
@@ -177,6 +205,8 @@
     "usb_vids": [],
     "keeps": "DPI, fréquence et éclairage enregistrés dans la souris.",
     "loses": "Macros logicielles.",
+    "keeps_en": "DPI, polling rate and lighting saved in the mouse.",
+    "loses_en": "Software macros.",
     "verified": false
   },
   {
@@ -189,6 +219,8 @@
     "usb_vids": ["31E3"],
     "keeps": "Tous les réglages analogiques et les profils sont dans le clavier.",
     "loses": "Rien d'important : Wootility peut rester fermé en permanence.",
+    "keeps_en": "All analog settings and profiles live in the keyboard.",
+    "loses_en": "Nothing important: Wootility can stay closed for good.",
     "verified": false
   },
   {
@@ -201,6 +233,8 @@
     "usb_vids": ["0FD9"],
     "keeps": "Réglages de base de la webcam et des lumières.",
     "loses": "Stream Deck (indispensable pour ses touches), mixage Wave Link. À garder si vous les utilisez.",
+    "keeps_en": "Basic webcam and light settings.",
+    "loses_en": "Stream Deck (required for its keys), Wave Link mixing. Keep it if you use them.",
     "verified": false
   },
   {
@@ -213,6 +247,8 @@
     "usb_vids": [],
     "keeps": "Le son fonctionne normalement sans Nahimic.",
     "loses": "Effets audio Nahimic (surround virtuel, Sound Tracker).",
+    "keeps_en": "Sound works normally without Nahimic.",
+    "loses_en": "Nahimic audio effects (virtual surround, Sound Tracker).",
     "verified": false
   }
 ]

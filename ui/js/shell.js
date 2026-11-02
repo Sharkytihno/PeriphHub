@@ -5,8 +5,8 @@
 
 function mo(bytes) {
   const v = (bytes || 0) / 1048576;
-  if (v >= 1024) return (v / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' Go';
-  return Math.round(v).toLocaleString('fr-FR') + ' Mo';
+  if (v >= 1024) return (v / 1024).toLocaleString(LOCALE, { maximumFractionDigits: 1 }) + (LANG === 'en' ? ' GB' : ' Go');
+  return Math.round(v).toLocaleString(LOCALE) + (LANG === 'en' ? ' MB' : ' Mo');
 }
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 
@@ -247,8 +247,8 @@ function vendorCard(v) {
         h('div', { class: 'muted small' }, facts.join(' · '))),
       h('div', { class: 'vram' }, v.bytes ? mo(v.bytes) : '—')),
     h('div', { class: 'vgrid' },
-      v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, v.keeps)) : null,
-      v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, v.loses)) : null),
+      v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, LANG === 'en' && v.keeps_en || v.keeps)) : null,
+      v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, LANG === 'en' && v.loses_en || v.loses)) : null),
     vendorActions(v),
     v.processes.length || v.startup.length ? h('details', {},
       h('summary', {}, 'Détails techniques'),
@@ -257,7 +257,7 @@ function vendorCard(v) {
         v.startup.map(s => h('li', {}, `${AUTO_LABEL[s.kind] || s.kind} : ${s.name}${s.mode ? ` (${s.mode})` : ''}`)))) : null);
 }
 
-const fmtDate = s => new Date(s * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+const fmtDate = s => new Date(s * 1000).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long' });
 
 function vendorActions(v) {
   const log = journal.find(l => l.vendor === v.id);
@@ -364,8 +364,8 @@ async function slimWizard(v) {
       h('header', { class: 'dhead' }, h('h3', {}, 'Alléger ' + plan.name),
         h('button', { class: 'x', title: 'Fermer', onclick: m.close }, '×')),
       step(1, 'Ce qui change',
-        v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, v.keeps)) : null,
-        v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, v.loses)) : null,
+        v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, LANG === 'en' && v.keeps_en || v.keeps)) : null,
+        v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, LANG === 'en' && v.loses_en || v.loses)) : null,
         devs.length ? h('ul', { class: 'wdevs' }, devs.map(d => h('li', {},
           h('span', { class: 'chip ' + d.status }, d.status === 'supported' ? 'Réglable dans PeriphHub' : 'Pas encore dans PeriphHub'), ' ',
           d.product || d.vid + ':' + d.pid))) : null,
@@ -417,6 +417,8 @@ function renderOptions() {
     field('Apparence',
       segmented([{ v: 'system', label: 'Comme Windows' }, { v: 'light', label: 'Clair' }, { v: 'dark', label: 'Sombre' }], themeChoice(),
         v => { setTheme(v); renderOptions(); })),
+    field('Langue',
+      segmented(Object.entries(LANGS).map(([v, label]) => ({ v, label })), LANG, v => { if (v !== LANG) setLang(v); })),
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),

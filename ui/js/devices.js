@@ -393,7 +393,7 @@ let kbSel = new Set();
 let kbUndo = null; // état d'avant la dernière modification (bouton « Annuler »)
 
 const mm = c => (c / 100).toFixed(2);
-const mmFr = c => mm(c).replace('.', ',') + ' mm';
+const mmFr = c => (LANG === 'en' ? mm(c) : mm(c).replace('.', ',')) + ' mm';
 
 // Réglages rapides, appliqués à toutes les touches (centièmes de mm)
 const KB_PRESETS = [
@@ -550,7 +550,7 @@ function renderKbKeys(box) {
     grid,
     editor,
     diffs.length ? h('div', { class: 'row-inline' },
-      h('span', { class: 'muted small' }, `${diffs.length} touche(s) modifiée(s) depuis le ${new Date(origin.date).toLocaleDateString('fr-FR')}`),
+      h('span', { class: 'muted small' }, `${diffs.length} touche(s) modifiée(s) depuis le ${new Date(origin.date).toLocaleDateString(LOCALE)}`),
       h('button', { class: 'ghost', onclick: () => kbDo('Retour aux touches d’origine', async () => {
         for (const [l, i] of diffs) await kb.setKey(l, i, origin.layers[l][i]);
       }) }, 'Tout remettre d’origine')) : null,
@@ -592,7 +592,7 @@ function renderKbLight(box) {
       v => kbLightSet({ speed: Math.round(v * 2.55) }))) : null,
     origin && JSON.stringify(origin.light) !== JSON.stringify(l) ? h('div', { class: 'row-inline' },
       h('button', { class: 'ghost', onclick: () => kbLightSet({ ...origin.light }, true) },
-        'Revenir à l’éclairage du ' + new Date(origin.date).toLocaleDateString('fr-FR'))) : null,
+        'Revenir à l’éclairage du ' + new Date(origin.date).toLocaleDateString(LOCALE))) : null,
   );
 }
 
@@ -780,7 +780,7 @@ function renderKbTravel(box) {
     h('div', { class: 'row-inline' },
       h('button', { class: 'ghost', disabled: !kbUndo, onclick: () => kbRestore('Annulation', kbUndo) }, '↶ Annuler la dernière modification'),
       origin ? h('button', { class: 'ghost', onclick: () => kbRestore('Retour aux réglages d’origine', origin) },
-        'Revenir aux réglages du ' + new Date(origin.date).toLocaleDateString('fr-FR')) : null),
+        'Revenir aux réglages du ' + new Date(origin.date).toLocaleDateString(LOCALE)) : null),
 
     h('h3', { class: 'sect' }, 'Réglage touche par touche'),
     h('p', { class: 'muted small' }, 'Cliquez sur des touches (ou choisissez un groupe), puis réglez-les en dessous. Sur chaque touche : profondeur d’activation en mm, et rapid trigger (RT).'),
@@ -1008,7 +1008,7 @@ function hsProfilesField() {
       before ? h('button', { class: 'ghost', onclick: () => hsApply('Réglage précédent', async () => {
         await hsApplyProfile(before);
         try { localStorage.removeItem('hsBeforeProfile'); } catch {}
-      }) }, 'Revenir au réglage du ' + new Date(before.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })) : null),
+      }) }, 'Revenir au réglage du ' + new Date(before.date).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' })) : null),
     h('div', { class: 'muted small' }, HS_PROFILES[0].desc));
 }
 

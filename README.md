@@ -59,7 +59,8 @@ fonctionne (ou pas) ? Ouvrez un ticket avec le rapport de la page Allègement.
 | 0.6 | Claviers QMK **VIA / Vial** de toutes marques (Keychron, Akko, Epomaker, NuPhy…) : éclairage enregistré dans le clavier ; souris à puce **CompX** (VXE, ATK, MCHOSE…) sur la page souris (**expérimental**) | ✅ |
 | 0.7 | Passerelle **OpenRGB** : si OpenRGB tourne (serveur SDK), couleur unie sur tous ses appareils ou appareil par appareil | ✅ |
 | 0.8 | Identité visuelle « Orbit » : logo, dégradé iris → cyan, thèmes clair et sombre accordés, animations ; README illustré | ✅ |
-| 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, installeur signé (SignPath) | 🗺️ |
+| 0.9 | Interface en **anglais** (choix de la langue dans Options, anglais par défaut hors Windows en français) ; signature de l'installeur prête (SignPath Foundation) | ✅ |
+| 1.0 | Pilotes expérimentaux confirmés par les utilisateurs, premier installeur signé | 🗺️ |
 
 Voir la [feuille de route](docs/ROADMAP.md).
 
@@ -69,8 +70,12 @@ Téléchargez `PeriphHub_x.y.z_x64-setup.exe` dans les
 [Releases](https://github.com/Sharkytihno/PeriphHub/releases). L'installation se fait pour votre
 compte seul et ne demande pas de droits administrateur.
 
-> Le programme n'est pas encore signé : Windows peut afficher « Windows a protégé votre
+L'interface est en français ou en anglais (*English available*) : choix dans **Options ▸ Langue**.
+
+> Tant que l'installeur n'est pas signé, Windows peut afficher « Windows a protégé votre
 > ordinateur ». Cliquez sur **Informations complémentaires** puis **Exécuter quand même**.
+> La signature (gratuite pour les logiciels libres, par SignPath Foundation) et la façon de vérifier un
+> téléchargement sont décrites dans [docs/SIGNATURE.md](docs/SIGNATURE.md).
 
 ## Votre appareil ou votre logiciel n'est pas reconnu ?
 

@@ -1,6 +1,9 @@
 name: Release
 
-# Pousser un tag « v0.1.0 » compile l'installeur Windows et prépare une Release (brouillon à publier)
+# Pousser un tag « v0.9.0 » compile l'installeur Windows et prépare une Release (brouillon à publier).
+# Signature : si les secrets SignPath sont présents (voir docs/SIGNATURE.md), periphhub.exe puis
+# l'installeur sont signés par SignPath Foundation (certificat gratuit pour les logiciels libres).
+# Sans ces secrets, l'installeur est publié non signé, comme avant.
 on:
   push:
     tags: ['v*']
@@ -8,6 +11,13 @@ on:
 
 permissions:
   contents: write
+  actions: read
+
+env:
+  SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+  SIGNPATH_PROJECT: periphhub
+  SIGNPATH_POLICY: release-signing
+  SIGNPATH_CONFIG: exe-in-zip
 
 jobs:
   windows:
@@ -26,15 +36,97 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-headsetcontrol.ps1
       - run: npm ci
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1. Programme seul
+      - name: Compilation
+        run: npx tauri build --no-bundle
+
+      # 2. Signature de periphhub.exe (avant de l'emballer dans l'installeur)
+      - name: Programme à signer
+        id: exe
+        if: env.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'PeriphHub ${{ github.ref_name }}'
-          releaseBody: |
-            Téléchargez **PeriphHub_..._x64-setup.exe** ci-dessous.
-            Windows peut afficher « Windows a protégé votre ordinateur » (programme pas encore signé) :
-            cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
-          releaseDraft: true
-          prerelease: false
+          name: periphhub-exe-unsigned
+          path: src-tauri/target/release/periphhub.exe
+          if-no-files-found: error
+      - name: Signature du programme (SignPath)
+        if: env.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_CONFIG }}
+          github-artifact-id: ${{ steps.exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: src-tauri/target/release
+
+      # 3. Installeur (contient le programme signé)
+      - name: Installeur
+        run: npx tauri bundle --bundles nsis
+      - name: Chemin de l'installeur
+        id: setup
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($f.Name)" >> $env:GITHUB_OUTPUT
+
+      # 4. Signature de l'installeur
+      - name: Installeur à signer
+        id: inst
+        if: env.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: periphhub-setup-unsigned
+          path: ${{ steps.setup.outputs.path }}
+          if-no-files-found: error
+      - name: Signature de l'installeur (SignPath)
+        if: env.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_CONFIG }}
+          github-artifact-id: ${{ steps.inst.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: src-tauri/target/release/bundle/nsis
+      - name: Vérification des signatures
+        if: env.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: |
+          foreach ($f in @('src-tauri/target/release/periphhub.exe', '${{ steps.setup.outputs.path }}')) {
+            $s = Get-AuthenticodeSignature $f
+            Write-Host "$f : $($s.Status) — $($s.SignerCertificate.Subject)"
+            if ($s.Status -ne 'Valid') { throw "signature invalide : $f" }
+          }
+
+      # 5. Release (brouillon) avec l'installeur et son empreinte
+      - name: Installeur (lancement manuel, sans release)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: periphhub-setup
+          path: ${{ steps.setup.outputs.path }}
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIGNED: ${{ env.SIGNPATH_ORGANIZATION_ID != '' }}
+        run: |
+          $setup = '${{ steps.setup.outputs.path }}'
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ steps.setup.outputs.name }}" | Out-File -Encoding ascii "$setup.sha256"
+          if ($env:SIGNED -eq 'true') {
+            $warn = "L'installeur est signé (SignPath Foundation). / The installer is signed (SignPath Foundation)."
+          } else {
+            $warn = "Windows peut afficher « Windows a protégé votre ordinateur » (programme pas encore signé) : « Informations complémentaires » puis « Exécuter quand même ».`n`n" +
+                    "Windows may show “Windows protected your PC” (not signed yet): click “More info”, then “Run anyway”."
+          }
+          $body = "Téléchargez / Download **${{ steps.setup.outputs.name }}**.`n`n$warn`n`nSHA-256 : ``$hash``"
+          gh release create '${{ github.ref_name }}' $setup "$setup.sha256" --draft --title 'PeriphHub ${{ github.ref_name }}' --notes $body

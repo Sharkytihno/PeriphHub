@@ -117,7 +117,7 @@ pub fn run() -> Value {
             "id": v.id, "name": v.name, "brand": v.brand, "bytes": bytes,
             "processes": ps.into_iter().map(|(n, (c, b))| json!({ "name": n, "count": c, "bytes": b })).collect::<Vec<_>>(),
             "startup": auto, "devices": dev_ids.len(), "device_ids": dev_ids,
-            "keeps": v.keeps, "loses": v.loses, "verified": v.verified,
+            "keeps": v.keeps, "loses": v.loses, "keeps_en": v.keeps_en, "loses_en": v.loses_en, "verified": v.verified,
         }));
     }
     out_vendors.sort_by_key(|v| std::cmp::Reverse(v["bytes"].as_u64().unwrap_or(0)));

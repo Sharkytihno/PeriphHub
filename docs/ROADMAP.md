@@ -85,6 +85,5 @@ réglages : PeriphHub retient les choix et les renvoie quand le casque se rallum
 ## Plus tard
 
 - Outil de capture intégré pour aider la communauté à décoder de nouveaux appareils.
-- Traduction anglaise.
-- Signature du code (SignPath Foundation pour les projets libres).
+- Autres langues : ajouter un fichier `ui/i18n/<langue>.js` sur le modèle de `en.js`.
 - Modules optionnels (« + Ajouter un module ») : ventilateurs, Raspberry Pi / NAS…

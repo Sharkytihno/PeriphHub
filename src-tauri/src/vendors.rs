@@ -26,6 +26,11 @@ pub struct Vendor {
     /// Ce qui ne fonctionne plus quand le logiciel est fermé
     #[serde(default)]
     pub loses: String,
+    /// Versions anglaises de `keeps` et `loses` (interface en anglais)
+    #[serde(default)]
+    pub keeps_en: String,
+    #[serde(default)]
+    pub loses_en: String,
     /// false = entrée à confirmer sur une vraie installation
     #[serde(default)]
     pub verified: bool,
