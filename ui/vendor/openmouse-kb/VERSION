@@ -1,0 +1,4 @@
+@openmouse/keyboard-protocol 1.6.1
+https://github.com/OpenMouse-Project
+Licence : AGPL-3.0-or-later (voir LICENSE). Copié par scripts/vendor-openmouse.py, non modifié
+à part les chemins d'import.

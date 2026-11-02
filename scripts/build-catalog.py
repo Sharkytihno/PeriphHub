@@ -103,23 +103,36 @@ for kind, pid in re.findall(r"_(bolt|unifying|nano|lightspeed)\w*_receiver\(0x([
     add("046D", pid, f"Logitech récepteur {kind.capitalize()}", "récepteur", "solaar", "logitech-hidpp", "experimental")
 
 # ---- HeadsetControl (casques ; version livrée avec PeriphHub) ----
+# Le VID est souvent hérité d'une classe de base (SteelSeriesLegacyDevice, CorsairDevice…) :
+# on le prend dans le fichier s'il y est, sinon d'après la marque du nom de fichier.
 hc_consts = {}
-for p in glob.glob(os.path.join(SRC, "headsetcontrol/lib/**/*.hpp"), recursive=True):
-    for k, v in re.findall(r"\b(VENDOR_[A-Z0-9_]+)\s*=\s*0x([0-9a-fA-F]{4})", rd(p)):
-        hc_consts.setdefault(k, v)
+for p in glob.glob(os.path.join(SRC, "headsetcontrol/lib/**/*.*"), recursive=True):
+    if p.endswith((".hpp", ".h", ".cpp")):
+        t = rd(p)
+        for k, v in re.findall(r"\b(VENDOR_[A-Z0-9_]+)\s*=\s*0x([0-9a-fA-F]{4})", t) + re.findall(r"#define\s+(VENDOR_[A-Z0-9_]+)\s+0x([0-9a-fA-F]{4})", t):
+            hc_consts.setdefault(k, v)
+HC_PREFIX = {"steelseries": "1038", "logitech": "046D", "corsair": "1B1C", "roccat": "1E7D", "audeze": "3329",
+             "sony": "054C", "jabra": "0B0E", "plantronics": "047F", "lenovo": "17EF"}
 for p in glob.glob(os.path.join(SRC, "headsetcontrol/lib/devices/*.hpp")):
     t = rd(p)
     name = re.search(r'getDeviceName\(\)[^{]*\{\s*return\s*"([^"]+)"', t)
-    vref = re.search(r"getVendorId\(\)[^{]*\{\s*return\s*([A-Za-z0-9_:]+|0x[0-9a-fA-F]{4})", t)
-    if not (name and vref):
+    ids = re.search(r"((?:SUPPORTED_)?PRODUCT_IDS\s*\{[^;]*;|getProductIds\(\)[^}]*\})", t, re.S)
+    if not (name and ids):
         continue
-    v = vref.group(1).split("::")[-1]
-    local = dict(re.findall(r"\b(VENDOR_[A-Z0-9_]+)\s*=\s*0x([0-9a-fA-F]{4})", t))
-    vid = v[2:] if v.startswith("0x") else local.get(v) or hc_consts.get(v)
+    vref = re.search(r"getVendorId\(\)[^{]*\{\s*return\s*([A-Za-z0-9_:]+)", t)
+    vid = None
+    if vref:
+        v = vref.group(1).split("::")[-1]
+        vid = v[2:] if v.startswith("0x") else hc_consts.get(v)
     if not vid:
+        vid = HC_PREFIX.get(os.path.basename(p).split("_")[0])
+    if not vid:
+        print("HeadsetControl : VID introuvable pour", os.path.basename(p))
         continue
-    block = re.search(r"(SUPPORTED_PRODUCT_IDS[^;]*;|getProductIds\(\)[^}]*\})", t, re.S)
-    for pid in re.findall(r"0x([0-9a-fA-F]{4})", block.group(1) if block else ""):
+    if vid.upper() == "F00B":  # appareil de test de HeadsetControl
+        continue
+    body = re.sub(r"//[^\n]*", "", ids.group(1))
+    for pid in re.findall(r"0x([0-9a-fA-F]{4})", body):
         add(vid, pid, name.group(1), "casque", "headsetcontrol", "headsetcontrol", "experimental")
 
 # ---- OpenRGB (éclairage de plus de 1 000 appareils) ----
@@ -164,6 +177,19 @@ for brand, model, status, pids in re.findall(r'brand:\s*"([^"]+)",\s*model:\s*"(
         for v in seen or vids[:1]:
             good = status in ("supported", "likely")
             add(v, pid, f"{brand} {model}", "souris", "openmouse", "openmouse" if good else "", "experimental" if good else None)
+
+
+# ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro ----
+kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
+t = rd(os.path.join(kbv, "wooting", "index.js"))
+for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t[t.index("WOOTING_PRODUCTS"):t.index("WOOTING_PRODUCT_IDS")]):
+    arm = "AVR" not in name and name not in ("Wooting One", "Wooting Two", "Wooting Two Lekker Edition")
+    # le dernier chiffre du PID varie selon le mode manette (XInput / DInput / aucun)
+    for q in [pid[:3] + d for d in "012"]:
+        add("31E3", q, name, "clavier", "openmouse", "openmouse-kb" if arm else "", "experimental" if arm else None)
+t = rd(os.path.join(kbv, "steelseries", "index.js"))
+for pid, name in re.findall(r"\[0x([0-9a-fA-F]{4}), \{ name: \"([^\"]+)\"", t):
+    add("1038", pid, "SteelSeries " + name, "clavier", "openmouse", "openmouse-kb", "experimental")
 
 out = sorted(cat.values(), key=lambda e: (e["vid"], e["pid"]))
 for e in out:

@@ -8,6 +8,7 @@
 // PeriphHub n'appelle que la lecture de l'état et les réglages courants : jamais de
 // mise à jour de firmware, de remise à zéro d'usine ni d'appairage.
 import { createSupportedClient, clientSupportScore, deviceBrand } from '../../vendor/openmouse/drivers/registry.js';
+import * as kbReg from '../../vendor/openmouse-kb/drivers/registry.js';
 
 const OM_VIDS = new Set([
   0x03EB, 0x03F0, 0x0483, 0x045E, 0x046D, 0x04D9, 0x04F3, 0x093A, 0x0951, 0x0B05, 0x0BDA,
@@ -228,6 +229,131 @@ async function omConnect(group) {
   return [inst];
 }
 
+// ---------- Claviers (@openmouse/keyboard-protocol) ----------
+// Réglages globaux seulement (pas touche par touche) : Wooting (actuation, rapid trigger),
+// SteelSeries Apex (actuation), Razer et Logitech (fréquence, luminosité, rapid trigger).
+// Keychron, Wuque, Kochi, Arbiter : protocoles encore trop partiels pour être exposés sans risque.
+const KB_FAMILIES = new Set(['Wooting', 'SteelSeries', 'Razer', 'Logitech']);
+const KB_FIRST = new Set(['Wooting', 'SteelSeries']); // aucun autre pilote dans PeriphHub
+const WOOT_ZERO = 16384, WOOT_PER_MM = 4096;
+
+function kbFind(group) {
+  for (const c of omInterfaces(group)) {
+    try {
+      const drv = kbReg.DEVICE_DRIVERS.find(d => d.supports(c));
+      if (drv && KB_FAMILIES.has(drv.brand)) return { dev: c, brand: drv.brand, drv };
+    } catch {}
+  }
+  return null;
+}
+
+function kbMap(inst, st) {
+  const s = inst.state = {}, caps = inst.caps = {};
+  inst.status = st;
+  inst.name = [inst.brand, st.name].filter(Boolean).join(' ').replace(/^(\S+) \1 /, '$1 ');
+  // Wooting à puce AVR (anciens modèles) : la bibliothèque ne sait pas encore y écrire
+  if (inst.brand === 'Wooting' && inst.client.multiReport?.() !== false) {
+    const a = st.analogProfile?.actuationMm;
+    if (Number.isFinite(a)) { s.actuation = Math.round(a * 10) / 10; caps.actuation = { min: 0.1, max: 4, step: 0.1 }; }
+    const rt = st.rapidTrigger;
+    if (rt?.enabled != null) {
+      s.rt = !!rt.enabled; caps.rt = true;
+      const raw = rt.pressSensitivityRaw;
+      if (Number.isFinite(raw) && raw >= WOOT_ZERO) {
+        s.rtSens = Math.round((raw - WOOT_ZERO) / WOOT_PER_MM * 10) / 10;
+        caps.rtSens = { min: 0.1, max: 2, step: 0.1 };
+      }
+    }
+  } else if (inst.brand === 'SteelSeries') {
+    const keys = (st.steelseries?.profile?.keys || []).filter(k => Number.isFinite(k.tenthsMm));
+    if (keys.length) {
+      const count = new Map();
+      for (const k of keys) count.set(k.tenthsMm, (count.get(k.tenthsMm) || 0) + 1);
+      s.actuation = [...count].sort((a, b) => b[1] - a[1])[0][0] / 10;
+      caps.actuation = { min: 0.1, max: 4, step: 0.1 };
+      inst.usages = keys.map(k => k.usage);
+    }
+  } else if (inst.brand === 'Razer') {
+    const r = st.razer;
+    if (r?.pollingRateHz) {
+      s.rate = r.pollingRateHz;
+      caps.rate = r.pollingStyle === 'extended' ? [125, 250, 500, 1000, 2000, 4000, 8000] : [125, 500, 1000];
+    }
+    if (r?.brightness != null) { s.brightness = r.brightness; caps.brightness = { min: 0, max: 255 }; }
+  } else if (inst.brand === 'Logitech') {
+    const l = st.logitech;
+    if (l?.pollingRateHz && l.supportedPollingRates?.length) { s.rate = l.pollingRateHz; caps.rate = l.supportedPollingRates.slice().sort((a, b) => a - b); }
+    if (l?.brightness) { s.brightness = l.brightness.value; caps.brightness = { min: l.brightness.min, max: l.brightness.max }; }
+    if (l?.analog?.rapidTrigger != null) { s.rt = !!l.analog.rapidTrigger; caps.rt = true; }
+    if (l?.battery?.percent != null) s.battery = { level: l.battery.percent, charging: /^charging/.test(l.battery.status || '') };
+  }
+  inst.meta = [st.connectionType === 'Wireless' ? 'Sans fil' : st.connectionType === 'Wired' ? 'Filaire' : null,
+    st.firmwareVersion ? 'firmware ' + st.firmwareVersion : null].filter(Boolean).join(' · ');
+}
+
+const KB_SETTERS = {
+  rate: (c, v) => c.setPollingRate(v),
+  brightness: (c, v) => c.setBrightness(Math.round(v)),
+  actuation: (c, v, inst) => inst.brand === 'Wooting'
+    ? c.writeActuationDefault(v, true)
+    : c.setActuation(inst.usages, Math.round(v * 10)),
+  rt: (c, v, inst) => inst.brand === 'Wooting'
+    ? c.writeRapidTriggerDefault(v, inst.state.rtSens ?? 0.5, true)
+    : c.setAnalogRapidTrigger(v),
+  rtSens: (c, v, inst) => c.writeRapidTriggerDefault(inst.state.rt ?? true, v, true),
+};
+
+function kbRows(inst) {
+  const s = inst.state, c = inst.caps, rows = [];
+  if (c.actuation) rows.push(field('Point d’activation (toutes les touches)',
+    slider(c.actuation.min, c.actuation.max, c.actuation.step, s.actuation, ' mm', v => drvSet(inst, 'Point d’activation', 'actuation', v)),
+    h('div', { class: 'muted small' }, 'Profondeur à laquelle une touche est prise en compte. Plus haut = plus réactif, plus bas = moins de fautes de frappe.')));
+  if (c.rt) rows.push(field('Rapid trigger', h('div', { class: 'toggles' },
+    toggle('Rapid trigger (toutes les touches)', s.rt, on => drvSet(inst, 'Rapid trigger', 'rt', on), false,
+      'La touche se relâche dès qu’elle remonte un peu, sans attendre le point d’activation : contre-strafes plus rapides.'))));
+  if (c.rtSens && s.rt) rows.push(field('Sensibilité du rapid trigger',
+    slider(c.rtSens.min, c.rtSens.max, c.rtSens.step, s.rtSens, ' mm', v => drvSet(inst, 'Sensibilité du rapid trigger', 'rtSens', v)),
+    h('div', { class: 'muted small' }, 'Distance de remontée qui relâche la touche. Plus petit = plus réactif.')));
+  if (c.brightness) rows.push(field('Luminosité',
+    slider(c.brightness.min, c.brightness.max, 1, s.brightness, '', v => drvSet(inst, 'Luminosité', 'brightness', v))));
+  return rows;
+}
+
+async function kbConnect(group) {
+  const found = kbFind(group);
+  if (!found) throw new Error('clavier non reconnu par OpenMouse');
+  const client = found.drv.create(found.dev);
+  if (!client) throw new Error('clavier non reconnu par OpenMouse');
+  await client.open();
+  const inst = {
+    key: 'omk-' + omHex(found.dev.vendorId) + omHex(found.dev.productId),
+    name: found.dev.productName || 'Clavier', brand: found.brand, kind: 'clavier',
+    dev: group[0], devs: group, client, state: {}, caps: {},
+    restoreCaps: ['brightness', 'actuation', 'rt', 'rtSens'],
+    source: 'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. ' +
+      'Les réglages sont écrits dans le clavier ; ceux d’origine sont gardés avant la première modification.',
+  };
+  inst.refresh = async () => kbMap(inst, await client.readStatus());
+  inst.set = async (cap, v) => {
+    const f = KB_SETTERS[cap];
+    if (!f) throw new Error('réglage inconnu : ' + cap);
+    await f(client, v, inst);
+  };
+  inst.rows = () => kbRows(inst);
+  try { await inst.refresh(); } catch (e) { await client.close?.().catch(() => {}); throw e; }
+  if (!Object.keys(inst.caps).length) { await client.close?.().catch(() => {}); throw new Error('aucun réglage lisible'); }
+  return [inst];
+}
+
+// first = true : Wooting / SteelSeries ; false : Razer / Logitech (en secours)
+const kbMatch = first => d => {
+  if (OM_SKIP.has(omId(d)) || ![0x31E3, 0x03EB, 0x1038, 0x1532, 0x046D].includes(d.vendorId)) return false;
+  try {
+    const found = kbFind([d]);
+    return !!found && KB_FIRST.has(found.brand) === first;
+  } catch { return false; }
+};
+
 window.omApi = {
   vids: OM_VIDS,
   // La page Scyrox (CompX) laisse à OpenMouse les souris qu'il reconnaît
@@ -242,4 +368,10 @@ window.omApi = {
     match: d => OM_VIDS.has(d.vendorId) && !OM_SKIP.has(omId(d)),
     connect: (_dev, group) => omConnect(group),
   },
+  keyboardDrivers: [
+    // Wooting, SteelSeries Apex : passent avant tout le reste
+    { id: 'openmouse-kb', priority: 15, match: kbMatch(true), connect: (_dev, group) => kbConnect(group) },
+    // Razer, Logitech : nos pilotes d'abord ; OpenMouse en secours (claviers analogiques…)
+    { id: 'openmouse-kb2', priority: -5, match: kbMatch(false), connect: (_dev, group) => kbConnect(group) },
+  ],
 };

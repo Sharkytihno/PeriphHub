@@ -1,9 +1,10 @@
-"""Copie les protocoles d'OpenMouse (@openmouse/protocol, AGPL-3.0-or-later) dans ui/vendor/openmouse.
+"""Copie les protocoles d'OpenMouse (AGPL-3.0-or-later) dans ui/vendor :
+@openmouse/protocol -> ui/vendor/openmouse, @openmouse/keyboard-protocol -> ui/vendor/openmouse-kb.
 
 Usage (depuis la racine du dépôt) :
     npm pack @openmouse/protocol@<version>      # télécharge l'archive, sans rien exécuter
     tar xzf openmouse-protocol-<version>.tgz    # -> package/
-    python scripts/vendor-openmouse.py package
+    python scripts/vendor-openmouse.py package   (idem pour @openmouse/keyboard-protocol)
 
 Le paquet est publié pour un bundler : ses imports « @openmouse/protocol/xxx » sont réécrits
 en chemins relatifs (la page de PeriphHub charge des modules ES natifs, sans import map
@@ -19,15 +20,15 @@ import sys
 
 src = os.path.abspath(sys.argv[1])
 repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-dst = os.path.join(repo, "ui", "vendor", "openmouse")
-
 pkg = json.load(open(os.path.join(src, "package.json"), encoding="utf-8"))
+name = pkg["name"]
+dst = os.path.join(repo, "ui", "vendor", {"@openmouse/protocol": "openmouse", "@openmouse/keyboard-protocol": "openmouse-kb"}[name])
 exports = {}
 for key, val in pkg["exports"].items():
     target = val["import"] if isinstance(val, dict) else val
-    exports["@openmouse/protocol" + key[1:]] = target[2:]  # "./dist/x.js" -> "dist/x.js"
+    exports[name + key[1:]] = target[2:]  # "./dist/x.js" -> "dist/x.js"
 
-IMPORT = re.compile(r'((?:from|import)\s*\(?\s*")(@openmouse/protocol[^"]*)(")')
+IMPORT = re.compile(r'((?:from|import)\s*\(?\s*")(' + re.escape(name) + r'(?:/[^"]*)?)(")')
 
 if os.path.isdir(dst):
     shutil.rmtree(dst)
@@ -55,8 +56,8 @@ for dirpath, _, files in os.walk(os.path.join(src, "dist")):
 
 shutil.copy(os.path.join(src, "LICENSE"), os.path.join(dst, "LICENSE"))
 open(os.path.join(dst, "VERSION"), "w", encoding="utf-8", newline="\n").write(
-    f"@openmouse/protocol {pkg['version']}\n"
-    "https://github.com/OpenMouse-Project/mouse-protocol\n"
+    f"{name} {pkg['version']}\n"
+    "https://github.com/OpenMouse-Project\n"
     "Licence : AGPL-3.0-or-later (voir LICENSE). Copié par scripts/vendor-openmouse.py, non modifié\n"
     "à part les chemins d'import.\n")
 print(f"{count} fichiers copiés dans {dst} ({pkg['version']})")

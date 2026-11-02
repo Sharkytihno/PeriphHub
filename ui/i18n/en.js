@@ -548,6 +548,14 @@ const I18N_EN = {
   'Filaire': 'Wired',
   'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. Les réglages sont écrits dans la souris ; ceux d’origine sont gardés avant la première modification.': 'OpenMouse protocol (open-source project, AGPL-3.0), not yet confirmed on this model in PeriphHub. Settings are written to the mouse; the original ones are saved before the first change.',
   'récepteur': 'receiver',
+  'Point d’activation (toutes les touches)': 'Actuation point (all keys)',
+  'Point d’activation': 'Actuation point',
+  'Profondeur à laquelle une touche est prise en compte. Plus haut = plus réactif, plus bas = moins de fautes de frappe.': 'Depth at which a key registers. Higher = more responsive, lower = fewer typos.',
+  'Rapid trigger (toutes les touches)': 'Rapid trigger (all keys)',
+  'La touche se relâche dès qu’elle remonte un peu, sans attendre le point d’activation : contre-strafes plus rapides.': 'The key releases as soon as it rises a little, without waiting for the actuation point: faster counter-strafes.',
+  'Sensibilité du rapid trigger': 'Rapid trigger sensitivity',
+  'Distance de remontée qui relâche la touche. Plus petit = plus réactif.': 'Upward travel that releases the key. Smaller = more responsive.',
+  'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. Les réglages sont écrits dans le clavier ; ceux d’origine sont gardés avant la première modification.': 'OpenMouse protocol (open-source project, AGPL-3.0), not yet confirmed on this model in PeriphHub. Settings are written to the keyboard; the original ones are saved before the first change.',
   // Startup entry modes
   'manuel': 'manual', 'actif': 'enabled',
 };

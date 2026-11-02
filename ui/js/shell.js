@@ -456,7 +456,7 @@ function renderOptions() {
 
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
 rescan();
-if (window.omApi) registerDriver(window.omApi.driver);
+if (window.omApi) [window.omApi.driver, ...(window.omApi.keyboardDrivers || [])].forEach(registerDriver);
 driversStart();
 // Batterie et état relus régulièrement sur l'accueil (fenêtre visible seulement)
 setInterval(() => { if (!document.hidden && !$('home').hidden) refreshHome(); }, 30000);

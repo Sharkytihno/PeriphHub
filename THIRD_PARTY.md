@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | [HeadsetControl](https://github.com/Sapd/HeadsetControl) | 4.2.0 | GPL-3.0 | Livré tel quel (`resources/headsetcontrol.exe`) : casques SteelSeries, Corsair, HyperX, Logitech, Audeze, Sony, Roccat… | [headsetcontrol-4.2.0.tar.gz](https://github.com/Sapd/HeadsetControl/releases/tag/4.2.0) |
 | [OpenMouse protocol](https://github.com/OpenMouse-Project/mouse-protocol) (`@openmouse/protocol`) | 0.49.0 | AGPL-3.0-or-later | Copié tel quel dans `ui/vendor/openmouse/` (seuls les chemins d'import sont réécrits, par `scripts/vendor-openmouse.py`) : réglages des souris de ~50 marques (Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE…). Les fonctions de mise à jour du firmware ne sont jamais appelées. | [npm](https://www.npmjs.com/package/@openmouse/protocol) |
+| [OpenMouse keyboard protocol](https://github.com/OpenMouse-Project) (`@openmouse/keyboard-protocol`) | 1.6.1 | AGPL-3.0-or-later | Copié tel quel dans `ui/vendor/openmouse-kb/` (chemins d'import réécrits) : point d'activation et rapid trigger des claviers Wooting et SteelSeries Apex Pro, fréquence et luminosité Razer / Logitech. | [npm](https://www.npmjs.com/package/@openmouse/keyboard-protocol) |
 
 Exécutable officiel non modifié, téléchargé par `scripts/fetch-headsetcontrol.ps1` et vérifié par
 empreinte SHA-256 (`81acae4c…ff0fa5`), à la compilation comme à chaque lancement.
