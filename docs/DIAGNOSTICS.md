@@ -42,25 +42,14 @@ Ses protections :
    - dépôt : **seulement** `periphhub-diagnostics` ;
    - permission : **Issues, lecture et écriture** ;
    - expiration : 1 an.
-3. Copier le relais sur le VPS (sur le PC) :
-   ```
-   ssh -i ~/.ssh/trading-bot sharky@46.224.185.112 "mkdir -p ~/periphhub-relay"
-   scp -i ~/.ssh/trading-bot server/diag-relay/relay.mjs sharky@46.224.185.112:~/periphhub-relay/
-   ```
-4. Sur le VPS, enregistrer le jeton dans un fichier lisible seulement par `sharky`, puis lancer le relais avec pm2 :
-   ```
-   cd ~/periphhub-relay
-   read -rsp "Jeton GitHub : " T && printf 'GITHUB_TOKEN=%s\n' "$T" > .env && chmod 600 .env && unset T
-   pm2 start relay.mjs --name periphhub-relay && pm2 save
-   curl -s http://127.0.0.1:3011/health
-   ```
-   Le port 3011 doit être libre : `ss -ltn | grep 3011` ne doit rien afficher avant le lancement (sinon : `PORT=xxxx` dans `.env` et dans Caddy).
-5. Dans Caddy (`sudo nano /etc/caddy/Caddyfile`), ajouter dans le bloc `sharkywedding.fr { … }` :
-   ```
-   reverse_proxy /periphhub/* 127.0.0.1:3011
-   ```
-   puis lancer `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy`.
-6. Vérifier : `curl -s https://sharkywedding.fr/periphhub/health` doit renvoyer `{"ok":true}`.
+3. Depuis le PC (Git Bash), lancer `bash server/diag-relay/install.sh`. Le script :
+   - copie le relais sur le VPS ;
+   - demande le jeton (saisie invisible) et l'écrit dans `~/periphhub-relay/.env` (droits 600) ;
+   - le lance avec pm2 (`periphhub-relay`, port 3011) ;
+   - ajoute `reverse_proxy /periphhub/* 127.0.0.1:3011` au bloc `sharkywedding.fr` du Caddyfile, après une sauvegarde
+     `Caddyfile.bak-periphhub`, puis recharge Caddy. Si le fichier modifié n'est pas valide, la sauvegarde est remise.
+   Le script peut être relancé sans risque : c'est aussi la méthode de mise à jour. `NEW_TOKEN=1` permet de changer le jeton.
+4. Vérifier : `curl -s https://sharkywedding.fr/periphhub/health` doit renvoyer `{"ok":true}`.
 
 ### Lire les diagnostics
 
