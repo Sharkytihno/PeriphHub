@@ -189,6 +189,7 @@ fn main() {
         );
         return;
     }
+    std::thread::spawn(update::cleanup_old);
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(hid::Hid::default())

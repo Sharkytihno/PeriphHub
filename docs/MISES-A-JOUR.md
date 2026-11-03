@@ -12,6 +12,23 @@ La version installée avec `PeriphHub_x.y.z_x64-setup.exe` se met à jour toute 
 3. **Options ▸ Mises à jour** : désactiver, ou « Vérifier maintenant ».
 
 La version du Microsoft Store (paquet MSIX) ne fait jamais cette vérification : le Store la met à jour.
+
+## Pourquoi ça marche du premier coup (depuis la 0.18)
+
+PeriphHub lance l'installeur (`/P /UPDATE /R`) puis se ferme aussitôt. L'installeur de Tauri demande
+alors au Restart Manager de Windows de fermer tout processus qui utilise `periphhub.exe`. Si
+l'ancien PeriphHub était encore **en train de se fermer** (WebView2, appareil USB qui ne rend pas la
+main…), Windows refusait de le terminer et l'installeur s'arrêtait sur « La fermeture de PeriphHub a
+échoué. Veuillez fermer l'application et réessayer. »
+
+`src-tauri/windows/hooks.nsh` (`NSIS_HOOK_PREINSTALL`, exécuté avant cette vérification, en mise à
+jour seulement) : attend jusqu'à 15 s que `periphhub.exe` soit libéré, puis, s'il est encore
+verrouillé, le **renomme** en `periphhub.exe.old` (Windows l'autorise pour un programme en cours ;
+le Restart Manager ne voit alors plus rien sur ce chemin). Le nouvel exe s'installe, PeriphHub est
+relancé et supprime les `.old` à son démarrage (`update::cleanup_old`). Le hook fait partie de
+l'installeur de la **nouvelle** version : il protège aussi les mises à jour lancées depuis une
+ancienne version. Testé avec la vraie macro `CheckIfAppIsRunning` de Tauri (processus qui se ferme
+en 3 s, et processus qui ne se ferme jamais).
 Le code : `src-tauri/src/update.rs`, `ui/js/shell.js` (section « Mises à jour »).
 
 ## Publier une mise à jour

@@ -307,13 +307,24 @@ async function checkUpdate(manual = false) {
 async function installUpdate(btn) {
   btn.disabled = true;
   btn.textContent = 'Téléchargement…';
+  // Progression envoyée par update.rs ; le bouton peut être recréé par un rendu : on le retrouve
+  const label = (t) => { for (const b of document.querySelectorAll('.upd button')) b.textContent = t; btn.textContent = t; };
+  let stop = null;
   try {
-    // PeriphHub se ferme : l'installeur le relance une fois la mise à jour faite
+    stop = await window.__TAURI__.event.listen('update-progress', ({ payload: p }) => {
+      if (p.installing) label('Installation… PeriphHub va redémarrer');
+      else if (p.total) label(`Téléchargement… ${Math.min(100, Math.round(p.done * 100 / p.total))} %`);
+    });
+  } catch { /* sans progression */ }
+  try {
+    // PeriphHub se ferme : l'installeur attend sa fermeture, installe et le relance
     await nativeInvoke('update_install');
   } catch (e) {
     toast('Mise à jour impossible : ' + e, 'err');
     btn.disabled = false;
-    btn.textContent = 'Mettre à jour';
+    label('Mettre à jour');
+  } finally {
+    stop?.();
   }
 }
 

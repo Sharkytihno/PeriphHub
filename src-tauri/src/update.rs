@@ -9,7 +9,7 @@
 
 use serde_json::{json, Value};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -44,16 +44,54 @@ pub async fn update_check(app: AppHandle) -> Result<Value, String> {
     })
 }
 
-/// Télécharge l'installeur, vérifie sa signature puis le lance (installation sans questions) :
-/// PeriphHub se ferme et l'installeur le relance une fois la mise à jour faite.
+/// Télécharge l'installeur (progression : événement « update-progress »), vérifie sa signature puis
+/// le lance en mode passif : PeriphHub se ferme, l'installeur attend qu'il soit vraiment fermé
+/// (windows/hooks.nsh), installe et relance PeriphHub. Rien à faire pour l'utilisateur.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
     if from_store() {
         return Err("mises à jour assurées par le Microsoft Store".into());
     }
     let u = find(&app).await?.ok_or("aucune mise à jour disponible")?;
-    u.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    let mut done = 0u64;
+    let bytes = u
+        .download(
+            |chunk, total| {
+                done += chunk as u64;
+                let _ = app.emit("update-progress", json!({ "done": done, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("update-progress", json!({ "installing": true }));
+    // Laisse l'interface afficher « Installation… » avant que la fenêtre ne disparaisse
+    tokio_sleep(Duration::from_millis(400)).await;
+    // Sous Windows, install() lance l'installeur puis termine PeriphHub (ne revient qu'en cas d'erreur)
+    u.install(bytes).map_err(|e| e.to_string())?;
     app.restart();
+}
+
+async fn tokio_sleep(d: Duration) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(d)).await;
+}
+
+/// Supprime les anciens exécutables mis de côté par l'installeur pendant une mise à jour
+/// (windows/hooks.nsh : un programme encore en cours de fermeture est renommé en « .old »).
+pub fn cleanup_old() {
+    let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) else {
+        return;
+    };
+    for d in [dir.clone(), dir.join("resources")] {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.ends_with(".exe.old") || name.ends_with(".exe.old2") {
+                // encore verrouillé (ancien processus pas tout à fait fermé) : ce sera pour la prochaine fois
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
