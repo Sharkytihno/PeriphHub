@@ -137,8 +137,10 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// Lancé directement (node relay.mjs) : démarre le serveur ; importé (tests) : ne fait rien
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Lancé directement (node relay.mjs) ou par pm2 (qui passe par son propre lanceur : argv[1]
+// n'est alors pas ce fichier, mais pm_id est défini) : démarre le serveur ; importé (tests) : ne fait rien
+const direct = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (direct || process.env.pm_id !== undefined) {
   if (!TOKEN) {
     console.error('GITHUB_TOKEN manquant');
     process.exit(1);

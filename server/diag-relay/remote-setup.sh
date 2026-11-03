@@ -29,7 +29,7 @@ else
   pm2 start relay.mjs --name periphhub-relay >/dev/null
 fi
 pm2 save >/dev/null
-sleep 1
+for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null || { echo "Le relais ne répond pas :"; pm2 logs periphhub-relay --lines 20 --nostream; exit 1; }
 echo "Relais lancé (pm2 : periphhub-relay, port $PORT)"
 
