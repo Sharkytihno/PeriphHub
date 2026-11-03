@@ -46,7 +46,8 @@ Ses protections :
    - copie le relais sur le VPS ;
    - demande le jeton (saisie invisible) et l'écrit dans `~/periphhub-relay/.env` (droits 600) ;
    - le lance avec pm2 (`periphhub-relay`, port 3011) ;
-   - ajoute `reverse_proxy /periphhub/* 127.0.0.1:3011` au bloc `sharkywedding.fr` du Caddyfile, après une sauvegarde
+   - ajoute un bloc `handle /periphhub/* { reverse_proxy 127.0.0.1:3011 }` (marqué `# periphhub-relay`) au bloc
+     `sharkywedding.fr` du Caddyfile — un `reverse_proxy` seul serait court-circuité par les `handle` du site —, après une sauvegarde
      `Caddyfile.bak-periphhub`, puis recharge Caddy. Si le fichier modifié n'est pas valide, la sauvegarde est remise.
    Le script peut être relancé sans risque : c'est aussi la méthode de mise à jour. `NEW_TOKEN=1` permet de changer le jeton.
 4. Vérifier : `curl -s https://sharkywedding.fr/periphhub/health` doit renvoyer `{"ok":true}`.

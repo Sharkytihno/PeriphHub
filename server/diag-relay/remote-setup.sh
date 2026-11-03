@@ -6,7 +6,6 @@ set -euo pipefail
 cd ~/periphhub-relay
 PORT=3011
 C=/etc/caddy/Caddyfile
-LINE="reverse_proxy /periphhub/* 127.0.0.1:$PORT"
 
 major=$(node -v | sed 's/^v\([0-9]*\).*/\1/')
 [ "$major" -ge 18 ] || { echo "Node $major : il faut Node 18 ou plus."; exit 1; }
@@ -33,18 +32,27 @@ for i in 1 2 3 4 5 6 7 8 9 10; do curl -fsS "http://127.0.0.1:$PORT/health" >/de
 curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null || { echo "Le relais ne répond pas :"; pm2 logs periphhub-relay --lines 20 --nostream; exit 1; }
 echo "Relais lancé (pm2 : periphhub-relay, port $PORT)"
 
-if sudo grep -qF "$LINE" "$C"; then
+
+# Bloc Caddy à part (handle) : passe avant les autres « handle » du site, qui renverraient sa page 404
+OLD="reverse_proxy /periphhub/* 127.0.0.1:$PORT"
+MARK="# periphhub-relay"
+if sudo grep -qF "$MARK" "$C"; then
   echo "Caddy déjà configuré"
 else
   sudo cp "$C" "$C.bak-periphhub"
-  # Ligne ajoutée juste après l'ouverture du bloc du site sharkywedding.fr (pas les sous-domaines)
-  sudo awk -v line="	$LINE" '
+  # Ancienne version de ce script : ligne seule, retirée
+  sudo grep -vF "$OLD" "$C.bak-periphhub" | sudo awk -v port="$PORT" -v mark="$MARK" '
     { print }
-    !done && /^[[:space:]]*(https?:\/\/)?(www\.)?sharkywedding\.fr([ ,:]|\{)/ && /\{[[:space:]]*$/ { print line; done = 1 }
-  ' "$C.bak-periphhub" | sudo tee "$C" >/dev/null
-  if ! sudo grep -qF "$LINE" "$C"; then
+    !done && /^[[:space:]]*(https?:\/\/)?(www\.)?sharkywedding\.fr([ ,:]|\{)/ && /\{[[:space:]]*$/ {
+      print "\thandle /periphhub/* { " mark
+      print "\t\treverse_proxy 127.0.0.1:" port
+      print "\t}"
+      done = 1
+    }
+  ' | sudo tee "$C" >/dev/null
+  if ! sudo grep -qF "$MARK" "$C"; then
     sudo cp "$C.bak-periphhub" "$C"
-    echo "Bloc sharkywedding.fr introuvable dans $C : rien modifié. Ajoutez à la main : $LINE"
+    echo "Bloc sharkywedding.fr introuvable dans $C : rien modifié."
     exit 1
   fi
   if sudo caddy validate --config "$C" --adapter caddyfile >/dev/null 2>&1; then
@@ -57,10 +65,14 @@ else
   fi
 fi
 
-sleep 1
-if curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null; then
+for i in 1 2 3 4 5; do curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null 2>&1 && break; sleep 1; done
+if curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null 2>&1; then
   echo "OK : https://sharkywedding.fr/periphhub/health répond"
 else
-  echo "Le relais tourne mais https://sharkywedding.fr/periphhub/health ne répond pas encore."
+  echo "Le relais tourne mais https://sharkywedding.fr/periphhub/health ne répond pas."
+  echo "Structure du bloc sharkywedding.fr (jetons masqués), à envoyer à Claude :"
+  sudo awk '/^[[:space:]]*(https?:\/\/)?(www\.)?sharkywedding\.fr([ ,:]|\{)/ { on = 1 } on { print } on && /^\}/ { exit }' "$C" \
+    | grep -nE '\{|\}|handle|route|rewrite|try_files|redir|file_server|root|reverse_proxy|error' \
+    | sed -E 's/[A-Za-z0-9_-]{16,}/***/g' | head -60
   exit 1
 fi
