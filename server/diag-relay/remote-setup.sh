@@ -33,37 +33,40 @@ curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null || { echo "Le relais ne ré
 echo "Relais lancé (pm2 : periphhub-relay, port $PORT)"
 
 
-# Bloc Caddy à part (handle) : passe avant les autres « handle » du site, qui renverraient sa page 404
+# Bloc Caddy à part (handle) dans le bloc principal sharkywedding.fr (pas celui de www, qui redirige) :
+# passe avant les autres « handle » du site. Le fichier est reconstruit à chaque fois : anciennes
+# insertions retirées (ligne seule des premières versions, bloc mal placé), puis bloc remis au bon endroit.
 OLD="reverse_proxy /periphhub/* 127.0.0.1:$PORT"
 MARK="# periphhub-relay"
-if sudo grep -qF "$MARK" "$C"; then
+TMP=$(mktemp)
+sudo cat "$C" | grep -vF "$OLD" | awk -v port="$PORT" -v mark="$MARK" '
+  index($0, mark) { skip = 2; next }
+  skip > 0 { skip--; next }
+  { print }
+  !done && /^[[:space:]]*(https?:\/\/)?sharkywedding\.fr([ ,:]|\{)/ && /\{[[:space:]]*$/ {
+    print "	handle /periphhub/* { " mark
+    print "		reverse_proxy 127.0.0.1:" port
+    print "	}"
+    done = 1
+  }
+' > "$TMP"
+if ! grep -qF "$MARK" "$TMP"; then
+  rm -f "$TMP"; echo "Bloc sharkywedding.fr introuvable dans $C : rien modifié."; exit 1
+fi
+if sudo cmp -s "$TMP" "$C"; then
   echo "Caddy déjà configuré"
 else
   sudo cp "$C" "$C.bak-periphhub"
-  # Ancienne version de ce script : ligne seule, retirée
-  sudo grep -vF "$OLD" "$C.bak-periphhub" | sudo awk -v port="$PORT" -v mark="$MARK" '
-    { print }
-    !done && /^[[:space:]]*(https?:\/\/)?(www\.)?sharkywedding\.fr([ ,:]|\{)/ && /\{[[:space:]]*$/ {
-      print "\thandle /periphhub/* { " mark
-      print "\t\treverse_proxy 127.0.0.1:" port
-      print "\t}"
-      done = 1
-    }
-  ' | sudo tee "$C" >/dev/null
-  if ! sudo grep -qF "$MARK" "$C"; then
-    sudo cp "$C.bak-periphhub" "$C"
-    echo "Bloc sharkywedding.fr introuvable dans $C : rien modifié."
-    exit 1
-  fi
+  sudo tee "$C" < "$TMP" >/dev/null
   if sudo caddy validate --config "$C" --adapter caddyfile >/dev/null 2>&1; then
     sudo systemctl reload caddy
     echo "Caddy rechargé (sauvegarde : $C.bak-periphhub)"
   else
     sudo cp "$C.bak-periphhub" "$C"
-    echo "Caddyfile invalide après ajout : restauré, rien n'a changé."
-    exit 1
+    rm -f "$TMP"; echo "Caddyfile invalide après modification : restauré, rien n'a changé."; exit 1
   fi
 fi
+rm -f "$TMP"
 
 for i in 1 2 3 4 5; do curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null 2>&1 && break; sleep 1; done
 if curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null 2>&1; then
@@ -71,7 +74,7 @@ if curl -fsS https://sharkywedding.fr/periphhub/health >/dev/null 2>&1; then
 else
   echo "Le relais tourne mais https://sharkywedding.fr/periphhub/health ne répond pas."
   echo "Structure du bloc sharkywedding.fr (jetons masqués), à envoyer à Claude :"
-  sudo awk '/^[[:space:]]*(https?:\/\/)?(www\.)?sharkywedding\.fr([ ,:]|\{)/ { on = 1 } on { print } on && /^\}/ { exit }' "$C" \
+  sudo awk '/^[[:space:]]*(https?:\/\/)?sharkywedding\.fr([ ,:]|\{)/ { on = 1 } on { print } on && /^\}/ { exit }' "$C" \
     | grep -nE '\{|\}|handle|route|rewrite|try_files|redir|file_server|root|reverse_proxy|error' \
     | sed -E 's/[A-Za-z0-9_-]{16,}/***/g' | head -60
   exit 1
