@@ -25,6 +25,10 @@ const OPENMOUSE_VIDS: &[u16] = &[
     0x3837, 0x3879, 0xA8A4, 0xA8A5,
 ];
 
+// Manettes PlayStation (ui/js/drivers/playstation.js) : DualShock 4 (v1, v2, adaptateur sans fil),
+// DualSense, DualSense Edge. Seulement la collection manette (page 0x01, usage 0x05).
+const PLAYSTATION: &[u16] = &[0x05C4, 0x09CC, 0x0BA0, 0x0CE6, 0x0DF2];
+
 // Clés de sécurité FIDO / U2F : jamais visibles, même chez un fabricant de la liste
 const FIDO_PAGE: u16 = 0xF1D0;
 
@@ -47,6 +51,7 @@ fn allowed_info(d: &hidapi::DeviceInfo) -> bool {
     allowed(d.vendor_id(), d.product_id())
         || (d.usage_page(), d.usage()) == VIA_USAGE
         || OPENMOUSE_VIDS.contains(&d.vendor_id())
+        || (d.vendor_id() == 0x054C && PLAYSTATION.contains(&d.product_id()) && (d.usage_page(), d.usage()) == (0x01, 0x05))
 }
 
 fn allowed(vid: u16, pid: u16) -> bool {

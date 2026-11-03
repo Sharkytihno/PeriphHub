@@ -33,7 +33,7 @@ const devId = dev => hex4(dev.vendorId) + ':' + hex4(dev.productId);
 const DEDICATED = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '1532:056E', '048D:5702']);
 
 const KIND_ICON_TAB = { souris: 'mouse', clavier: 'keyboard', casque: 'headset', rgb: 'rgb' };
-const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb: 'Éclairage', autre: 'Appareil' };
+const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb: 'Éclairage', micro: 'Micro', audio: 'Son', webcam: 'Webcam', manette: 'Manette', autre: 'Appareil' };
 
 // ---------- Connexion automatique ----------
 
@@ -140,7 +140,7 @@ async function driversScan() {
   }
 }
 
-function drvRelease(dev) {
+function drvRelease(dev, quiet = false) {
   for (const [key, inst] of drvLive) {
     if (inst.dev !== dev && !inst.devs?.includes(dev)) continue;
     drvLive.delete(key);
@@ -148,7 +148,7 @@ function drvRelease(dev) {
     document.querySelector(`nav [data-tab="${CSS.escape(key)}"]`)?.remove();
     $(key)?.remove();
     if (visible) showTab('home');
-    toast(`${inst.name} débranché`);
+    if (!quiet) toast(`${inst.name} débranché`);
   }
   drvBusy.delete(dev.info?.path);
   refreshHome();
@@ -169,10 +169,11 @@ function drvAdd(inst, drv) {
   document.querySelector('main').append(h('section', { class: 'page', id: inst.key, hidden: true },
     h('header', { class: 'phead' },
       h('div', { class: 'ptitle' }, h('h2', {}, inst.name), h('div', { class: 'muted small drvmeta' })),
-      h('div', { class: 'pact' }, h('span', { class: 'status drvstatus' }), h('span', { class: 'chip experimental', title: 'Pilote pas encore confirmé sur ce modèle précis' }, 'Expérimental'))),
+      h('div', { class: 'pact' }, h('span', { class: 'status drvstatus' }), inst.chip ? h('span', { class: 'chip supported', title: inst.chip.title }, inst.chip.text) : h('span', { class: 'chip experimental', title: 'Pilote pas encore confirmé sur ce modèle précis' }, 'Expérimental'))),
     h('div', { class: 'pbody drvbody' })));
   drvRender(inst);
   refreshHome();
+  if (!inst.chip) audioPoll(); // un casque HID peut accueillir ses réglages son Windows
 }
 
 function drvStatus(inst, text, kind = '') {
@@ -238,11 +239,12 @@ const SWATCHES = ['#ff2a2a', '#ff7a00', '#ffd400', '#2bff4f', '#00e5ff', '#2a5bf
 const LIGHT_LABEL = { off: 'Éteint', static: 'Fixe', spectrum: 'Cycle de couleurs', breathing: 'Respiration' };
 
 function drvRender(inst) {
+  if (inst.embed) return inst.embed(); // réglages intégrés à la page d'un autre appareil (son d'un casque HID)
   const sec = $(inst.key);
   if (!sec) return;
   const s = inst.state, c = inst.caps;
   sec.querySelector('.drvmeta').textContent = [
-    s.battery ? `Batterie ${s.battery.level} %${s.battery.charging ? ' (en charge)' : ''}` : null, inst.meta].filter(Boolean).join(' · ');
+    s.battery ? (s.battery.label || `Batterie ${s.battery.level} %${s.battery.charging ? ' (en charge)' : ''}`) : null, inst.meta].filter(Boolean).join(' · ');
   const box = sec.querySelector('.drvbody');
   const rows = [];
   if (c.dpi && s.dpi != null) {
@@ -274,10 +276,12 @@ function drvRender(inst) {
       c.light.brightness && l.brightness != null ? slider(0, 100, 1, l.brightness, ' %', v => drvSet(inst, 'Luminosité', 'light', { ...l, brightness: v })) : null));
   }
   if (inst.rows) rows.push(...inst.rows().filter(Boolean));
+  if (!inst.chip) rows.push(...audioEmbedRows(inst.dev));
   if (!rows.length) rows.push(h('p', { class: 'muted' }, 'Aucun réglage reconnu sur ce modèle pour l’instant. Ouvrez un ticket sur GitHub avec le rapport (page Allègement) : c’est comme ça que la prise en charge s’étend.'));
   const o = drvOrigin(inst);
   box.replaceChildren(...rows,
-    inst.note ? h('div', { class: 'notice' }, h('p', { class: 'muted small' }, inst.note)) : null,
+    // replaceChildren écrirait « null » en texte : pas d'élément vide ici
+    ...(inst.note ? [h('div', { class: 'notice' }, h('p', { class: 'muted small' }, inst.note))] : []),
     h('div', { class: 'field' }, h('div', { class: 'flabel' }, 'Sécurité'), h('div', { class: 'fctl' },
       h('div', { class: 'muted small' }, inst.source || ('Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
         'Les réglages d’origine sont gardés avant la première modification.')),
@@ -294,7 +298,7 @@ function driverTiles() {
     if (s.battery) stats.push(['Batterie', s.battery.level + ' %' + (s.battery.charging ? ' ⚡' : '')]);
     if (s.dpi) stats.push(['DPI', String(s.dpi)]);
     if (s.rate) stats.push(['Fréquence', s.rate + ' Hz']);
-    return tile(inst.key, inst.name, true, 'Connecté · expérimental', stats, s.battery ? meter(s.battery.level) : null);
+    return tile(inst.key, inst.name, true, inst.chip ? 'Connecté · ' + inst.chip.text : 'Connecté · expérimental', stats, s.battery ? meter(s.battery.level) : null);
   });
 }
 
@@ -313,4 +317,5 @@ function driversStart() {
   driversScan();
   if (typeof headsetsPoll === 'function') headsetsPoll();
   if (typeof openrgbPoll === 'function') openrgbPoll();
+  if (typeof mediaPoll === 'function') mediaPoll();
 }

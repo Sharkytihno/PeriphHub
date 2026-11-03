@@ -269,3 +269,92 @@ test('Corsair Bragi : DPI ignoré (mémoire intégrée) → erreur claire', asyn
   const [inst] = await drivers[0].connect(dev);
   await assert.rejects(inst.set('dpi', 1600), /pas pris/);
 });
+
+// ---------- Manettes PlayStation ----------
+import { PsSim } from './sim/playstation.mjs';
+
+for (const bt of [false, true]) {
+  test(`DualSense ${bt ? 'Bluetooth (CRC32, séquence)' : 'USB'} : batterie, mise en place puis couleur, voyants joueur`, async () => {
+    const { drivers } = loadDrivers('playstation.js');
+    const dev = new PsSim({ bt, status: 0x17 }); // en charge, palier 7
+    const ps = drivers.find(d => d.id === 'playstation');
+    assert.ok(ps.match(dev));
+    const [inst] = await ps.connect(dev, [dev]);
+    assert.equal(inst.name, 'Sony DualSense');
+    eq(inst.state.battery, { level: 75, charging: true });
+    assert.equal(dev.opened, false, 'la manette doit être refermée après lecture');
+    await inst.set('light', { effect: 'static', color: '#ff8000', brightness: 50 });
+    assert.equal(dev.setup, 1);
+    eq([...dev.light], [128, 64, 0]);
+    await inst.set('players', 0x15);
+    assert.equal(dev.players, 0x15);
+    eq([...dev.light], [128, 64, 0]); // la couleur est renvoyée avec les voyants
+    assert.equal(dev.setup, 1, 'la mise en place ne se fait qu’une fois');
+    await inst.set('light', { effect: 'off', color: '#ff8000', brightness: 50 });
+    eq([...dev.light], [0, 0, 0]);
+    assert.equal(dev.opened, false);
+  });
+}
+
+test('DualSense pleine (état 0x2_) puis erreur de charge : pas de faux pourcentage', async () => {
+  const { drivers } = loadDrivers('playstation.js');
+  const dev = new PsSim({ status: 0x20 });
+  const [inst] = await drivers[0].connect(dev, [dev]);
+  eq(inst.state.battery, { level: 100, charging: false, label: 'Batterie pleine' });
+  dev.o.status = 0xF0;
+  await inst.refreshBattery();
+  assert.equal(inst.state.battery, undefined);
+});
+
+for (const bt of [false, true]) {
+  test(`DualShock 4 ${bt ? 'Bluetooth' : 'USB'} : batterie, couleur, clignotement`, async () => {
+    const { drivers } = loadDrivers('playstation.js');
+    const dev = new PsSim({ pid: 0x09CC, bt, status: 0x04 }); // sur batterie, palier 4
+    const [inst] = await drivers[0].connect(dev, [dev]);
+    eq(inst.state.battery, { level: 45, charging: false });
+    await inst.set('light', { effect: 'static', color: '#00ff00', brightness: 100 });
+    eq([...dev.light], [0, 255, 0]);
+    eq(dev.blink, [0, 0]);
+    await inst.set('light', { effect: 'blink', color: '#00ff00', brightness: 100 });
+    eq(dev.blink, [50, 50]);
+  });
+}
+
+test('Adaptateur sans fil DualShock 4 sans manette : signalé, pas de batterie', async () => {
+  const { drivers } = loadDrivers('playstation.js');
+  const dev = new PsSim({ pid: 0x0BA0, status: 0x00, status1: 0x04 });
+  const [inst] = await drivers[0].connect(dev, [dev]);
+  assert.equal(inst.off, true);
+  assert.match(inst.meta, /Aucune manette/);
+  assert.equal(inst.state.battery, undefined);
+});
+
+test('Sony : autre appareil (télécommande, page HID non manette) refusé', () => {
+  const { drivers } = loadDrivers('playstation.js');
+  assert.equal(drivers[0].match({ vendorId: 0x054C, productId: 0x0306, collections: [{ usagePage: 1, usage: 5 }] }), false);
+  assert.equal(drivers[0].match({ vendorId: 0x054C, productId: 0x0CE6, collections: [{ usagePage: 0xFF00, usage: 1 }] }), false);
+});
+
+// ---------- Son Windows : regroupement par appareil ----------
+test('Son : points de terminaison regroupés par appareil (USB, carte mère, écrans HDMI)', () => {
+  const { ctx } = loadDrivers('media.js');
+  // Relevé réel (PC de développement) : Realtek, casque Razer USB (sortie + micro), deux écrans HDMI
+  const list = [
+    { id: 'a', flow: 'render', adapter: 'Realtek(R) Audio', form: 1, vid: null, name: 'Haut-parleurs (Realtek(R) Audio)' },
+    { id: 'b', flow: 'render', adapter: 'Razer BlackShark V2 HS 2.4', form: 1, vid: 0x1532, pid: 0x0565 },
+    { id: 'c', flow: 'render', adapter: '2- AMD High Definition Audio Device', form: 9, vid: null, name: '4 - VG249QM1A' },
+    { id: 'd', flow: 'render', adapter: '2- AMD High Definition Audio Device', form: 9, vid: null, name: '2 - GO27Q24G' },
+    { id: 'e', flow: 'capture', adapter: 'Razer BlackShark V2 HS 2.4', form: 4, vid: 0x1532, pid: 0x0565 },
+    { id: 'f', flow: 'capture', adapter: 'HyperX QuadCast S', form: 4, vid: 0x0951, pid: 0x171F },
+    { id: 'g', flow: 'render', adapter: 'HyperX QuadCast S', form: 1, vid: 0x0951, pid: 0x171F }, // prise casque du micro
+  ];
+  const g = JSON.parse(JSON.stringify(ctx.audioGroups(list)));
+  const by = Object.fromEntries(g.map(x => [x.name, x]));
+  assert.equal(g.length, 4);
+  eq(by['HyperX QuadCast S'].eps.map(e => e.id), ['g', 'f']);
+  eq(by['Razer BlackShark V2 HS 2.4'].eps.map(e => e.id), ['b', 'e']);
+  assert.equal(by['Razer BlackShark V2 HS 2.4'].kind, 'casque'); // sortie + micro USB : casque, sauf nom de micro connu
+  assert.equal(by['HyperX QuadCast S'].kind, 'micro');
+  assert.equal(by['Realtek(R) Audio'].kind, 'audio');
+  eq(by['Son des écrans (AMD)'].eps.map(e => e.id), ['c', 'd']);
+});

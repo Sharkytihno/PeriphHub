@@ -196,6 +196,11 @@ t = rd(os.path.join(REPO, "ui", "js", "drivers", "corsair.js"))
 for pid, name in re.findall(r"0x([0-9A-F]{4}): \['([^']+)'", t):
     add("1B1C", pid, name, "souris", "ckb-next", "corsair", "experimental")
 
+# ---- Manettes PlayStation : barre lumineuse, voyants, batterie par ui/js/drivers/playstation.js ----
+t = rd(os.path.join(REPO, "ui", "js", "drivers", "playstation.js"))
+for pid, name in re.findall(r"0x([0-9A-F]{4}): \['([^']+)'", t):
+    add("054C", pid, "Sony " + name, "manette", "linux-hid-playstation", "playstation", "experimental")
+
 # ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro, Keychron HE ----
 kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
 t = rd(os.path.join(kbv, "wooting", "index.js"))

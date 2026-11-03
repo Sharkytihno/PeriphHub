@@ -1,11 +1,14 @@
 // PeriphHub — un seul logiciel léger pour tous vos périphériques.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod audio;
+mod camera;
 mod devices;
 mod feedback;
 mod headset;
 mod hid;
 mod openrgb;
+mod pads;
 mod procs;
 mod scan;
 mod sign;
@@ -73,6 +76,44 @@ async fn headset_list(app: tauri::AppHandle) -> Result<Value, String> {
 #[tauri::command]
 async fn headset_set(app: tauri::AppHandle, vid: u16, pid: u16, setting: String, value: Value) -> Result<Value, String> {
     blocking(move || headset::set(&app, vid, pid, &setting, &value)).await
+}
+
+// Son (micros, cartes son, DAC, sorties) par les API audio de Windows
+#[tauri::command]
+async fn audio_list() -> Result<Value, String> {
+    blocking(audio::list).await
+}
+
+#[tauri::command]
+async fn audio_set(id: String, what: String, value: Value) -> Result<(), String> {
+    blocking(move || audio::set(&id, &what, &value)).await
+}
+
+#[tauri::command]
+async fn audio_formats(id: String) -> Result<Value, String> {
+    blocking(move || audio::formats(&id)).await
+}
+
+// Webcams : réglages vidéo standard (UVC) annoncés par chaque caméra
+#[tauri::command]
+async fn camera_list() -> Result<Value, String> {
+    blocking(camera::list).await
+}
+
+#[tauri::command]
+async fn camera_set(path: String, control: String, value: i32, auto: bool) -> Result<(), String> {
+    blocking(move || camera::set(&path, &control, value, auto)).await
+}
+
+// Manettes Xbox et compatibles XInput
+#[tauri::command]
+async fn pads_list() -> Result<Value, String> {
+    blocking(|| Ok(pads::list())).await
+}
+
+#[tauri::command]
+async fn pads_rumble(slot: u32, strength: u8) -> Result<(), String> {
+    blocking(move || pads::rumble(slot, strength)).await
 }
 
 // Éclairage via OpenRGB (serveur SDK local, s'il est lancé)
@@ -162,6 +203,13 @@ fn main() {
             headset_list,
             headset_set,
             openrgb_list,
+            audio_list,
+            audio_set,
+            audio_formats,
+            camera_list,
+            camera_set,
+            pads_list,
+            pads_rumble,
             openrgb_color,
             thx_state,
             thx_set,

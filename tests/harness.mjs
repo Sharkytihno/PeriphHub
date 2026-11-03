@@ -11,7 +11,7 @@ export const REPO = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export function loadDrivers(...files) {
   const drivers = [];
   const ctx = vm.createContext({
-    console, setTimeout, clearTimeout, Promise, Uint8Array, DataView, ArrayBuffer, Map, Set, Math, JSON, Error, Number, String, Object, Array,
+    console, setTimeout, clearTimeout, setInterval: () => 0, LOCALE: 'fr-FR', NATIVE: false, Promise, Uint8Array, DataView, ArrayBuffer, Map, Set, Math, JSON, Error, Number, String, Object, Array,
     registerDriver: d => drivers.push(d),
     hex4: n => n.toString(16).toUpperCase().padStart(4, '0'),
     devId: dev => [dev.vendorId, dev.productId].map(n => n.toString(16).toUpperCase().padStart(4, '0')).join(':'),

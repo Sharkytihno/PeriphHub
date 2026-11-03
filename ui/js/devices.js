@@ -1086,6 +1086,7 @@ function renderHeadset() {
     h('h3', { class: 'sect' }, 'Micro'), ...mic,
     h('h3', { class: 'sect' }, 'Casque'),
     field('Arrêt automatique', segmented(RAZER_AUTO_OFF, s.autoOff, v => hsApply('Arrêt automatique', () => hs.setAutoOff(v)))),
+    ...audioEmbedRows(hs.dev),
   );
 }
 
@@ -1103,6 +1104,7 @@ async function connectHeadset(dev) {
     $('hsConnect').hidden = true;
     setStatus('hsStatus', 'Connecté', 'ok');
     renderHeadset();
+    audioPoll(); // réglages son Windows du même casque, intégrés à cette page
   } catch (e) {
     console.error('[PeriphHub]', e);
     setStatus('hsStatus', 'Erreur : ' + e.message, 'err');
@@ -1247,6 +1249,7 @@ navigator.hid?.addEventListener('disconnect', e => {
     $('hsConnect').hidden = false;
     setStatus('hsStatus', 'Dongle débranché');
     renderHeadset();
+    audioPoll();
   }
 });
 autoConnect();

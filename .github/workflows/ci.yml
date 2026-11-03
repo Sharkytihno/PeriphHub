@@ -30,3 +30,6 @@ jobs:
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
+      - name: Tests Rust (Core Audio, DirectShow, garde-fous)
+        working-directory: src-tauri
+        run: cargo test

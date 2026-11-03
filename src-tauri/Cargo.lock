@@ -2326,6 +2326,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-updater",
+ "windows",
  "windows-sys 0.61.2",
  "winreg",
 ]

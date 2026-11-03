@@ -18,6 +18,21 @@ hidapi = { version = "2", default-features = false, features = ["windows-native"
 libloading = "0.8"
 sha2 = "0.10"
 winreg = "0.56"
+# Son, webcams et manettes : API Windows (COM). Même version que celle qu'embarque déjà Tauri.
+windows = { version = "0.62", features = [
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Media_DirectShow",
+  "Win32_Media_KernelStreaming",
+  "Win32_Media_MediaFoundation",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_UI_Input_XboxController",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Console",
