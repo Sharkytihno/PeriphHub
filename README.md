@@ -115,7 +115,9 @@ Les données sont dans de simples fichiers JSON :
 - **Flasher un firmware.** Les mises à jour passent par les outils officiels des fabricants.
 - **Toucher aux anti-triche** (Vanguard, FACEIT, EasyAntiCheat…) ni installer de pilote noyau non signé.
 - **Envoyer des données** sans action explicite de votre part (la vérification des mises à jour ne
-  fait que lire un fichier public sur GitHub, et se désactive dans les Options).
+  fait que lire un fichier public sur GitHub, et se désactive dans les Options). Le diagnostic d'un
+  appareil qui ne se connecte pas ne part que sur clic, ou si vous avez accepté l'envoi automatique
+  (voir [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)).
 
 ## Compiler
 

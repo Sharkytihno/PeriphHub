@@ -107,6 +107,8 @@ async function rescan() {
 
 // Appareils qui ont des réglages (le reste : hubs, puces internes, webcams…)
 const interesting = d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb'].includes(d.kind);
+// Détectés mais sans page dans PeriphHub
+var undetected = () => (report?.devices || []).filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown') && !driverHas(d.vid, d.pid));
 
 // ---------- Accueil ----------
 
@@ -204,7 +206,7 @@ function deviceTool(d) {
 }
 
 function deviceHintText(d) {
-  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Signaler » envoie le diagnostic pour qu’on corrige.';
+  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Copier le diagnostic », puis envoyez-le pour qu’on corrige.';
   if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB (lancé avec le serveur SDK). Ses autres réglages restent dans son logiciel d’origine.';
   if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
   return 'Son logiciel d’origine reste nécessaire pour le régler.';
@@ -212,7 +214,7 @@ function deviceHintText(d) {
 
 function otherDevices() {
   if (!report) return null;
-  const others = report.devices.filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown') && !driverHas(d.vid, d.pid));
+  const others = undetected();
   if (!others.length) return null;
   return h('section', { class: 'block' },
     h('div', { class: 'bhead' }, h('h3', {}, 'Autres appareils détectés'),
@@ -222,11 +224,19 @@ function otherDevices() {
       h('div', { class: 'dmain' },
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
         h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', d.kind, `USB ${d.vid}:${d.pid}`].join(' · ')),
-        ...deviceHint(d)),
+        ...deviceHint(d),
+        drvReason(d)),
       h('div', { class: 'dside' },
         h('span', { class: 'chip ' + d.status }, STATUS[d.status] || d.status),
-        NATIVE ? h('button', { class: 'mini ghost', title: 'Ouvre un ticket GitHub prérempli avec le diagnostic de cet appareil',
-          onclick: () => reportDevice(d.product || `Appareil ${d.vid}:${d.pid}`, d.vid, d.pid) }, 'Signaler') : null)))));
+        NATIVE ? h('button', { class: 'mini ghost', title: 'Copie le diagnostic de cet appareil, à coller dans un message (Discord…)',
+          onclick: () => copyDiag((d.vid + ':' + d.pid).toUpperCase()) }, 'Copier le diagnostic') : null)))));
+}
+
+// Pourquoi aucun pilote ne l'a pris : affiché tel quel, pour qu'on puisse le recopier même sans le diagnostic
+function drvReason(d) {
+  const errs = drvErrors.get((d.vid + ':' + d.pid).toUpperCase());
+  if (!NATIVE || !errs?.length) return null;
+  return h('div', { class: 'muted small' }, 'Dernier essai : ' + errs[errs.length - 1]);
 }
 
 function refreshHome() {
@@ -264,9 +274,15 @@ function refreshHome() {
           : otherDevices() ? 'Aucun de vos appareils n’est encore réglable directement ici. Ceux que PeriphHub a détectés sont listés juste en dessous, avec ce qu’il est possible d’en faire.'
           : 'Aucun appareil pris en charge n’est branché. Les appareils reconnus apparaissent ici tout seuls.')),
     otherDevices(),
+    diagAsk(),
     NATIVE && report ? h('div', { class: 'notice' },
-      h('p', { class: 'muted small' }, 'Un appareil manque ou ne marche pas ? Ce bouton ouvre un ticket GitHub prérempli avec le diagnostic de votre PC (liste des appareils USB, sans numéro de série) : vous le relisez avant de le publier.'),
-      h('button', { class: 'ghost', onclick: reportProblem }, 'Signaler un problème')) : null].filter(Boolean));
+      h('p', { class: 'muted small' }, 'Un appareil manque ou ne marche pas ? Envoyez le diagnostic au développeur de PeriphHub, sans compte : '
+        + 'il contient la liste des appareils USB et ce que PeriphHub a essayé, sans numéro de série ni information personnelle. '
+        + 'Vous pouvez aussi le copier pour l’envoyer vous-même (Discord, mail…).'),
+      h('div', { class: 'row-inline' },
+        h('button', { disabled: diagBusy, onclick: () => sendDiag(false) }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic'),
+        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier le diagnostic'),
+        h('button', { class: 'ghost', onclick: reportProblem }, 'Ouvrir un ticket GitHub'))) : null].filter(Boolean));
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment
@@ -512,21 +528,10 @@ function renderSlim() {
 $('copyReport').onclick = async () => {
   if (!report) return;
   try {
-    // Diagnostic des pilotes (échecs, interfaces de chaque appareil) en tête : c'est lui qui dit
-    // pourquoi un appareil détecté n'a pas de page
     let diag = '';
-    try {
-      const ids = [...new Set((report.devices || []).map(d => d.vid + ':' + d.pid))];
-      const per = [];
-      for (const id of ids) {
-        const [vid, pid] = id.split(':');
-        const d = await deviceDiag(vid, pid);
-        if (/Interface |Échec |Pilote connecté/.test(d)) per.push(d.split('\n').filter(l => !/^PeriphHub /.test(l)).join('\n'));
-      }
-      diag = await globalDiag() + '\n\n' + per.join('\n\n') + '\n\n';
-    } catch (e) { diag = 'Diagnostic indisponible : ' + (e.message || e) + '\n\n'; }
+    try { diag = await fullDiag() + '\n\n'; } catch (e) { diag = 'Diagnostic indisponible : ' + (e.message || e) + '\n\n'; }
     await navigator.clipboard.writeText(diag + JSON.stringify(report, null, 2));
-    toast('Rapport copié : collez-le dans un ticket GitHub');
+    toast('Rapport copié : collez-le dans un message (Discord…) ou un ticket GitHub');
   } catch {
     toast('Copie impossible', 'err');
   }
@@ -562,6 +567,15 @@ function renderOptions() {
       }),
       h('div', { class: 'muted small' }, 'Par défaut, seuls les casques, micros, DAC et enceintes USB ou Bluetooth ont un onglet. '
         + '« Tout afficher » ajoute le son de la carte mère, des écrans (HDMI) et les pilotes audio virtuels.')) : null,
+    NATIVE ? field('Diagnostics',
+      segmented([{ v: 'on', label: 'Envoi automatique' }, { v: 'off', label: 'Jamais' }], diagAuto() === 'on' ? 'on' : 'off', v => {
+        try { localStorage.setItem('diagAuto', v); } catch {}
+        renderOptions();
+        if (v === 'on') diagMaybeAuto();
+      }),
+      h('div', { class: 'muted small' }, 'Quand un appareil détecté ne se connecte pas, PeriphHub peut envoyer tout seul son diagnostic au développeur pour qu’il corrige : '
+        + 'liste des appareils USB et essais des pilotes, sans numéro de série, nom d’utilisateur ni fichier. Une seule fois par problème. '
+        + 'Il arrive dans un dépôt GitHub privé.')) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),
@@ -570,6 +584,80 @@ function renderOptions() {
       h('div', { class: 'muted small' }, 'Code source, appareils pris en charge et signalements : github.com/Sharkytihno/PeriphHub'),
       h('div', { class: 'muted small' }, 'Protocoles réimplémentés à partir de projets libres (OpenRazer, OpenRGB, VIA…) et de l’observation des appareils. ' +
         'PeriphHub n’écrit jamais de firmware.')));
+}
+
+// ---------- Envoi du diagnostic (sans compte) ----------
+// Relais du projet (server/diag-relay) : il en fait un ticket dans un dépôt GitHub privé.
+// Rien ne part sans action de l'utilisateur : un clic sur « Envoyer », ou l'envoi automatique
+// qu'il a accepté (Options → Diagnostics, ou la question posée sur l'accueil).
+var DIAG_URL = 'https://sharkywedding.fr/periphhub/diag';
+var diagBusy = false; // var : refreshHome peut tourner avant cette ligne
+function diagAuto() { try { return localStorage.getItem('diagAuto'); } catch { return null; } }
+var diagKinds = d => ['souris', 'clavier', 'casque', 'manette'].includes(d.kind);
+var diagMissing = () => undetected().filter(diagKinds);
+var diagName = d => d.product || d.catalog_name || d.vid + ':' + d.pid;
+// Empreinte du problème : même version et mêmes appareils en échec → pas de second envoi automatique
+var diagSignature = list => (report?.version || '') + '|' + list.map(d => d.vid + ':' + d.pid).sort().join(',');
+
+async function sendDiag(auto) {
+  if (!NATIVE || diagBusy) return false;
+  diagBusy = true;
+  if (!auto) refreshHome();
+  try {
+    const missing = diagMissing();
+    const r = await fetch(DIAG_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // requête « simple » : pas de vérification CORS préalable
+      body: JSON.stringify({ version: report?.version || '', text: await fullDiag(), summary: missing.map(diagName).slice(0, 4).join(', '), auto }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    try { localStorage.setItem('diagSent', diagSignature(missing)); } catch {}
+    toast(auto ? 'Diagnostic envoyé automatiquement au développeur de PeriphHub' : 'Diagnostic envoyé, merci ! Le développeur va s’en servir pour corriger.', 'ok');
+    return true;
+  } catch (e) {
+    if (!auto) toast('Envoi impossible (' + (e.message || e) + ') : utilisez « Copier le diagnostic » et envoyez-le vous-même.', 'err');
+    else console.warn('[PeriphHub] envoi automatique du diagnostic', e.message || e);
+    return false;
+  } finally {
+    diagBusy = false;
+    refreshHome();
+  }
+}
+
+// Envoi automatique accepté : une fois par problème, quand les pilotes ont eu le temps d'essayer
+// (souris sans fil en veille…) — au plus tôt 2 minutes après le lancement
+var diagStart = Date.now();
+function diagMaybeAuto() {
+  if (diagAuto() !== 'on' || !report || Date.now() - diagStart < 120000) return;
+  const missing = diagMissing();
+  if (!missing.length) return;
+  let sent = null;
+  try { sent = localStorage.getItem('diagSent'); } catch {}
+  if (sent === diagSignature(missing)) return;
+  sendDiag(true);
+}
+if (NATIVE) setInterval(() => { if (!document.hidden) diagMaybeAuto(); }, 30000);
+
+// Question posée une fois, sur l'accueil, quand une souris, un clavier, un casque ou une manette
+// détecté n'a pas pu être connecté (après 1 minute, le temps que les pilotes essaient)
+function diagAsk() {
+  if (!NATIVE || !report || diagAuto() || Date.now() - diagStart < 60000) return null;
+  const missing = diagMissing();
+  if (!missing.length) return null;
+  const choose = v => {
+    try { localStorage.setItem('diagAuto', v); } catch {}
+    if (v === 'on') sendDiag(true);
+    else refreshHome();
+  };
+  return h('div', { class: 'notice' },
+    h('p', {}, h('strong', {}, 'PeriphHub n’a pas réussi à se connecter à : ' + missing.map(diagName).join(', ') + '.')),
+    h('p', { class: 'muted small' }, 'Envoyer le diagnostic au développeur pour qu’il corrige ? Il contient la liste des appareils USB et ce que PeriphHub a essayé, '
+      + 'sans numéro de série ni information personnelle. Modifiable ensuite dans les Options.'),
+    h('div', { class: 'row-inline' },
+      h('button', { onclick: () => choose('on') }, 'Oui, envoyer (et à l’avenir aussi)'),
+      h('button', { class: 'ghost', onclick: () => { try { localStorage.setItem('diagAuto', 'off'); } catch {} sendDiag(false); } }, 'Envoyer juste cette fois'),
+      h('button', { class: 'ghost', onclick: () => choose('off') }, 'Non merci')));
 }
 
 // ---------- Démarrage ----------

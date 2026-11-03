@@ -84,6 +84,7 @@ const nativeHid = {
   known: new Map(), // chemin → NativeHIDDevice (même objet d'un appel à l'autre)
   events: new EventTarget(),
   blocked: false,    // un périphérique ne répond pas à Windows : la liste ne peut pas être lue
+  log: [],           // derniers avertissements et erreurs (diagnostic)
 };
 
 if (NATIVE) {
@@ -94,6 +95,13 @@ if (NATIVE) {
       orig(...a);
       const text = a.map(x => x instanceof Error ? x.stack || x.message : typeof x === 'string' ? x : JSON.stringify(x)).join(' ');
       nativeInvoke('ui_log', { level, text }).catch(() => {});
+      // Journal gardé pour « Copier le diagnostic » : avertissements et erreurs seulement,
+      // sans chemins de périphériques (ils peuvent contenir un numéro de série)
+      if (level !== 'log') {
+        const t = new Date().toTimeString().slice(0, 8);
+        nativeHid.log.push(`${t} ${level === 'error' ? 'ERREUR ' : ''}${text.replace(/\\\\\?\\[^\s'"]+/gi, '<chemin>').slice(0, 300)}`);
+        if (nativeHid.log.length > 60) nativeHid.log.shift();
+      }
     };
   }
   window.addEventListener('error', e => console.error('[page]', e.message, e.filename + ':' + e.lineno));

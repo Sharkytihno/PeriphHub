@@ -86,6 +86,34 @@ async function globalDiag() {
   return lines.join('\n');
 }
 
+// Diagnostic complet, à coller tel quel dans Discord (ou n'importe quelle messagerie) :
+// pas besoin de compte GitHub. Sans numéro de série ni chemin de périphérique.
+async function fullDiag(onlyId) {
+  const parts = [];
+  if (!onlyId) parts.push(await globalDiag());
+  const ids = onlyId ? [onlyId] : [...new Set((report?.devices || [])
+    .filter(d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb'].includes(d.kind))
+    .map(d => d.vid + ':' + d.pid))];
+  for (const id of ids) {
+    const [vid, pid] = id.split(':');
+    parts.push((await deviceDiag(vid, pid)).split('\n').filter((l, i) => !(i === 1 && /^PeriphHub /.test(l))).join('\n'));
+  }
+  const log = (typeof nativeHid !== 'undefined' ? nativeHid.log : [])
+    .filter(l => !onlyId || l.includes(onlyId) || /OpenMouse|HID\+\+|Logitech/i.test(l)).slice(-25);
+  if (log.length) parts.push('Journal :\n' + log.join('\n'));
+  if (onlyId) parts.unshift(`PeriphHub ${report?.version || '?'}`);
+  return '```\n' + parts.join('\n\n').replace(/```/g, "'''") + '\n```';
+}
+
+async function copyDiag(onlyId) {
+  try {
+    await navigator.clipboard.writeText(await fullDiag(onlyId));
+    toast('Diagnostic copié : collez-le dans un message Discord (Ctrl+V) et envoyez-le.', 'ok');
+  } catch (e) {
+    toast('Copie impossible : ' + (e.message || e), 'err');
+  }
+}
+
 async function reportProblem() {
   try {
     await nativeInvoke('report_device', { model: 'Appareil manquant ou qui ne marche pas', version: report?.version || '', report: await globalDiag() });
@@ -121,21 +149,28 @@ async function driversScan() {
       if (group.some(d => drvBusy.has(d.info?.path))) continue;
       const retry = drvRetry.get(id);
       if (retry && Date.now() < retry.at) continue;
-      const candidates = order.filter(x => group.some(x.match));
-      if (!candidates.length) continue;
+      const candidates = order.filter(x => { try { return group.some(x.match); } catch { return false; } });
+      if (!candidates.length) {
+        // Rien ne correspond : on le note quand même, sinon le diagnostic reste muet
+        if (!drvErrors.has(id)) drvErrors.set(id, ['aucun pilote ne correspond à ses interfaces']);
+        continue;
+      }
       group.forEach(d => drvBusy.add(d.info?.path));
       drvErrors.delete(id);
       let ok = false, waiting = false;
       for (const drv of candidates) {
+        const t0 = Date.now();
         try {
-          const list = await drv.connect(group.find(drv.match), group);
+          const list = await drv.connect(group.find(drv.match), group).catch(e => {
+            throw Object.assign(e instanceof Error ? e : new Error(String(e)), { ms: Date.now() - t0 });
+          });
           if (!list?.length) throw new Error('aucune réponse');
           for (const inst of list) drvAdd(inst, drv);
           ok = true;
           break;
         } catch (e) {
           console.warn('[PeriphHub] pilote', drv.id, devId(group[0]), e.message);
-          drvErrors.set(id, [...(drvErrors.get(id) || []), `${drv.id} : ${e.message}`].slice(-8));
+          drvErrors.set(id, [...(drvErrors.get(id) || []), `${drv.id} : ${e.message}${e.ms != null ? ` (${(e.ms / 1000).toFixed(1)} s)` : ''}`].slice(-8));
           // Le pilote garde l'appareil ouvert et attend qu'il se réveille (souris sans fil en veille
           // derrière son récepteur) : ne rien essayer d'autre, il s'ajoutera lui-même
           if (e.waiting) { waiting = true; break; }
@@ -299,7 +334,7 @@ function drvRender(inst) {
       h('div', { class: 'muted small' }, inst.source || ('Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
         'Les réglages d’origine sont gardés avant la première modification.')),
       o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString(LOCALE)}`) : null,
-      NATIVE && inst.dev ? h('button', { class: 'ghost', onclick: () => reportDevice(inst.name, hex4(inst.dev.vendorId), hex4(inst.dev.productId)) }, 'Signaler si ça marche ou pas') : null)));
+      NATIVE && inst.dev ? h('button', { class: 'ghost', title: 'À coller dans un message (Discord…) pour dire si ça marche ou pas', onclick: () => copyDiag(devId(inst.dev)) }, 'Copier le diagnostic') : null)));
 }
 
 // ---------- Accueil ----------

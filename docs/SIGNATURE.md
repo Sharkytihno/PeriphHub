@@ -13,7 +13,9 @@ compilation publique de GitHub Actions.
   signés : `periphhub.exe`, puis l'installeur `PeriphHub_<version>_x64-setup.exe` qui le contient.
 - Rôles : auteur, relecteur et approbateur des signatures : [@Sharkytihno](https://github.com/Sharkytihno).
   Chaque demande de signature est approuvée à la main sur SignPath.
-- Confidentialité : PeriphHub ne transmet aucune donnée sur Internet. Il n'a ni télémétrie ni compte.
+- Confidentialité : PeriphHub n'a ni télémétrie ni compte. Il ne transmet rien sans l'accord de
+  l'utilisateur : seul le diagnostic d'un appareil qui ne se connecte pas peut être envoyé, sur clic ou
+  après acceptation de l'envoi automatique (voir [DIAGNOSTICS.md](DIAGNOSTICS.md)).
   La version GitHub lit au lancement un fichier public de la dernière release (`latest.json`) pour
   proposer les mises à jour ; désactivable dans les Options (voir [MISES-A-JOUR.md](MISES-A-JOUR.md)).
 
