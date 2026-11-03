@@ -76,5 +76,13 @@
     "kind": "souris",
     "status": "planned",
     "plugin": ""
+  },
+  {
+    "vid": "10F5",
+    "pid": "5001",
+    "name": "Turtle Beach Vulcan II TKL Pro",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "turtle-vulcan"
   }
 ]

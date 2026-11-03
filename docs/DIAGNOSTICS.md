@@ -58,3 +58,24 @@ Ses protections :
 gh issue list --repo Sharkytihno/periphhub-diagnostics --label diagnostic
 gh issue view <numéro> --repo Sharkytihno/periphhub-diagnostics
 ```
+
+### Ce qu'un diagnostic contient (pour corriger du premier coup)
+
+Un appareil peut être piloté par plusieurs voies, essayées en parallèle ; le diagnostic dit où chacune a échoué :
+
+| Voie | Pour quoi | Ligne du diagnostic |
+|---|---|---|
+| Pilotes intégrés (`ui/js/drivers/*.js`) | souris, claviers, casques connus, chacun ouvert seul | `connecté (pilote)` ou `échec …` |
+| OpenMouse | souris à protocole reconnu par leur descripteur | `connecté (openmouse-…)` |
+| HeadsetControl | casques pas encore intégrés | `Module casques : …` |
+| OpenRGB (serveur SDK) | éclairage des appareils sans pilote intégré | `OpenRGB : non installé / installé, fermé / ouvert SANS serveur SDK / N appareils` |
+| Windows (audio, caméras) | réglages exposés par Windows | onglets Son et Caméra |
+
+- `Interfaces HID vues par Windows` : chaque interface et son sort (`bloquée`, `refusée`, `descripteur N octets`).
+  Les interfaces **bloquées d'autres appareils** sont listées aussi, avec leur nom : c'est souvent elles qui figent
+  HeadsetControl ou OpenRGB.
+- Par appareil : rapports d'entrée / sortie / feature avec **leur taille** (`0x11(283o)`), et pour un appareil sans
+  pilote, le **descripteur brut** de ses interfaces constructeur (page ≥ 0xFF00) : de quoi écrire un pilote sans le
+  matériel, en recoupant avec OpenRGB / HeadsetControl / libratbag.
+- `Logiciels constructeurs ouverts` : un logiciel d'origine ouvert peut réimposer ses réglages ou garder l'appareil.
+- `Langue` du système.

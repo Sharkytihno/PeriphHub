@@ -204,6 +204,7 @@ pub struct HidProbe {
     interface: i32,
     usage_page: u16,
     usage: u16,
+    product: String,
     state: String,
 }
 
@@ -229,7 +230,7 @@ pub async fn hid_probe(app: AppHandle) -> Result<Vec<HidProbe>, String> {
                         None => "pas encore lue".to_string(),
                     }
                 };
-                HidProbe { vid: d.vid, pid: d.pid, interface: d.interface, usage_page: d.usage_page, usage: d.usage, state }
+                HidProbe { vid: d.vid, pid: d.pid, interface: d.interface, usage_page: d.usage_page, usage: d.usage, product: d.product.clone(), state }
             })
             .collect();
         out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));

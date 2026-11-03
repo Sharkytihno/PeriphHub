@@ -15,7 +15,8 @@ empreinte SHA-256 (`81acae4c…ff0fa5`), à la compilation comme à chaque lance
 |---|---|---|
 | [Solaar](https://github.com/pwr-Solaar/Solaar), [libratbag](https://github.com/libratbag/libratbag) | GPL-2.0 / MIT | Description du protocole Logitech HID++ 2.0 (`ui/js/drivers/logitech.js`) |
 | [VIA](https://github.com/the-via/app), [QMK](https://github.com/qmk/qmk_firmware) | GPL-3.0 / GPL-2.0 | Protocole VIA (`ui/js/drivers/via.js`) |
-| [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0 | Protocole réseau du serveur SDK (`src-tauri/src/openrgb.rs`) |
+| [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0 | Protocole réseau du serveur SDK (`src-tauri/src/openrgb.rs`), éclairage du Turtle Beach Vulcan II TKL Pro (`ui/js/drivers/turtle-vulcan.js`) |
+| [HeadsetControl](https://github.com/Sapd/HeadsetControl) | GPL-3.0 | Protocole du HyperX Cloud Alpha Wireless (`ui/js/drivers/headsets-native.js`) |
 | [OpenRazer](https://github.com/openrazer/openrazer) | GPL-2.0 | Format des commandes Razer (`ui/js/drivers/razer-chroma.js`) et de l'éclairage des Kraken (`ui/js/drivers/razer-kraken.js`) |
 
 L'AGPL-3.0 est compatible avec la GPL-3.0 de PeriphHub (article 13 des deux licences) : l'ensemble

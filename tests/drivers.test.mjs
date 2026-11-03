@@ -269,6 +269,73 @@ test('Apex 3 : effet animé envoyé à chaque image, arrêté par un effet fixe 
   assert.equal(intervals.filter(Boolean).length, 0);
 });
 
+// ---------- Turtle Beach Vulcan II TKL Pro (OpenRGB RoccatVulcanKeyboardController) ----------
+function vulcanDev(features = [0x11, 0x0E, 0x04, 0x09]) {
+  const dev = new FakeHid({ vendorId: 0x10F5, productId: 0x5001, iface: 1, usagePage: 0x0001, usage: 0x80 });
+  dev.collections = [{ usagePage: 0x0001, usage: 0x80, children: [], inputReports: [], outputReports: [],
+    featureReports: features.map(reportId => ({ reportId, items: [] })) }];
+  dev.featureReply = id => id === 0x04 ? [1, 0] : null;
+  return dev;
+}
+
+test('Vulcan II TKL Pro : seule la collection qui porte le rapport 0x11 est prise', () => {
+  const { drivers } = loadDrivers('steelseries-apex.js', 'turtle-vulcan.js');
+  const vulcan = drivers.find(d => d.id === 'turtle-vulcan');
+  assert.ok(vulcan.match(vulcanDev()));
+  assert.equal(vulcan.match(vulcanDev([])), false);
+  const other = vulcanDev(); other.info.interface = 4;
+  assert.equal(vulcan.match(other), false);
+});
+
+test('Vulcan II TKL Pro : mode fixe (en-tête, 91 LED par canal, somme de contrôle) puis sortie du mode direct', async () => {
+  const { drivers } = loadDrivers('steelseries-apex.js', 'turtle-vulcan.js');
+  const dev = vulcanDev();
+  const [inst] = await drivers.find(d => d.id === 'turtle-vulcan').connect(dev);
+  await inst.set('light', { effect: 'static', color: '#102030', brightness: 100 });
+  const [id, b] = dev.features[0];
+  assert.equal(id, 0x11);
+  assert.equal(b.length, 283); // 284 octets avec l'ID
+  assert.equal(hex(b.slice(0, 8)), '1c 01 03 01 06 45 0b 01');
+  assert.equal(b[8], 0x10); assert.equal(b[8 + 90], 0x10);          // R, touches 0 et 90
+  assert.equal(b[8 + 91], 0x20); assert.equal(b[8 + 91 + 90], 0x20); // G
+  assert.equal(b[8 + 182], 0x30); assert.equal(b[8 + 182 + 90], 0x30); // B
+  const full = [0x11, ...b];
+  const sum = full.slice(0, 282).reduce((a, x) => a + x, 0);
+  assert.equal(full[282], sum & 0xFF);
+  assert.equal(full[283], sum >> 8);
+  assert.deepEqual(dev.features[1], [0x0E, Uint8Array.of(5, 0, 0, 0)]);
+});
+
+test('Vulcan II TKL Pro : vague arc-en-ciel avec vitesse, sans couleurs', async () => {
+  const { drivers } = loadDrivers('steelseries-apex.js', 'turtle-vulcan.js');
+  const dev = vulcanDev();
+  const [inst] = await drivers.find(d => d.id === 'turtle-vulcan').connect(dev);
+  await inst.set('light', { effect: 'wave', speed: 3, brightness: 50 });
+  const b = dev.features[0][1];
+  assert.equal(hex(b.slice(2, 6)), '03 0a 0a 23');
+  assert.equal(b.slice(8, 281).every(x => x === 0), true);
+});
+
+// ---------- Casques en direct (protocoles HeadsetControl) ----------
+test('HyperX Cloud Alpha Wireless : batterie lue sans HeadsetControl, retour micro en 2 commandes', async () => {
+  const { drivers, ctx } = loadDrivers('headsets.js', 'headsets-native.js');
+  Object.assign(ctx, { drvRender: () => {}, drvRelease: () => {}, document: { hidden: false }, lsGet: () => null, wantKey: () => '' });
+  const dev = new FakeHid({ vendorId: 0x03F0, productId: 0x098D, iface: 3, usagePage: 0xFF43, usage: 0x0202 });
+  const answers = { 0x03: 0, 0x0C: 0, 0x0B: 77 };
+  dev.onReport = (id, b) => { if (b[1] in answers) dev.emit(0x21, [0xBB, b[1], answers[b[1]]]); };
+  const drv = drivers.find(d => d.id === 'headset-native');
+  assert.ok(drv.match(dev));
+  const [inst] = await drv.connect(dev);
+  assert.deepEqual({ ...inst.state.battery }, { level: 77, charging: false });
+  assert.ok(ctx.hsNativeIds.has('03F0:098D'));
+  assert.equal(dev.sent[0][1].length, 30);
+  dev.sent.length = 0;
+  await inst.set('sidetone', 50);
+  assert.deepEqual(dev.sent.map(([id, b]) => [id, hex(b.slice(0, 3))]), [[0x21, 'bb 10 01'], [0x21, 'bb 11 40']]);
+  inst.release();
+  assert.equal(ctx.hsNativeIds.has('03F0:098D'), false);
+});
+
 test('Apex : mauvaise interface refusée (le clavier a plusieurs interfaces)', () => {
   const { drivers } = loadDrivers('steelseries-apex.js');
   assert.equal(drivers[0].match(new FakeHid({ vendorId: 0x1038, productId: 0x161A, iface: 0 })), false);

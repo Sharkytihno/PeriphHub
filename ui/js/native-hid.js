@@ -25,7 +25,10 @@ class NativeHIDDevice extends EventTarget {
     this.productId = info.pid;
     this.productName = info.product;
     this.handle = 0;
-    let r = NATIVE_REPORTS[info.usage_page] || { input: [], output: [], feature: [] };
+    // Pages 0xFF00 / 0xFF43 : la table est celle de Logitech HID++. Les autres marques les utilisent
+    // aussi (HyperX, SteelSeries, Turtle Beach…) avec leurs propres rapports : descripteur réel pour elles.
+    const table = (info.usage_page === 0xff00 || info.usage_page === 0xff43) && info.vid !== 0x046d ? null : NATIVE_REPORTS[info.usage_page];
+    let r = table || { input: [], output: [], feature: [] };
     // Récepteurs et souris Logitech filaires : la collection usage 1 ne porte que le rapport court 0x10,
     // l'usage 2 que le long 0x11. Annoncer les deux sur chacune faisait envoyer un rapport long à la
     // collection courte (refusé par Windows) quand le descripteur n'était pas lu.
@@ -39,7 +42,7 @@ class NativeHIDDevice extends EventTarget {
     // Collections réelles, lues dans le descripteur (pilotes OpenMouse : voir drivers/openmouse.js).
     // Les modules historiques gardent la table ci-dessus, avec laquelle ils ont été vérifiés.
     this.parsed = info.descriptor?.length ? hidParseDescriptor(info.descriptor) : null;
-    this.known = !!NATIVE_REPORTS[info.usage_page];
+    this.known = !!table;
     if (!this.known && this.parsed?.length) this.collections = this.parsed;
     // Pages Logitech : les collections réelles du descripteur, quand il a été lu, valent mieux que la table
     else if ((info.usage_page === 0xff00 || info.usage_page === 0xff43) && info.vid === 0x046d

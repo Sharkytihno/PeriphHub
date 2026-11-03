@@ -135,3 +135,103 @@ pub fn set_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     }
     c.send(index, UPDATELEDS, &p)
 }
+
+// ---------- Installation et lancement ----------
+// OpenRGB n'a pas d'installateur unique : on le cherche aux emplacements habituels (installateur
+// officiel, winget, dossier dézippé dans Téléchargements/Bureau) et dans les processus lancés.
+
+const NO_WINDOW: u32 = 0x0800_0000;
+
+fn candidates() -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let mut out = Vec::new();
+    for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+        if let Ok(b) = std::env::var(var) {
+            out.push(PathBuf::from(&b).join("OpenRGB").join("OpenRGB.exe"));
+        }
+    }
+    if let Ok(b) = std::env::var("LOCALAPPDATA") {
+        out.push(PathBuf::from(&b).join("Programs").join("OpenRGB").join("OpenRGB.exe"));
+        // winget (paquet portable) : %LOCALAPPDATA%\Microsoft\WinGet\Packages\OpenRGB*\**\OpenRGB.exe
+        let pk = PathBuf::from(&b).join("Microsoft").join("WinGet").join("Packages");
+        if let Ok(rd) = std::fs::read_dir(&pk) {
+            for e in rd.flatten() {
+                if e.file_name().to_string_lossy().to_lowercase().contains("openrgb") {
+                    out.extend(find_exe(&e.path(), 3));
+                }
+            }
+        }
+    }
+    if let Ok(b) = std::env::var("USERPROFILE") {
+        for sub in ["Downloads", "Desktop", "Documents"] {
+            if let Ok(rd) = std::fs::read_dir(PathBuf::from(&b).join(sub)) {
+                for e in rd.flatten() {
+                    if e.path().is_dir() && e.file_name().to_string_lossy().to_lowercase().contains("openrgb") {
+                        out.extend(find_exe(&e.path(), 2));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn find_exe(dir: &std::path::Path, depth: u32) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let exe = dir.join("OpenRGB.exe");
+    if exe.is_file() {
+        out.push(exe);
+    } else if depth > 0 {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                if e.path().is_dir() {
+                    out.extend(find_exe(&e.path(), depth - 1));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn running() -> Option<crate::procs::Proc> {
+    crate::procs::list().into_iter().find(|p| p.name.eq_ignore_ascii_case("OpenRGB.exe"))
+}
+
+fn server_up() -> bool {
+    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], PORT)), Duration::from_millis(300)).is_ok()
+}
+
+/// État d'OpenRGB, sans aucun chemin (le diagnostic est envoyé tel quel)
+pub fn info() -> Result<Value, String> {
+    let proc_ = running();
+    let installed = proc_.is_some() || candidates().iter().any(|p| p.is_file());
+    Ok(json!({ "installed": installed, "running": proc_.is_some(), "server": server_up() }))
+}
+
+/// Lance OpenRGB avec son serveur SDK, réduit. Refuse s'il tourne déjà sans serveur (il faudrait le
+/// fermer : on ne tue pas un logiciel de l'utilisateur).
+pub fn launch() -> Result<Value, String> {
+    use std::os::windows::process::CommandExt;
+    if server_up() {
+        return info();
+    }
+    if running().is_some() {
+        return Err("OpenRGB est déjà ouvert sans son serveur : fermez-le (icône près de l’horloge), puis relancez-le depuis PeriphHub".into());
+    }
+    let exe = candidates().into_iter().find(|p| p.is_file()).ok_or("OpenRGB n’est pas installé")?;
+    let dir = exe.parent().map(|d| d.to_path_buf());
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(["--server", "--startminimized"]).creation_flags(NO_WINDOW);
+    if let Some(d) = dir {
+        cmd.current_dir(d);
+    }
+    cmd.spawn().map_err(|e| format!("lancement impossible : {e}"))?;
+    // Le serveur répond après la détection des appareils (quelques secondes)
+    for _ in 0..40 {
+        if server_up() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    info()
+}

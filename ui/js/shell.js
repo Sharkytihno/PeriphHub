@@ -196,13 +196,34 @@ const WEB_TOOL = { '31E3': 'wootility.io', '03EB': 'wootility.io', '3434': 'laun
 
 // Ce que l'utilisateur peut faire pour un appareil que PeriphHub ne règle pas (encore)
 function deviceHint(d) {
-  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d)];
+  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d), d.status === 'rgb' ? orgbTool() : ''];
 }
 
 function deviceTool(d) {
   const web = WEB_TOOL[d.vid] || (d.plugin === 'via' ? 'usevia.app' : '');
   // Phrase à part : chaque nœud texte est traduit séparément
   return web ? h('div', { class: 'muted small' }, `Réglages aussi possibles sur ${web}, le configurateur officiel dans le navigateur.`) : '';
+}
+
+// OpenRGB : installé ? lancé avec son serveur ? Bouton pour le lancer comme il faut
+function orgbTool() {
+  if (!NATIVE) return '';
+  const box = h('div', { class: 'muted small' });
+  nativeInvoke('openrgb_info').then(st => {
+    if (st.server) return box.replaceChildren('OpenRGB est lancé avec son serveur : son éclairage apparaît dans l’onglet Éclairage.');
+    if (!st.installed) return box.replaceChildren('OpenRGB n’est pas installé : téléchargez-le gratuitement sur openrgb.org, puis revenez ici.');
+    const btn = h('button', { class: 'mini', onclick: async () => {
+      btn.disabled = true; btn.textContent = 'Lancement…';
+      try {
+        await nativeInvoke('openrgb_launch');
+        await openrgbPoll();
+        toast('OpenRGB lancé avec son serveur.', 'ok');
+        box.replaceChildren('OpenRGB est lancé avec son serveur : son éclairage apparaît dans l’onglet Éclairage.');
+      } catch (e) { toast(String(e.message || e), 'err'); btn.disabled = false; btn.textContent = 'Lancer OpenRGB'; }
+    } }, 'Lancer OpenRGB');
+    box.replaceChildren(h('span', {}, st.running ? 'OpenRGB est ouvert, mais sans son serveur. ' : 'OpenRGB est installé mais fermé. '), btn);
+  }).catch(() => {});
+  return box;
 }
 
 function deviceHintText(d) {

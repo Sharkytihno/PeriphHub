@@ -124,6 +124,16 @@ async fn openrgb_list() -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn openrgb_info() -> Result<Value, String> {
+    blocking(openrgb::info).await
+}
+
+#[tauri::command]
+async fn openrgb_launch() -> Result<Value, String> {
+    blocking(openrgb::launch).await
+}
+
+#[tauri::command]
 async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     blocking(move || openrgb::set_color(index, rgb)).await
 }
@@ -206,6 +216,8 @@ fn main() {
             headset_list,
             headset_set,
             openrgb_list,
+            openrgb_info,
+            openrgb_launch,
             audio_list,
             audio_set,
             audio_formats,

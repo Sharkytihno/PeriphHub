@@ -88,7 +88,8 @@ function headsetsPoll() {
       const seen = new Set();
       for (const d of r.devices || []) {
         const id = `${d.id_vendor}:${d.id_product}`.replace(/0x/g, '').toUpperCase();
-        if (DEDICATED.has(id)) continue;
+        // casque piloté directement par PeriphHub (drivers/headsets-native.js)
+        if (DEDICATED.has(id) || (typeof hsNativeIds !== 'undefined' && hsNativeIds.has(id))) continue;
         seen.add(id);
         let inst = hsLive.get(id);
         const fresh = !inst;

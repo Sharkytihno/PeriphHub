@@ -46,7 +46,15 @@ async function deviceDiag(vid, pid, extra = []) {
   const id = (vid + ':' + pid).toUpperCase();
   const hex = n => '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0');
   const ifs = ('hid' in navigator ? await navigator.hid.getDevices().catch(() => []) : []).filter(d => devId(d) === id);
-  const ids = (cs, k) => [...new Set(hidAllCollections(cs || []).flatMap(c => (c[k] || []).map(r => r.reportId)))].join(',') || '-';
+  // ID et taille (octets, sans l'ID) de chaque rapport : de quoi écrire un pilote sans le matériel
+  const ids = (cs, k) => {
+    const m = new Map();
+    for (const c of hidAllCollections(cs || [])) for (const r of c[k] || []) {
+      const bits = (r.items || []).reduce((n, it) => n + (it.reportSize || 0) * (it.reportCount || 0), 0);
+      m.set(r.reportId, Math.max(m.get(r.reportId) || 0, bits));
+    }
+    return [...m].map(([id, bits]) => '0x' + id.toString(16).toUpperCase().padStart(2, '0') + (bits ? `(${Math.ceil(bits / 8)}o)` : '')).join(',') || '-';
+  };
   const lines = [`USB ${id}`, `PeriphHub ${report?.version || '?'} · ${navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows'}`];
   const cat = (await catalog).find(c => (c.vid + ':' + c.pid).toUpperCase() === id);
   if (cat) lines.push(`Catalogue : ${cat.name} · ${cat.status}${cat.via ? ' (' + cat.via + ')' : ''} · sources ${cat.src.join(', ')}`);
@@ -56,7 +64,13 @@ async function deviceDiag(vid, pid, extra = []) {
   for (const e of drvErrors.get(id) || []) lines.push('Échec ' + e);
   for (const d of ifs) {
     const cs = d.parsed || d.collections;
-    lines.push(`Interface ${d.info?.interface ?? '?'} · page ${hex(d.info?.usage_page ?? cs?.[0]?.usagePage ?? 0)} usage ${hex(d.info?.usage ?? cs?.[0]?.usage ?? 0)} · rapports entrée ${ids(cs, 'inputReports')} sortie ${ids(cs, 'outputReports')} fonction ${ids(cs, 'featureReports')}`);
+    const page = d.info?.usage_page ?? cs?.[0]?.usagePage ?? 0;
+    lines.push(`Interface ${d.info?.interface ?? '?'} · page ${hex(page)} usage ${hex(d.info?.usage ?? cs?.[0]?.usage ?? 0)} · rapports entrée ${ids(cs, 'inputReports')} sortie ${ids(cs, 'outputReports')} fonction ${ids(cs, 'featureReports')}`
+      + (d.parsed ? '' : ' (descripteur non lu)'));
+    // Interfaces constructeur d'un appareil sans pilote : descripteur brut (pas de donnée personnelle)
+    const desc = d.info?.descriptor;
+    if (!live && page >= 0xFF00 && desc?.length && desc.length <= 400)
+      lines.push('  descripteur ' + Array.from(desc, b => b.toString(16).padStart(2, '0')).join(''));
   }
   if (!ifs.length) lines.push('Aucune interface HID accessible à PeriphHub');
   return [...lines, ...extra].join('\n');
@@ -83,7 +97,15 @@ async function globalDiag() {
   }
   if (hidden) lines.push(`(+ ${hidden} autres appareils sans réglages : hubs, puces internes…)`);
   if (typeof hsStatus !== 'undefined') lines.push('Module casques : ' + hsStatus);
-  lines.push('OpenRGB : ' + (typeof orgbInst !== 'undefined' && orgbInst ? orgbInst.state.list.length + ' appareils' : 'non joignable (lancé avec « Serveur SDK » ?)'));
+  let orgb = null;
+  if (NATIVE) try { orgb = await nativeInvoke('openrgb_info'); } catch {}
+  lines.push('OpenRGB : ' + (typeof orgbInst !== 'undefined' && orgbInst ? orgbInst.state.list.length + ' appareils'
+    : orgb ? (orgb.server ? 'serveur joignable, 0 appareil' : orgb.running ? 'ouvert SANS serveur SDK' : orgb.installed ? 'installé, fermé' : 'non installé')
+    : 'non joignable'));
+  if (typeof hsNativeIds !== 'undefined' && hsNativeIds.size) lines.push('Casques en pilote intégré : ' + [...hsNativeIds].join(', '));
+  const running = (report?.vendors || []).filter(v => v.bytes > 0).map(v => v.name);
+  lines.push('Logiciels constructeurs ouverts : ' + (running.join(', ') || 'aucun'));
+  lines.push('Langue : ' + navigator.language);
   // Interfaces HID vues par Windows et sort de chacune : dit si la liste est vide, refusée, bloquée ou filtrée
   if (NATIVE) {
     const shown = new Set(devs.map(d => d.vid + ':' + d.pid));
@@ -93,6 +115,9 @@ async function globalDiag() {
       lines.push(`Interfaces HID vues par Windows : ${probe.length}`);
       for (const p of probe.filter(p => shown.has(hx(p.vid) + ':' + hx(p.pid))))
         lines.push(`  ${hx(p.vid)}:${hx(p.pid)} MI ${p.interface} · page 0x${hx(p.usage_page)} usage 0x${hx(p.usage)} · ${p.state}`);
+      // Interfaces figées d'appareils absents de la liste : c'est souvent elles qui bloquent les autres
+      for (const p of probe.filter(p => !shown.has(hx(p.vid) + ':' + hx(p.pid)) && /bloquée|refusée|illisible/.test(p.state)))
+        lines.push(`  ${hx(p.vid)}:${hx(p.pid)} ${p.product || '?'} MI ${p.interface} · page 0x${hx(p.usage_page)} · ${p.state}`);
     } catch (e) { lines.push('Interfaces HID : ' + e); }
   }
   return lines.join('\n');
@@ -114,7 +139,10 @@ async function fullDiag(onlyId) {
     .filter(l => !onlyId || l.includes(onlyId) || /OpenMouse|HID\+\+|Logitech/i.test(l)).slice(-25);
   if (log.length) parts.push('Journal :\n' + log.join('\n'));
   if (onlyId) parts.unshift(`PeriphHub ${report?.version || '?'}`);
-  return '```\n' + parts.join('\n\n').replace(/```/g, "'''") + '\n```';
+  let text = parts.join('\n\n');
+  // Le relais coupe à 40 Ko : les descripteurs bruts partent en premier si ça déborde
+  if (text.length > 36000) text = text.split('\n').filter(l => !l.startsWith('  descripteur ')).join('\n');
+  return '```\n' + text.replace(/```/g, "'''") + '\n```';
 }
 
 async function copyDiag(onlyId) {
