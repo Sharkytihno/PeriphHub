@@ -23,12 +23,19 @@ const LG_SW = 0x0B;                    // id logiciel (4 bits) : distingue nos r
 const LG_TYPE = { 0: 'clavier', 2: 'clavier', 3: 'souris', 4: 'souris', 5: 'souris', 8: 'casque' };
 const LG_EXT_RATES = [125, 250, 500, 1000, 2000, 4000, 8000];
 
+// Sous Windows, le canal HID++ d'un récepteur (ou d'une souris filaire) est en deux collections :
+// la longue (0x11) pour les requêtes, la courte (0x10) où arrivent les erreurs HID++ 1.0 (0x8F),
+// les registres du récepteur et les notifications de connexion (0x41). On écoute les deux, comme Solaar.
 class HidppChannel {
   constructor(dev) {
     this.dev = dev;
+    this.short = null;
     this.waiters = new Set();
     this.queue = Promise.resolve();
     this.listeners = new Set();
+    this.listen(dev);
+  }
+  listen(dev) {
     dev.addEventListener('inputreport', e => {
       if (e.reportId !== 0x11 && e.reportId !== 0x10) return;
       const b = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength);
@@ -36,30 +43,58 @@ class HidppChannel {
       for (const f of this.listeners) f(b);
     });
   }
+  async addShort(dev) {
+    await dev.open();
+    this.short = dev;
+    this.listen(dev);
+  }
 
   // Une requête à la fois : les réponses ne portent pas de numéro de séquence
-  request(idx, feat, fn, params = [], timeout = 800) {
-    const run = () => new Promise((resolve, reject) => {
-      const data = new Uint8Array(19);
-      data[0] = idx; data[1] = feat; data[2] = (fn << 4) | LG_SW;
-      data.set(params.slice(0, 16), 3);
+  run(send, match, timeout) {
+    const go = () => new Promise((resolve, reject) => {
       const done = (fnRes, value) => { clearTimeout(timer); this.waiters.delete(w); fnRes(value); };
-      const w = b => {
-        if (b[0] !== idx) return false;
-        if (b[1] === feat && b[2] === data[2]) { done(resolve, b.slice(3)); return true; }
-        if (b[1] === 0xFF && b[2] === feat && b[3] === data[2]) { done(reject, new Error(`erreur HID++ ${b[4]}`)); return true; }
-        if (b[1] === 0x8F && b[2] === feat) { done(reject, new Error(`erreur HID++ 1.0 ${b[4]}`)); return true; }
-        return false;
-      };
+      const w = b => match(b, v => done(resolve, v), e => done(reject, e));
       const timer = setTimeout(() => done(reject, new Error('pas de réponse')), timeout);
       this.waiters.add(w);
-      this.dev.sendReport(0x11, data).catch(e => done(reject, e));
+      send().catch(e => done(reject, e));
     });
-    const p = this.queue.then(run, run);
+    const p = this.queue.then(go, go);
     this.queue = p.catch(() => {});
     return p;
   }
+
+  request(idx, feat, fn, params = [], timeout = 800) {
+    const data = new Uint8Array(19);
+    data[0] = idx; data[1] = feat; data[2] = (fn << 4) | LG_SW;
+    data.set(params.slice(0, 16), 3);
+    return this.run(() => this.dev.sendReport(0x11, data), (b, ok, ko) => {
+      if (b[0] !== idx) return false;
+      if (b[1] === feat && b[2] === data[2]) { ok(b.slice(3)); return true; }
+      if (b[1] === 0xFF && b[2] === feat && b[3] === data[2]) { ko(new Error(`erreur HID++ ${b[4]}`)); return true; }
+      // HID++ 1.0 : le récepteur répond « personne à cet emplacement » ou « appareil injoignable »
+      if (b[1] === 0x8F && b[2] === feat) { ko(Object.assign(new Error(`erreur HID++ 1.0 ${b[4]}`), { hidpp10: true })); return true; }
+      return false;
+    }, timeout);
+  }
+
+  // Registre HID++ 1.0 du récepteur (index 0xFF) : sub 0x80 = écriture, 0x81 = lecture (rapport court)
+  register(sub, addr, params = [0, 0, 0], timeout = 800) {
+    if (!this.short) return Promise.reject(new Error('collection courte absente'));
+    const data = new Uint8Array(6);
+    data[0] = 0xFF; data[1] = sub; data[2] = addr;
+    data.set(params.slice(0, 3), 3);
+    return this.run(() => this.short.sendReport(0x10, data), (b, ok, ko) => {
+      if (b[0] !== 0xFF) return false;
+      if (b[1] === sub && b[2] === addr) { ok(b.slice(3)); return true; }
+      if (b[1] === 0x8F && b[2] === sub && b[3] === addr) { ko(new Error(`erreur HID++ 1.0 ${b[4]}`)); return true; }
+      return false;
+    }, timeout);
+  }
 }
+
+// Une session par canal HID++ ouvert : elle survit à un premier essai sans appareil allumé
+// (souris en veille derrière son récepteur), pour l'ajouter dès qu'elle se réveille.
+const lgSessions = new WeakMap();
 
 class LogitechDevice {
   constructor(ch, idx, dev) {
@@ -298,22 +333,41 @@ registerDriver({
   match: d => d.vendorId === 0x046D && ((d.collections[0].usagePage === 0xFF00 && d.collections[0].usage === 2) ||
     (d.collections[0].usagePage === 0xFF43 && d.collections[0].usage === 0x0202)),
   async connect(dev, group) {
-    await dev.open();
-    const ch = new HidppChannel(dev);
+    const driver = this;
+    let s = lgSessions.get(dev);
+    if (!s) {
+      await dev.open();
+      s = { ch: new HidppChannel(dev), probing: new Set(), claimed: new Set(), receiver: false, notify: false };
+      // Collection courte de la même interface (récepteurs, souris filaires)
+      const short = group.find(g => g !== dev && g.collections[0].usagePage === 0xFF00 && g.collections[0].usage === 1
+        && (g.info?.interface ?? 0) === (dev.info?.interface ?? 0));
+      if (short) await s.ch.addShort(short).catch(e => console.warn('[PeriphHub] HID++ collection courte', e.message));
+      lgSessions.set(dev, s);
+    }
+    const ch = s.ch;
     const found = [];
-    const tryIndex = async idx => {
+    const keyOf = idx => `drv-${devId(dev).replace(':', '').toLowerCase()}-${idx}`;
+    const tryIndex = async (idx, timeout) => {
       try {
-        const r = await ch.request(idx, 0, 1, [0, 0, 0x5A], idx === 0xFF ? 800 : 500);
+        const r = await ch.request(idx, 0, 1, [0, 0, 0x5A], timeout ?? (idx === 0xFF ? 800 : 500));
         if (r[0] < 2) return null; // HID++ 1.0 : trop ancien
-      } catch { return null; }
+      } catch (e) {
+        if (e.hidpp10) s.receiver = true; // quelqu'un a répondu : c'est un récepteur
+        return null;
+      }
       const d = new LogitechDevice(ch, idx, dev);
       await d.probe();
       return d;
     };
     // Branché en direct (filaire, Bluetooth) : index 0xFF ; derrière un récepteur : 1 à 6
-    const direct = await tryIndex(0xFF);
+    const direct = s.receiver ? null : await tryIndex(0xFF);
     if (direct) found.push(direct);
-    else for (let i = 1; i <= 6; i++) { const d = await tryIndex(i); if (d) found.push(d); }
+    else for (let i = 1; i <= 6; i++) {
+      if (drvLive.has(keyOf(i)) || s.claimed.has(i) || s.probing.has(i)) continue;
+      s.probing.add(i);
+      const d = await tryIndex(i).finally(() => s.probing.delete(i));
+      if (d) { found.push(d); s.claimed.add(i); }
+    }
     const wrap = d => {
       const inst = {
         key: `drv-${devId(dev).replace(':', '').toLowerCase()}-${d.idx}`,
@@ -330,22 +384,47 @@ registerDriver({
     };
     // Appareil qui se réveille derrière le récepteur : notification de connexion 0x41 (rapport court,
     // sur la collection 0xFF00 usage 1 ; bit 0x40 = liaison coupée)
-    const onWake = async b => {
-      if (b[1] !== 0x41 || b[0] < 1 || b[0] > 6 || (b[3] & 0x40)) return;
-      const key = `drv-${devId(dev).replace(':', '').toLowerCase()}-${b[0]}`;
-      if (drvLive.has(key)) return;
-      const d = await tryIndex(b[0]).catch(() => null);
-      if (d) { const inst = wrap(d); await drvReapply(inst); drvAdd(inst, this); }
-    };
-    ch.listeners.add(onWake);
-    const short = group.find(g => g.collections[0].usagePage === 0xFF00 && g.collections[0].usage === 1);
-    if (short && direct == null) {
-      await short.open().catch(() => {});
-      short.addEventListener('inputreport', e => onWake(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength)));
+    // (une seule écoute par session, même si connect est rappelé)
+    if (!direct && !s.onWake) {
+      s.onWake = async b => {
+        if (b[1] !== 0x41 || b[0] < 1 || b[0] > 6 || (b[3] & 0x40)) return;
+        const idx = b[0];
+        if (drvLive.has(keyOf(idx)) || s.claimed.has(idx) || s.probing.has(idx)) return;
+        s.probing.add(idx);
+        try {
+          // L'appareil vient de se réveiller : on lui laisse un instant avant de lui parler
+          await new Promise(r => setTimeout(r, 300));
+          const d = await tryIndex(idx, 1500).catch(() => null);
+          if (d && !drvLive.has(keyOf(idx))) { s.claimed.add(idx); const inst = wrap(d); await drvReapply(inst); drvAdd(inst, driver); }
+        } finally { s.probing.delete(idx); }
+      };
+      ch.listeners.add(s.onWake);
+    }
+    // Récepteur : activer ses notifications de connexion (registre 0x00, bit « sans fil » 0x000100,
+    // on garde les autres bits), puis lui demander d'annoncer les appareils déjà connectés
+    // (registre 0x02 = 0x02) : chacun répond par une notification 0x41, traitée ci-dessus.
+    // Lecture des registres sans risque, comme le fait Solaar ; jamais de firmware ni d'appairage.
+    if (!direct && ch.short && !s.notify) {
+      try {
+        const cur = await ch.register(0x81, 0x00);
+        s.receiver = true;
+        if (!(cur[1] & 0x01)) await ch.register(0x80, 0x00, [cur[0], cur[1] | 0x01, cur[2]]);
+        s.notify = true;
+      } catch (e) { console.warn('[PeriphHub] récepteur Logitech : notifications', e.message); }
+      if (s.receiver && !found.length) await ch.register(0x80, 0x02, [0x02, 0, 0]).catch(() => {});
     }
     const list = found.map(wrap);
     for (const inst of list) await drvReapply(inst);
-    if (!list.length) await dev.close().catch(() => {});
+    if (!list.length) {
+      // Récepteur qui répond mais aucun appareil allumé derrière : on garde l'écoute ouverte
+      if (s.receiver && ch.short) {
+        throw Object.assign(new Error('récepteur trouvé, aucun appareil allumé derrière : bougez la souris ou appuyez sur une touche'), { waiting: true });
+      }
+      lgSessions.delete(dev);
+      ch.listeners.clear();
+      await dev.close().catch(() => {});
+      await ch.short?.close().catch(() => {});
+    }
     return list;
   },
 });

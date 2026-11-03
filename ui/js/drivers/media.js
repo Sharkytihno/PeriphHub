@@ -18,6 +18,21 @@ const AUDIO_FORM = { 1: 'Haut-parleurs', 2: 'Sortie ligne', 3: 'Casque', 4: 'Mic
 // Micros USB courants (ceux qui ont aussi une prise casque, donc une sortie audio)
 const AUDIO_MICS = /\b(mic|micro|microphone|quadcast|solocast|duocast|yeti|snowball|seiren|wave[: ]?\d|wave xlr|podcaster|podmic|nt-usb|videomic|mv\d+|ampligame|fifine|samson|at2020|atr2100|hyperx procast|maono|tonor|trust gxt 2\d\d|streamplify|sennheiser profile)\b/i;
 
+// Son intégré au PC ou virtuel : puces de la carte mère (Realtek, y compris celles branchées en USB
+// interne sur les cartes ASUS / MSI récentes), sorties HDMI des cartes graphiques, pilotes virtuels.
+// Masqués par défaut : seuls les vrais périphériques (casques, micros, DAC, enceintes USB / Bluetooth)
+// ont un onglet. Options ▸ Son : « Tout afficher ».
+const AUDIO_BUILTIN = /realtek|nvidia|\bamd\b|radeon|intel\(r\)|intel display|high definition audio|hd audio|\bhdmi\b|displayport|steam streaming|virtual|voicemeeter|vb-audio|\bcable (in|out)put|broadcast|sonar|nahimic|oculus|wave link|droidcam|obs\b|microsoft teams/i;
+const audioAll = () => { try { return localStorage.getItem('audioAll') === 'on'; } catch { return false; } };
+
+function audioPeripheral(g) {
+  const bus = g.eps.map(e => e.bus);
+  if (!bus.some(b => b === 'usb' || b === 'bluetooth')) return false; // carte mère ou virtuel
+  if (g.eps.every(e => e.form === 9)) return false; // écran
+  if (g.vid === 0x0DB0) return false; // son USB interne des cartes mères MSI
+  return !AUDIO_BUILTIN.test(g.name);
+}
+
 // Un appareil physique = les points de terminaison qui partagent le même USB (VID:PID) ou le même adaptateur
 function audioGroups(list) {
   const groups = new Map();
@@ -129,7 +144,7 @@ function audioPoll() {
           if (changed || !audioEmbedded.has(`${g.vid}:${g.pid}`)) redraw.push(owner);
           // Affiché seul jusqu'ici : on retire son onglet sans annoncer de débranchement
           if (mediaLive.has(g.key)) { mediaLive.delete(g.key); drvRelease(inst.dev, true); }
-        } else {
+        } else if (audioAll() || audioPeripheral(g)) {
           shown.push(inst);
           if (changed && mediaLive.has(g.key)) drvRender(inst);
         }

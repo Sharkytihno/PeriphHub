@@ -110,6 +110,66 @@ test('Logitech HID++ 1.0 (trop ancien) : ignoré proprement', async () => {
   assert.equal((await drivers[0].connect(dev, [dev])).length, 0);
 });
 
+// Récepteur Lightspeed (046D:C54D) comme sous Windows : collection longue (usage 2) + courte (usage 1).
+// Souris en veille au démarrage : le récepteur répond « injoignable » (0x8F) sur la collection courte.
+function lightspeed({ asleep }) {
+  const mouse = new HidppMouse({ pid: 0xC54D, index: 1, name: 'G PRO X SUPERLIGHT 2', dpi: { min: 100, max: 32000, step: 50 } });
+  const short = new FakeHid({ vendorId: 0x046D, productId: 0xC54D, productName: 'USB Receiver', usagePage: 0xFF00, usage: 1 });
+  const recv = { asleep, flags: [0, 0, 0], writes: [] };
+  const onLong = mouse.onReport.bind(mouse);
+  mouse.onReport = (id, b) => {
+    if (b[0] === 0xFF || recv.asleep || b[0] !== mouse.index) return short.emit(0x10, [b[0], 0x8F, b[1], b[2], b[0] === 0xFF ? 0x01 : 0x09, 0]);
+    onLong(id, b);
+  };
+  short.onReport = (id, b) => {
+    assert.equal(id, 0x10); assert.equal(b.length, 6);
+    const [idx, sub, addr, ...p] = b;
+    if (idx !== 0xFF) return;
+    if (sub === 0x81 && addr === 0x00) return short.emit(0x10, [0xFF, 0x81, 0x00, ...recv.flags]);
+    if (sub === 0x80) {
+      recv.writes.push([addr, ...p]);
+      if (addr === 0x00) recv.flags = p;
+      if (addr === 0x02 && !recv.asleep) short.emit(0x10, [1, 0x41, 0x04, 0x00, 0x01, 0x00]);
+      return short.emit(0x10, [0xFF, 0x80, addr, 0, 0, 0]);
+    }
+    short.emit(0x10, [0xFF, 0x8F, sub, addr, 0x02, 0]);
+  };
+  return { mouse, short, recv };
+}
+
+test('Récepteur Lightspeed, souris en veille : attente, notifications activées, ajout au réveil (0x41)', async () => {
+  const { drivers, ctx } = loadDrivers('logitech.js');
+  const added = [];
+  ctx.drvAdd = inst => added.push(inst);
+  const { mouse, short, recv } = lightspeed({ asleep: true });
+  const t0 = Date.now();
+  await assert.rejects(drivers[0].connect(mouse, [short, mouse]), e => e.waiting === true);
+  assert.ok(Date.now() - t0 < 1500, 'les erreurs 0x8F de la collection courte évitent d’attendre chaque emplacement');
+  eq([...recv.flags], [0, 1, 0]);
+  assert.ok(recv.writes.some(w => w[0] === 0x02 && w[1] === 0x02), 'demande aux appareils de s’annoncer');
+  assert.ok(short.opened && mouse.opened, 'écoute gardée ouverte');
+  // La souris se réveille : le récepteur l'annonce sur la collection courte
+  recv.asleep = false;
+  short.emit(0x10, [1, 0x41, 0x04, 0x00, 0x01, 0x00]);
+  for (let i = 0; i < 40 && !added.length; i++) await new Promise(r => setTimeout(r, 50));
+  assert.equal(added.length, 1);
+  assert.equal(added[0].name, 'Logitech G PRO X SUPERLIGHT 2');
+  assert.match(added[0].meta, /emplacement 1/);
+  // Deuxième annonce : pas de doublon
+  short.emit(0x10, [1, 0x41, 0x04, 0x00, 0x01, 0x00]);
+  await new Promise(r => setTimeout(r, 500));
+  assert.equal(added.length, 1);
+});
+
+test('Récepteur Lightspeed, souris allumée : trouvée tout de suite, rapports longs sur la collection longue seulement', async () => {
+  const { drivers } = loadDrivers('logitech.js');
+  const { mouse, short } = lightspeed({ asleep: false });
+  const list = await drivers[0].connect(mouse, [short, mouse]);
+  assert.equal(list.length, 1);
+  assert.ok(mouse.sent.every(([id]) => id === 0x11));
+  assert.ok(short.sent.every(([id]) => id === 0x10));
+});
+
 // ---------- Razer (OpenRazer) ----------
 for (const tid of [0x1F, 0x3F, 0xFF]) {
   test(`Razer : id de transaction 0x${tid.toString(16)} trouvé, DPI / fréquence / éclairage`, async () => {

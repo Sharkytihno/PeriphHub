@@ -583,6 +583,10 @@ const I18N_EN = {
   'PeriphHub est à jour': 'PeriphHub is up to date',
   'Téléchargement…': 'Downloading…',
   'Installation… PeriphHub va redémarrer': 'Installing… PeriphHub will restart',
+  'Périphériques seulement': 'Peripherals only',
+  'Tout afficher': 'Show all',
+  'Par défaut, seuls les casques, micros, DAC et enceintes USB ou Bluetooth ont un onglet. « Tout afficher » ajoute le son de la carte mère, des écrans (HDMI) et les pilotes audio virtuels.':
+    'By default, only USB or Bluetooth headsets, mics, DACs and speakers get a tab. “Show all” adds motherboard audio, displays (HDMI) and virtual audio drivers.',
   'Mettre à jour': 'Update',
   'Téléchargement et installation en un clic, vos réglages sont conservés. PeriphHub redémarre tout seul.': 'Download and install in one click, your settings are kept. PeriphHub restarts on its own.',
   'Mises à jour': 'Updates',

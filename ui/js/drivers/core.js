@@ -39,6 +39,7 @@ const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb:
 
 let drvScanning = false;
 const drvErrors = new Map(); // « VID:PID » → derniers échecs de pilotes (pour les signalements)
+const drvRetry = new Map();  // « VID:PID » → { n essais ratés, at : prochain essai } (appareils muets)
 
 // ---------- Signalement : diagnostic technique, sans numéro de série ni chemin ----------
 async function deviceDiag(vid, pid, extra = []) {
@@ -118,22 +119,34 @@ async function driversScan() {
     const order = DRIVERS.slice().sort((a, b) => (b.priority || 0) - (a.priority || 0));
     for (const [id, group] of groups) {
       if (group.some(d => drvBusy.has(d.info?.path))) continue;
+      const retry = drvRetry.get(id);
+      if (retry && Date.now() < retry.at) continue;
       const candidates = order.filter(x => group.some(x.match));
       if (!candidates.length) continue;
       group.forEach(d => drvBusy.add(d.info?.path));
       drvErrors.delete(id);
+      let ok = false, waiting = false;
       for (const drv of candidates) {
         try {
           const list = await drv.connect(group.find(drv.match), group);
           if (!list?.length) throw new Error('aucune réponse');
           for (const inst of list) drvAdd(inst, drv);
+          ok = true;
           break;
         } catch (e) {
           console.warn('[PeriphHub] pilote', drv.id, devId(group[0]), e.message);
           drvErrors.set(id, [...(drvErrors.get(id) || []), `${drv.id} : ${e.message}`].slice(-8));
-          // On ne réessaie qu'au prochain branchement (pas en boucle)
+          // Le pilote garde l'appareil ouvert et attend qu'il se réveille (souris sans fil en veille
+          // derrière son récepteur) : ne rien essayer d'autre, il s'ajoutera lui-même
+          if (e.waiting) { waiting = true; break; }
         }
       }
+      if (ok || waiting) { drvRetry.delete(id); continue; }
+      // Aucun pilote n'a eu de réponse : souvent un appareil sans fil éteint ou en veille.
+      // Nouvel essai plus tard (1 min, puis de plus en plus espacé, au plus toutes les 10 min)
+      const n = (retry?.n || 0) + 1;
+      drvRetry.set(id, { n, at: Date.now() + Math.min(600000, 60000 * 2 ** (n - 1)) });
+      group.forEach(d => drvBusy.delete(d.info?.path));
     }
   } finally {
     drvScanning = false;
@@ -312,7 +325,12 @@ setInterval(() => {
 }, 120000);
 
 function driversStart() {
-  navigator.hid?.addEventListener('connect', driversScan);
+  // Nouveau branchement : on retente tout de suite, y compris les appareils restés muets
+  navigator.hid?.addEventListener('connect', () => { drvRetry.forEach(r => { r.at = 0; }); driversScan(); });
+  // Appareils muets (sans fil en veille…) : nouvel essai quand leur délai est passé, fenêtre visible
+  setInterval(() => {
+    if (!document.hidden && [...drvRetry.values()].some(r => Date.now() >= r.at)) driversScan();
+  }, 30000);
   navigator.hid?.addEventListener('disconnect', e => drvRelease(e.device));
   driversScan();
   if (typeof headsetsPoll === 'function') headsetsPoll();

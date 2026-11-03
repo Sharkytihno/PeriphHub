@@ -25,7 +25,14 @@ class NativeHIDDevice extends EventTarget {
     this.productId = info.pid;
     this.productName = info.product;
     this.handle = 0;
-    const r = NATIVE_REPORTS[info.usage_page] || { input: [], output: [], feature: [] };
+    let r = NATIVE_REPORTS[info.usage_page] || { input: [], output: [], feature: [] };
+    // Récepteurs et souris Logitech filaires : la collection usage 1 ne porte que le rapport court 0x10,
+    // l'usage 2 que le long 0x11. Annoncer les deux sur chacune faisait envoyer un rapport long à la
+    // collection courte (refusé par Windows) quand le descripteur n'était pas lu.
+    if (info.vid === 0x046d && info.usage_page === 0xff00 && (info.usage === 1 || info.usage === 2)) {
+      const id = info.usage === 1 ? 0x10 : 0x11;
+      r = { input: [id], output: [id], feature: [] };
+    }
     const rep = ids => ids.map(reportId => ({ reportId, items: [] }));
     this.collections = [{ usagePage: info.usage_page, usage: info.usage, children: [],
       inputReports: rep(r.input), outputReports: rep(r.output), featureReports: rep(r.feature) }];
@@ -34,6 +41,9 @@ class NativeHIDDevice extends EventTarget {
     this.parsed = info.descriptor?.length ? hidParseDescriptor(info.descriptor) : null;
     this.known = !!NATIVE_REPORTS[info.usage_page];
     if (!this.known && this.parsed?.length) this.collections = this.parsed;
+    // Pages Logitech : les collections réelles du descripteur, quand il a été lu, valent mieux que la table
+    else if ((info.usage_page === 0xff00 || info.usage_page === 0xff43) && info.vid === 0x046d
+      && this.parsed?.some(c => c.usagePage === info.usage_page)) this.collections = this.parsed;
   }
   get opened() { return this.handle !== 0; }
   async open() {

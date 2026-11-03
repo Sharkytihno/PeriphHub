@@ -512,7 +512,20 @@ function renderSlim() {
 $('copyReport').onclick = async () => {
   if (!report) return;
   try {
-    await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    // Diagnostic des pilotes (échecs, interfaces de chaque appareil) en tête : c'est lui qui dit
+    // pourquoi un appareil détecté n'a pas de page
+    let diag = '';
+    try {
+      const ids = [...new Set((report.devices || []).map(d => d.vid + ':' + d.pid))];
+      const per = [];
+      for (const id of ids) {
+        const [vid, pid] = id.split(':');
+        const d = await deviceDiag(vid, pid);
+        if (/Interface |Échec |Pilote connecté/.test(d)) per.push(d.split('\n').filter(l => !/^PeriphHub /.test(l)).join('\n'));
+      }
+      diag = await globalDiag() + '\n\n' + per.join('\n\n') + '\n\n';
+    } catch (e) { diag = 'Diagnostic indisponible : ' + (e.message || e) + '\n\n'; }
+    await navigator.clipboard.writeText(diag + JSON.stringify(report, null, 2));
     toast('Rapport copié : collez-le dans un ticket GitHub');
   } catch {
     toast('Copie impossible', 'err');
@@ -541,6 +554,14 @@ function renderOptions() {
           h('button', { class: 'ghost', disabled: updBusy, onclick: () => checkUpdate(true) }, updBusy ? 'Vérification…' : 'Vérifier maintenant')),
         h('div', { class: 'muted small' }, 'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. '
           + 'Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.')])) : null,
+    NATIVE ? field('Son',
+      segmented([{ v: 'off', label: 'Périphériques seulement' }, { v: 'on', label: 'Tout afficher' }], audioAll() ? 'on' : 'off', v => {
+        try { localStorage.setItem('audioAll', v); } catch {}
+        renderOptions();
+        audioPoll();
+      }),
+      h('div', { class: 'muted small' }, 'Par défaut, seuls les casques, micros, DAC et enceintes USB ou Bluetooth ont un onglet. '
+        + '« Tout afficher » ajoute le son de la carte mère, des écrans (HDMI) et les pilotes audio virtuels.')) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),
