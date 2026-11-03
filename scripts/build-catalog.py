@@ -191,6 +191,11 @@ for pid, name in {"0501": "Razer Kraken 7.1 Classic", "0506": "Razer Kraken 7.1 
 add("1038", "161A", "SteelSeries Apex 3", "clavier", "openrgb", "steelseries-apex", "experimental")
 add("1038", "1622", "SteelSeries Apex 3 TKL", "clavier", "openrgb", "steelseries-apex", "experimental")
 
+# ---- Souris Corsair : DPI / fréquence par ui/js/drivers/corsair.js (protocoles ckb-next) ----
+t = rd(os.path.join(REPO, "ui", "js", "drivers", "corsair.js"))
+for pid, name in re.findall(r"0x([0-9A-F]{4}): \['([^']+)'", t):
+    add("1B1C", pid, name, "souris", "ckb-next", "corsair", "experimental")
+
 # ---- OpenMouse claviers (copié dans ui/vendor/openmouse-kb) : Wooting ARM, SteelSeries Apex Pro, Keychron HE ----
 kbv = os.path.join(REPO, "ui", "vendor", "openmouse-kb")
 t = rd(os.path.join(kbv, "wooting", "index.js"))
@@ -205,6 +210,13 @@ for pid, name in re.findall(r"\[0x([0-9a-fA-F]{4}), \{ name: \"([^\"]+)\"", t):
 t = rd(os.path.join(kbv, "keychron", "products.js"))
 for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t):
     add("3434", pid, name, "clavier", "openmouse", "openmouse-kb", "experimental")
+
+# HyperX Pulsefire Haste (DPI, fréquence, distance de levée) : protocole HyperX d'OpenMouse
+t = rd(os.path.join(REPO, "ui", "vendor", "openmouse", "hyperx", "index.js"))
+for m in re.finditer(r"0x([0-9a-fA-F]{4}), // (Pulsefire Haste[^\n(]*?)\s*\((Kingston|HP) era\)", t):
+    pid, label, era = m.groups()
+    add("0951" if era == "Kingston" else "03F0", pid.upper(), "HyperX " + label.replace("wired-mode alt", "filaire (variante)")
+        .replace("wireless dongle", "sans fil (dongle)").replace("wired", "filaire"), "souris", "openmouse", "openmouse", "experimental")
 
 # ---- Vérification croisée : ce que les protocoles OpenMouse embarqués acceptent réellement ----
 # La liste « supported-devices-data » d'OpenMouse est en retard sur ses protocoles (DeathAdder V2,
