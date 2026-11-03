@@ -13,6 +13,11 @@ jobs:
       - name: Fichiers de données JSON valides
         shell: pwsh
         run: Get-ChildItem data/*.json | ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json | Out-Null; "$($_.Name) OK" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pilotes contre appareils simulés (Logitech, Razer, SteelSeries…)
+        run: node --test tests/drivers.test.mjs
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

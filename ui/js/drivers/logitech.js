@@ -232,7 +232,12 @@ class LogitechDevice {
       const hires = cap === 'hires' ? v : this.state.hires;
       const invert = cap === 'invert' ? v : this.state.invert;
       // bit 0 (molette détournée vers HID++) laissé tel quel : sinon la molette ne défile plus
-      await this.call(LG.HIRES, 2, [(this.wheelMode & ~6) | (hires ? 2 : 0) | (invert ? 4 : 0)]);
+      const mode = (this.wheelMode & ~6) | (hires ? 2 : 0) | (invert ? 4 : 0);
+      await this.call(LG.HIRES, 2, [mode]);
+      // État à jour tout de suite : la réapplication au branchement enchaîne hires puis invert
+      // sans relire la souris, et le second écrasait le premier
+      this.wheelMode = mode;
+      Object.assign(this.state, { hires: !!hires, invert: !!invert });
     }
   }
 }
