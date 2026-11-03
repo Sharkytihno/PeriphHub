@@ -11,6 +11,17 @@ LINE="reverse_proxy /periphhub/* 127.0.0.1:$PORT"
 major=$(node -v | sed 's/^v\([0-9]*\).*/\1/')
 [ "$major" -ge 18 ] || { echo "Node $major : il faut Node 18 ou plus."; exit 1; }
 
+# Jeton enregistré : vérifié auprès de GitHub (sans l'afficher)
+T=$(sed -n 's/^GITHUB_TOKEN=//p' .env 2>/dev/null | tr -d '\r\n ')
+code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $T" https://api.github.com/repos/Sharkytihno/periphhub-diagnostics)
+unset T
+if [ "$code" != 200 ]; then
+  echo "Le jeton enregistré sur le VPS est refusé par GitHub (code $code)."
+  echo "Sur GitHub, copiez le bon jeton (icône « copier »), puis relancez install.sh."
+  exit 1
+fi
+echo "Jeton GitHub valide"
+
 if pm2 describe periphhub-relay >/dev/null 2>&1; then
   pm2 restart periphhub-relay --update-env >/dev/null
 else
