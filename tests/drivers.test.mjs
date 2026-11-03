@@ -78,6 +78,31 @@ test('Logitech DPI étendu 0x2202 (Superlight 2) : liste paginée, écriture X=Y
   assert.deepEqual(dev.writes.at(-1), [0x2202, 6, [0, 0x04, 0xE2, 0x04, 0xE2, 0]]); // 1250 sur X et Y
 });
 
+test('Logitech éclairage 0x8070 (G502 HERO, 2 zones) : index par zone, contrôle logiciel, RAM seulement', async () => {
+  const { drivers } = loadDrivers('logitech.js');
+  // Zone 0 (logo) : éteint, fixe, cycle, respiration ; zone 1 (bande) : éteint, fixe seulement
+  const dev = new HidppMouse({ dpi: { list: [800], cur: 800 }, led: [[0x00, 0x01, 0x03, 0x0A], [0x00, 0x01]] });
+  const [inst] = await drivers[0].connect(dev, [dev]);
+  eq(inst.caps.light.effects, ['off', 'static', 'breathing', 'spectrum']);
+  await inst.set('light', { effect: 'static', color: '#ff8000' });
+  const fx = dev.writes.filter(w => w[0] === 0x8070);
+  eq(fx[0], [0x8070, 8, [1]]); // l'ordinateur prend la main avant le premier effet
+  eq(fx[1], [0x8070, 3, [0, 1, 0xFF, 0x80, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]]); // octet 12 = 0 : pas d'écriture en flash
+  eq(fx[2], [0x8070, 3, [1, 1, 0xFF, 0x80, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]]);
+  await inst.set('light', { effect: 'breathing', color: '#00ff00' });
+  const last = dev.writes.filter(w => w[0] === 0x8070);
+  assert.equal(last.length, 4); // une seule prise de main ; la zone 1 sans respiration est sautée
+  eq(last[3], [0x8070, 3, [0, 3, 0, 0xFF, 0, 0x13, 0x88, 0, 100, 0, 0, 0, 0]]);
+  assert.equal(inst.state.light.effect, 'breathing');
+});
+
+test("Logitech sans 0x8070 : pas de réglage d'éclairage proposé", async () => {
+  const { drivers } = loadDrivers('logitech.js');
+  const dev = new HidppMouse({ dpi: { list: [800], cur: 800 } });
+  const [inst] = await drivers[0].connect(dev, [dev]);
+  assert.equal(inst.caps.light, undefined);
+});
+
 test('Logitech HID++ 1.0 (trop ancien) : ignoré proprement', async () => {
   const { drivers } = loadDrivers('logitech.js');
   const dev = new HidppMouse({});
@@ -177,4 +202,70 @@ test('Kraken V2 : lecture du mode et de la couleur, écriture couleur puis mode 
   assert.deepEqual(mem[0x172D], [0x0B]);
   const writes = dev.sent.filter(([, b]) => b[0] === 0x40).map(([, b]) => (b[2] << 8) | b[3]);
   assert.deepEqual(writes, [0x1741, 0x172D]); // jamais d'autre adresse
+});
+
+// ---------- Corsair (ckb-next) ----------
+import { CorsairNxpSim, CorsairBragiSim } from './sim/corsair.mjs';
+
+for (const bigEndian of [false, true]) {
+  test(`Corsair NXP (M65 PRO) : DPI de l'étage actif, relu ${bigEndian ? 'gros' : 'petit'}-boutiste, fréquence`, async () => {
+    const { drivers } = loadDrivers('corsair.js');
+    const dev = new CorsairNxpSim({ bigEndian, stage: 2, poll: 2 });
+    assert.ok(drivers[0].match(dev));
+    const [inst] = await drivers[0].connect(dev);
+    assert.equal(inst.name, 'Corsair M65 PRO RGB');
+    assert.equal(inst.state.dpi, 1600);
+    assert.equal(inst.state.rate, 500);
+    assert.equal(inst.meta, 'firmware 3.05');
+    await inst.set('dpi', 2400);
+    assert.equal(dev.dpi[2], 2400);  // étage actif seulement
+    assert.equal(dev.dpi[1], 800);
+    await inst.refresh();
+    assert.equal(inst.state.dpi, 2400);
+    await inst.set('rate', 1000);
+    assert.equal(dev.poll, 1);
+  });
+}
+
+test('Corsair NXP : réglage ignoré par la souris → erreur claire, pas de faux succès', async () => {
+  const { drivers } = loadDrivers('corsair.js');
+  const dev = new CorsairNxpSim({ ignoreWrites: true });
+  const [inst] = await drivers[0].connect(dev);
+  await assert.rejects(inst.set('dpi', 2000), /pas pris/);
+});
+
+test('Corsair NXP : mauvaise collection (clavier HID, page 0x01) refusée', () => {
+  const { drivers } = loadDrivers('corsair.js');
+  assert.equal(drivers[0].match(new FakeHid({ vendorId: 0x1B1C, productId: 0x1B2E, usagePage: 0x01, usage: 2 })), false);
+  assert.equal(drivers[0].match(new FakeHid({ vendorId: 0x1B1C, productId: 0x1B5C, usagePage: 0xFFC2, usage: 4 })), false); // Nightsword : OpenMouse
+});
+
+test('Corsair Bragi filaire (Katar PRO) : DPI X et Y, fréquence', async () => {
+  const { drivers } = loadDrivers('corsair.js');
+  const dev = new CorsairBragiSim({ dpi: 1200, rate: 3 });
+  assert.ok(drivers[0].match(dev));
+  const [inst] = await drivers[0].connect(dev);
+  assert.equal(inst.state.dpi, 1200);
+  assert.equal(inst.state.rate, 500);
+  assert.equal(inst.caps.battery, undefined);
+  await inst.set('dpi', 3200);
+  assert.equal(dev.props[0x21], 3200);
+  assert.equal(dev.props[0x22], 3200);
+  await inst.set('rate', 1000);
+  assert.equal(dev.props[0x01], 4);
+});
+
+test('Corsair Bragi derrière le récepteur (Dark Core RGB PRO) : emplacement 1, batterie', async () => {
+  const { drivers } = loadDrivers('corsair.js');
+  const dev = new CorsairBragiSim({ pid: 0x1B81, slot: 1, battery: 735 });
+  const [inst] = await drivers[0].connect(dev);
+  assert.equal(inst.caps.battery, true);
+  assert.equal(inst.state.battery.level, 74);
+});
+
+test('Corsair Bragi : DPI ignoré (mémoire intégrée) → erreur claire', async () => {
+  const { drivers } = loadDrivers('corsair.js');
+  const dev = new CorsairBragiSim({ ignoreWrites: true });
+  const [inst] = await drivers[0].connect(dev);
+  await assert.rejects(inst.set('dpi', 1600), /pas pris/);
 });

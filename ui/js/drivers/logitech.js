@@ -7,7 +7,17 @@
 const LG = {
   ROOT: 0x0000, NAME: 0x0005, FW: 0x0003, BATTERY: 0x1000, UNIFIED_BATTERY: 0x1004,
   DPI: 0x2201, EXT_DPI: 0x2202, RATE: 0x8060, EXT_RATE: 0x8061, SMARTSHIFT: 0x2110, SMARTSHIFT2: 0x2111, HIRES: 0x2121,
-  PROFILES: 0x8100,
+  PROFILES: 0x8100, LED: 0x8070,
+};
+// Éclairage 0x8070 (Color LED Effects), d'après Solaar (hidpp20.LEDEffects, LEDZoneInfo) et libratbag :
+// chaque zone liste ses effets ; on envoie l'INDEX de l'effet dans cette liste, jamais un effet absent.
+// 10 octets de paramètres. Les claviers G815/G915 (0x8071 + 0x8081) demandent de basculer la mémoire
+// intégrée et de gérer la mise en veille des LED : laissés à OpenRGB.
+const LG_FX = {
+  off: [0x00, () => []],
+  static: [0x01, c => [...c, 0]],                                        // couleur, rampe
+  breathing: [0x0A, c => [...c, 0x13, 0x88, 0, 100]],                    // couleur, période 5 s, forme, intensité
+  spectrum: [0x03, () => [0, 0, 0, 0, 0, 0x13, 0x88, 100]],              // période 5 s @5, intensité @7
 };
 const LG_SW = 0x0B;                    // id logiciel (4 bits) : distingue nos réponses des notifications
 const LG_TYPE = { 0: 'clavier', 2: 'clavier', 3: 'souris', 4: 'souris', 5: 'souris', 8: 'casque' };
@@ -174,6 +184,43 @@ class LogitechDevice {
     if (!this.caps.rate?.length) delete this.caps.rate;
   }
 
+  async probeLight() {
+    if (!await this.feature(LG.LED)) return;
+    const n = Math.min((await this.call(LG.LED, 0))[0], 8);
+    this.zones = [];
+    for (let z = 0; z < n; z++) {
+      const zi = await this.call(LG.LED, 1, [z, 0xFF, 0]);
+      const fx = new Map(); // id d'effet → index dans la liste de la zone
+      for (let i = 0; i < Math.min(zi[3], 16); i++) {
+        const e = await this.call(LG.LED, 2, [z, i, 0]);
+        fx.set((e[2] << 8) | e[3], i);
+      }
+      this.zones.push({ z, fx });
+    }
+    const effects = Object.keys(LG_FX).filter(k => this.zones.some(zn => zn.fx.has(LG_FX[k][0])));
+    if (!effects.length) return;
+    this.caps.light = { effects, color: true, brightness: false };
+    // L'effet en cours n'est relu que sur certains modèles : inconnu tant qu'on n'en a pas choisi un
+    this.state.light = { effect: null, color: '#00b4ff' };
+  }
+
+  async setLight(v) {
+    const fx = LG_FX[v.effect];
+    if (!fx) throw new Error('effet inconnu');
+    const rgb = [1, 3, 5].map(i => parseInt((v.color || '#ffffff').slice(i, i + 2), 16) || 0);
+    // « LED Control » de Solaar : la souris accepte les effets envoyés par l'ordinateur
+    if (!this.ledClaimed) { await this.call(LG.LED, 8, [1]).catch(() => {}); this.ledClaimed = true; }
+    let done = 0;
+    for (const { z, fx: list } of this.zones) {
+      if (!list.has(fx[0])) continue;
+      const params = fx[1](rgb).concat(new Array(10).fill(0)).slice(0, 10);
+      await this.call(LG.LED, 3, [z, list.get(fx[0]), ...params]);
+      done++;
+    }
+    if (!done) throw new Error('effet non proposé par cet appareil');
+    Object.assign(this.state.light, { effect: v.effect, color: v.color || this.state.light.color });
+  }
+
   async probe() {
     await this.describe();
     await this.refreshBattery().catch(() => {});
@@ -184,6 +231,7 @@ class LogitechDevice {
     this.caps.smartshift = !!this.smartshiftFeat;
     if (await this.feature(LG.HIRES)) this.caps.hires = this.caps.invert = true;
     this.onboard = !!await this.feature(LG.PROFILES);
+    await this.probeLight().catch(() => { delete this.caps.light; });
     try {
       const fw = await this.call(LG.FW, 1, [0]);
       this.fw = `${String.fromCharCode(fw[1], fw[2], fw[3]).trim()} ${fw[4].toString(16)}.${fw[5].toString(16).padStart(2, '0')}`;
@@ -228,6 +276,8 @@ class LogitechDevice {
       else await this.call(LG.RATE, 2, [Math.round(1000 / v)]);
     } else if (cap === 'smartshift') {
       await this.call(this.smartshiftFeat, this.smartshiftFeat === LG.SMARTSHIFT2 ? 2 : 1, [v.mode, v.auto || 0, 0]);
+    } else if (cap === 'light') {
+      await this.setLight(v);
     } else if (cap === 'hires' || cap === 'invert') {
       const hires = cap === 'hires' ? v : this.state.hires;
       const invert = cap === 'invert' ? v : this.state.invert;

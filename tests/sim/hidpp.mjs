@@ -8,7 +8,8 @@ const be16 = v => [v >> 8, v & 0xFF];
 
 export class HidppMouse extends FakeHid {
   // opts : { name, index (0xFF filaire, 1-6 récepteur), dpi: {list | min,max,step, cur},
-  //          extDpi: {values, cur}, rateMask (0x8060), extRateMask (0x8061), wheel, battery }
+  //          extDpi: {values, cur}, rateMask (0x8060), extRateMask (0x8061), wheel, battery,
+  //          led: [[ids d'effets de la zone 0], [zone 1]…] (0x8070, ids : 0 éteint, 1 fixe, 3 cycle, 0x0A respiration) }
   constructor(opts = {}) {
     super({ vendorId: 0x046D, productId: opts.pid || 0xC547, productName: 'USB Receiver', usagePage: 0xFF00, usage: 2 });
     this.o = opts;
@@ -22,6 +23,8 @@ export class HidppMouse extends FakeHid {
     if (opts.rateMask != null) this.table.push(0x8060);
     if (opts.extRateMask != null) this.table.push(0x8061);
     if (opts.wheel != null) this.table.push(0x2121);
+    if (opts.led) this.table.push(0x8070);
+    this.swControl = 0;
     this.writes = []; // [fonctionnalité, fonction, paramètres] des écritures reçues
   }
 
@@ -97,6 +100,23 @@ export class HidppMouse extends FakeHid {
           if (!(this.o.extRateMask & (1 << p[0]))) throw ERR_INVALID_ARGUMENT;
           this.state.extRate = p[0]; this.writes.push([feat, fn, [p[0]]]); return [];
         }
+        break;
+      }
+      case 0x8070: {
+        const zones = this.o.led;
+        if (fn === 0) return [zones.length, 0, 0, 0, 0];
+        if (fn === 1) { if (!zones[p[0]]) throw ERR_INVALID_ARGUMENT; return [p[0], 0, 1 + p[0], zones[p[0]].length]; }
+        if (fn === 2) {
+          const id = zones[p[0]]?.[p[1]];
+          if (id == null) throw ERR_INVALID_ARGUMENT;
+          return [p[0], p[1], ...be16(id), 0, 0, 0, 0];
+        }
+        if (fn === 3) {
+          if (!zones[p[0]] || zones[p[0]][p[1]] == null) throw ERR_INVALID_ARGUMENT;
+          if (!this.swControl) throw ERR_INVALID_ARGUMENT; // effets refusés tant que l'ordinateur n'a pas la main
+          this.writes.push([feat, fn, [...p.slice(0, 13)]]); return [p[0]];
+        }
+        if (fn === 8) { this.swControl = p[0]; this.writes.push([feat, fn, [p[0]]]); return []; }
         break;
       }
       case 0x2121: {
