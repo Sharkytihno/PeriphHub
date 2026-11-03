@@ -83,6 +83,18 @@ async function globalDiag() {
   }
   if (hidden) lines.push(`(+ ${hidden} autres appareils sans réglages : hubs, puces internes…)`);
   if (typeof hsStatus !== 'undefined') lines.push('Module casques : ' + hsStatus);
+  lines.push('OpenRGB : ' + (typeof orgbInst !== 'undefined' && orgbInst ? orgbInst.state.list.length + ' appareils' : 'non joignable (lancé avec « Serveur SDK » ?)'));
+  // Interfaces HID vues par Windows et sort de chacune : dit si la liste est vide, refusée, bloquée ou filtrée
+  if (NATIVE) {
+    const shown = new Set(devs.map(d => d.vid + ':' + d.pid));
+    const hx = n => Number(n).toString(16).toUpperCase().padStart(4, '0');
+    try {
+      const probe = await nativeInvoke('hid_probe');
+      lines.push(`Interfaces HID vues par Windows : ${probe.length}`);
+      for (const p of probe.filter(p => shown.has(hx(p.vid) + ':' + hx(p.pid))))
+        lines.push(`  ${hx(p.vid)}:${hx(p.pid)} MI ${p.interface} · page 0x${hx(p.usage_page)} usage 0x${hx(p.usage)} · ${p.state}`);
+    } catch (e) { lines.push('Interfaces HID : ' + e); }
+  }
   return lines.join('\n');
 }
 

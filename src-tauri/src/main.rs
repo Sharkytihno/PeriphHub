@@ -197,6 +197,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             scan,
             hid::hid_devices,
+            hid::hid_probe,
             hid::hid_open,
             hid::hid_close,
             hid::hid_send,

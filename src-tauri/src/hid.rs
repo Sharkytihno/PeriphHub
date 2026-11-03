@@ -100,6 +100,8 @@ pub struct Hid {
     // Interfaces qui n'ont pas répondu à temps : écartées tant qu'elles restent branchées,
     // pour ne pas relancer à chaque relecture un appel qui reste bloqué dans Windows
     stuck: Mutex<HashSet<String>>,
+    // Pourquoi le descripteur n'a pas pu être lu (pour le diagnostic)
+    notes: Mutex<HashMap<String, String>>,
 }
 
 // hidapi sans énumération : la liste vient de pnp.rs, on n'ouvre que l'interface demandée
@@ -110,14 +112,14 @@ fn api() -> Result<hidapi::HidApi, String> {
 }
 
 // Lu une seule fois par interface (ouverture sans accès si Windows réserve l'appareil)
-fn read_descriptor(path: &str) -> Vec<u8> {
-    let Ok(cpath) = std::ffi::CString::new(path) else { return Vec::new() };
-    let Ok(api) = api() else { return Vec::new() };
-    let Ok(dev) = api.open_path(&cpath) else { return Vec::new() };
+fn read_descriptor(path: &str) -> Result<Vec<u8>, String> {
+    let cpath = std::ffi::CString::new(path).map_err(|_| "chemin invalide".to_string())?;
+    let api = api().map_err(|e| format!("hidapi : {e}"))?;
+    let dev = api.open_path(&cpath).map_err(|e| format!("ouverture refusée : {e}"))?;
     let mut buf = vec![0u8; 4096];
     match dev.get_report_descriptor(&mut buf) {
-        Ok(n) => buf[..n].to_vec(),
-        Err(_) => Vec::new(),
+        Ok(n) => Ok(buf[..n].to_vec()),
+        Err(e) => Err(format!("descripteur illisible : {e}")),
     }
 }
 
@@ -150,6 +152,7 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
     let present = |p: &str| infos.iter().any(|d| d.path == p);
     hid.descriptors.lock().unwrap().retain(|p, _| present(p));
     hid.stuck.lock().unwrap().retain(|p| present(p));
+    hid.notes.lock().unwrap().retain(|p, _| present(p));
     let mut out = Vec::new();
     for d in infos {
         if hid.stuck.lock().unwrap().contains(&d.path) {
@@ -161,7 +164,11 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
             None => {
                 let p = d.path.clone();
                 match crate::watchdog::timed(DESCRIPTOR_LIMIT, move || read_descriptor(&p)) {
-                    Some(x) => {
+                    Some(r) => {
+                        let x = r.unwrap_or_else(|e| {
+                            hid.notes.lock().unwrap().insert(d.path.clone(), e);
+                            Vec::new()
+                        });
                         hid.descriptors.lock().unwrap().insert(d.path.clone(), x.clone());
                         x
                     }
@@ -186,6 +193,49 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
     }
     out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));
     Ok(out)
+}
+
+/// Pour le diagnostic : toutes les interfaces HID que Windows connaît (sans chemin ni numéro de série),
+/// et pour chacune ce que PeriphHub en a fait. Ne lit rien sur les appareils : relit l'état de `hid_devices`.
+#[derive(Serialize)]
+pub struct HidProbe {
+    vid: u16,
+    pid: u16,
+    interface: i32,
+    usage_page: u16,
+    usage: u16,
+    state: String,
+}
+
+#[tauri::command]
+pub async fn hid_probe(app: AppHandle) -> Result<Vec<HidProbe>, String> {
+    off_main(move || {
+        let hid = app.state::<Hid>();
+        let mut out: Vec<HidProbe> = crate::pnp::hid_interfaces()
+            .into_iter()
+            .map(|d| {
+                let state = if bootloader(&d) || d.usage_page == FIDO_PAGE {
+                    "jamais ouverte (sécurité ou mise à jour)".to_string()
+                } else if !allowed_info(&d) {
+                    "non prise en charge".to_string()
+                } else if hid.stuck.lock().unwrap().contains(&d.path) {
+                    "bloquée : ne répond pas à Windows".to_string()
+                } else if let Some(n) = hid.notes.lock().unwrap().get(&d.path) {
+                    n.clone()
+                } else {
+                    match hid.descriptors.lock().unwrap().get(&d.path) {
+                        Some(x) if x.is_empty() => "descripteur vide".to_string(),
+                        Some(x) => format!("ok, descripteur {} octets", x.len()),
+                        None => "pas encore lue".to_string(),
+                    }
+                };
+                HidProbe { vid: d.vid, pid: d.pid, interface: d.interface, usage_page: d.usage_page, usage: d.usage, state }
+            })
+            .collect();
+        out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));
+        Ok(out)
+    })
+    .await
 }
 
 #[tauri::command]
