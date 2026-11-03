@@ -75,7 +75,9 @@ for p in glob.glob(os.path.join(SRC, "libratbag/data/devices/*.device")):
 KIND_FILE = {"mouse.py": "souris", "keyboards.py": "clavier", "headsets.py": "casque", "mouse_mat.py": "tapis", "accessory.py": ""}
 for p in glob.glob(os.path.join(SRC, "openrazer/daemon/openrazer_daemon/hardware/*.py")):
     t = rd(p)
-    for m in re.finditer(r'class (\w+)\([^)]*\):\s*"""\s*(?:Class for the )?([^\n"]+)"""(.*?)(?=\nclass |\Z)', t, re.S):
+    # La docstring tient en général sur plusieurs lignes ("""\n    Class for the Razer X\n    """) :
+    # exiger les guillemets fermants sur la même ligne ratait ~240 appareils Razer.
+    for m in re.finditer(r'class (\w+)\([^)]*\):\s*"""\s*(?:Class for the )?([^\n"]+?)\s*"""(.*?)(?=\nclass |\Z)', t, re.S):
         body = m.group(3)
         vid = re.search(r"USB_VID\s*=\s*0x([0-9a-fA-F]{4})", body)
         pid = re.search(r"USB_PID\s*=\s*0x([0-9a-fA-F]{4})", body)
@@ -203,6 +205,24 @@ for pid, name in re.findall(r"\[0x([0-9a-fA-F]{4}), \{ name: \"([^\"]+)\"", t):
 t = rd(os.path.join(kbv, "keychron", "products.js"))
 for pid, name in re.findall(r"0x([0-9a-fA-F]{4}): \{ name: \"([^\"]+)\"", t):
     add("3434", pid, name, "clavier", "openmouse", "openmouse-kb", "experimental")
+
+# ---- Vérification croisée : ce que les protocoles OpenMouse embarqués acceptent réellement ----
+# La liste « supported-devices-data » d'OpenMouse est en retard sur ses protocoles (DeathAdder V2,
+# Basilisk V3, Rival 300, Prime… y manquent) : on interroge directement leurs isSupported().
+import subprocess
+import tempfile
+with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+    json.dump([f"{v}:{p}" for v, p in cat], tf)
+probe = subprocess.run(["node", os.path.join(REPO, "scripts", "probe-openmouse.mjs"), tf.name],
+                       capture_output=True, text=True, check=True)
+os.unlink(tf.name)
+for key, drivers in json.loads(probe.stdout).items():
+    v, p = key.split(":")
+    e = cat[(v, p)]
+    # VIA = interface générique des claviers QMK, déjà gérée par drivers/via.js
+    real = [d for d in drivers if d != "kb:VIA"]
+    if real:
+        add(v, p, "", "", "openmouse", "openmouse-kb" if real[0].startswith("kb:") else "openmouse", "experimental")
 
 out = sorted(cat.values(), key=lambda e: (e["vid"], e["pid"]))
 for e in out:
