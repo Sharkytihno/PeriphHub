@@ -13,18 +13,17 @@ pub struct Device {
     pub interfaces: usize,
 }
 
+// Lu dans le gestionnaire Plug and Play (pnp.rs) : aucun appareil n'est ouvert, donc un appareil
+// qui ne répond pas ne peut plus vider la liste.
 pub fn list() -> Vec<Device> {
-    let Ok(api) = hidapi::HidApi::new() else {
-        return Vec::new();
-    };
     let mut map: BTreeMap<(u16, u16), (Device, u8)> = BTreeMap::new();
-    for d in api.device_list() {
-        let (vid, pid) = (d.vendor_id(), d.product_id());
+    for d in crate::pnp::hid_interfaces() {
+        let (vid, pid) = (d.vid, d.pid);
         if vid == 0 {
             continue;
         }
         // Rang du type : plus il est précis, plus il l'emporte entre les interfaces d'un même appareil
-        let (kind, rank) = match (d.usage_page(), d.usage()) {
+        let (kind, rank) = match (d.usage_page, d.usage) {
             (0x0B, _) => ("casque", 4),
             (0x01, 0x02) => ("souris", 3),
             (0x01, 0x06) => ("clavier", 3),
@@ -47,14 +46,7 @@ pub fn list() -> Vec<Device> {
         });
         e.0.interfaces += 1;
         if e.0.product.is_empty() {
-            e.0.product = d.product_string().unwrap_or_default().trim().to_string();
-        }
-        if e.0.manufacturer.is_empty() {
-            e.0.manufacturer = d
-                .manufacturer_string()
-                .unwrap_or_default()
-                .trim()
-                .to_string();
+            e.0.product = d.product.trim().to_string();
         }
         if rank > e.1 {
             e.0.kind = kind;

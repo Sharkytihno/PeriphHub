@@ -91,9 +91,10 @@ pub fn run() -> Value {
     }
 
     let entries = startup::all();
-    // Un appareil qui ne répond pas bloquerait l'analyse pour toujours : on n'attend pas plus de 12 s
-    let devs_r = crate::watchdog::hid(std::time::Duration::from_secs(12), devices::list);
-    let hid_blocked = devs_r.is_err();
+    // La liste vient du gestionnaire Plug and Play (aucun appareil n'est ouvert) : elle ne devrait jamais
+    // bloquer. Délai gardé par sécurité, indépendant des ouvertures HID en cours (watchdog::hid).
+    let devs_r = crate::watchdog::timed(std::time::Duration::from_secs(12), devices::list);
+    let hid_blocked = devs_r.is_none();
     let devs = devs_r.unwrap_or_default();
 
     let mut out_vendors = Vec::new();

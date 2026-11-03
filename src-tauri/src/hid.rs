@@ -2,8 +2,9 @@
 // (open / sendReport / sendFeatureReport / événements inputreport) via hidapi.
 // Chaque interface ouverte a deux handles : un pour écrire, un lu par un thread
 // qui pousse les reports entrants vers la WebView (événement « hid-input »).
+use crate::pnp::HidIface;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -36,22 +37,22 @@ const FIDO_PAGE: u16 = 0xF1D0;
 // PeriphHub n'écrit jamais de firmware.
 const NEVER: &[(u16, u16)] = &[(0x373B, 0x215C)];
 
-fn bootloader(d: &hidapi::DeviceInfo) -> bool {
-    if NEVER.contains(&(d.vendor_id(), d.product_id())) {
+fn bootloader(d: &HidIface) -> bool {
+    if NEVER.contains(&(d.vid, d.pid)) {
         return true;
     }
-    let p = d.product_string().unwrap_or_default().to_lowercase();
+    let p = d.product.to_lowercase();
     ["boot", "dfu", "isp ", "firmware update"].iter().any(|w| p.contains(w))
 }
 
-fn allowed_info(d: &hidapi::DeviceInfo) -> bool {
-    if bootloader(d) || d.usage_page() == FIDO_PAGE {
+fn allowed_info(d: &HidIface) -> bool {
+    if bootloader(d) || d.usage_page == FIDO_PAGE {
         return false;
     }
-    allowed(d.vendor_id(), d.product_id())
-        || (d.usage_page(), d.usage()) == VIA_USAGE
-        || OPENMOUSE_VIDS.contains(&d.vendor_id())
-        || (d.vendor_id() == 0x054C && PLAYSTATION.contains(&d.product_id()) && (d.usage_page(), d.usage()) == (0x01, 0x05))
+    allowed(d.vid, d.pid)
+        || (d.usage_page, d.usage) == VIA_USAGE
+        || OPENMOUSE_VIDS.contains(&d.vid)
+        || (d.vid == 0x054C && PLAYSTATION.contains(&d.pid) && (d.usage_page, d.usage) == (0x01, 0x05))
 }
 
 fn allowed(vid: u16, pid: u16) -> bool {
@@ -93,15 +94,26 @@ struct Open {
 
 #[derive(Default)]
 pub struct Hid {
-    api: Mutex<Option<hidapi::HidApi>>,
     open: Mutex<HashMap<u32, Open>>,
     next: AtomicU32,
     descriptors: Mutex<HashMap<String, Vec<u8>>>,
+    // Interfaces qui n'ont pas répondu à temps : écartées tant qu'elles restent branchées,
+    // pour ne pas relancer à chaque relecture un appel qui reste bloqué dans Windows
+    stuck: Mutex<HashSet<String>>,
+}
+
+// hidapi sans énumération : la liste vient de pnp.rs, on n'ouvre que l'interface demandée
+fn api() -> Result<hidapi::HidApi, String> {
+    static NO_DISCOVERY: std::sync::Once = std::sync::Once::new();
+    NO_DISCOVERY.call_once(hidapi::HidApi::disable_device_discovery);
+    hidapi::HidApi::new().map_err(|e| e.to_string())
 }
 
 // Lu une seule fois par interface (ouverture sans accès si Windows réserve l'appareil)
-fn read_descriptor(api: &hidapi::HidApi, path: &std::ffi::CStr) -> Vec<u8> {
-    let Ok(dev) = api.open_path(path) else { return Vec::new() };
+fn read_descriptor(path: &str) -> Vec<u8> {
+    let Ok(cpath) = std::ffi::CString::new(path) else { return Vec::new() };
+    let Ok(api) = api() else { return Vec::new() };
+    let Ok(dev) = api.open_path(&cpath) else { return Vec::new() };
     let mut buf = vec![0u8; 4096];
     match dev.get_report_descriptor(&mut buf) {
         Ok(n) => buf[..n].to_vec(),
@@ -109,19 +121,13 @@ fn read_descriptor(api: &hidapi::HidApi, path: &std::ffi::CStr) -> Vec<u8> {
     }
 }
 
+const DESCRIPTOR_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 #[derive(Serialize, Clone)]
 struct InputEvent {
     handle: u32,
     report_id: u8,
     data: Vec<u8>,
-}
-
-fn with_api<T>(hid: &Hid, f: impl FnOnce(&mut hidapi::HidApi) -> Result<T, String>) -> Result<T, String> {
-    let mut guard = hid.api.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(hidapi::HidApi::new().map_err(|e| e.to_string())?);
-    }
-    f(guard.as_mut().unwrap())
 }
 
 // Toutes les commandes HID tournent hors du fil de la fenêtre : un appareil qui ne répond pas ne doit
@@ -134,36 +140,52 @@ async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
 
 #[tauri::command]
 pub async fn hid_devices(app: AppHandle) -> Result<Vec<HidInfo>, String> {
-    off_main(move || crate::watchdog::hid(HID_LIMIT, move || devices_now(&app.state::<Hid>()))?).await
+    off_main(move || devices_now(&app.state::<Hid>())).await
 }
 
+// La liste ne bloque jamais (pnp.rs). Seules les interfaces prises en charge sont ouvertes, une par une
+// et chacune avec son délai, pour lire leur descripteur : un appareil figé est écarté, les autres restent.
 fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
-    with_api(hid, |api| {
-        api.refresh_devices().map_err(|e| e.to_string())?;
-        let mut cache = hid.descriptors.lock().unwrap();
-        let infos: Vec<hidapi::DeviceInfo> = api.device_list().filter(|d| allowed_info(d)).cloned().collect();
-        cache.retain(|p, _| infos.iter().any(|d| d.path().to_string_lossy() == p.as_str()));
-        let mut out: Vec<HidInfo> = infos
-            .iter()
-            .map(|d| {
-                let path = d.path().to_string_lossy().to_string();
-                let descriptor = cache.entry(path.clone()).or_insert_with(|| read_descriptor(api, d.path())).clone();
-                HidInfo {
-                    path,
-                    vid: d.vendor_id(),
-                    pid: d.product_id(),
-                    usage_page: d.usage_page(),
-                    usage: d.usage(),
-                    interface: d.interface_number(),
-                    product: d.product_string().unwrap_or_default().to_string(),
-                    serial: d.serial_number().unwrap_or_default().to_string(),
-                    descriptor,
+    let infos: Vec<HidIface> = crate::pnp::hid_interfaces().into_iter().filter(allowed_info).collect();
+    let present = |p: &str| infos.iter().any(|d| d.path == p);
+    hid.descriptors.lock().unwrap().retain(|p, _| present(p));
+    hid.stuck.lock().unwrap().retain(|p| present(p));
+    let mut out = Vec::new();
+    for d in infos {
+        if hid.stuck.lock().unwrap().contains(&d.path) {
+            continue;
+        }
+        let cached = hid.descriptors.lock().unwrap().get(&d.path).cloned();
+        let descriptor = match cached {
+            Some(x) => x,
+            None => {
+                let p = d.path.clone();
+                match crate::watchdog::timed(DESCRIPTOR_LIMIT, move || read_descriptor(&p)) {
+                    Some(x) => {
+                        hid.descriptors.lock().unwrap().insert(d.path.clone(), x.clone());
+                        x
+                    }
+                    None => {
+                        hid.stuck.lock().unwrap().insert(d.path.clone());
+                        continue;
+                    }
                 }
-            })
-            .collect();
-        out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));
-        Ok(out)
-    })
+            }
+        };
+        out.push(HidInfo {
+            path: d.path,
+            vid: d.vid,
+            pid: d.pid,
+            usage_page: d.usage_page,
+            usage: d.usage,
+            interface: d.interface,
+            product: d.product,
+            serial: String::new(),
+            descriptor,
+        });
+    }
+    out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));
+    Ok(out)
 }
 
 #[tauri::command]
@@ -173,17 +195,14 @@ pub async fn hid_open(app: AppHandle, path: String, unnumbered: bool) -> Result<
 
 fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
     let hid = app.state::<Hid>();
+    // Seulement les périphériques des fabricants pris en charge (comme la liste de hid_devices)
+    if !crate::pnp::hid_interfaces().iter().any(|d| d.path.eq_ignore_ascii_case(&path) && allowed_info(d)) {
+        return Err("périphérique non pris en charge".into());
+    }
     let cpath = std::ffi::CString::new(path).map_err(|e| e.to_string())?;
-    let (writer, reader) = with_api(&hid, |api| {
-        // Seulement les périphériques des fabricants pris en charge (comme la liste de hid_devices)
-        api.refresh_devices().map_err(|e| e.to_string())?;
-        if !api.device_list().any(|d| d.path() == cpath.as_c_str() && allowed_info(d)) {
-            return Err("périphérique non pris en charge".into());
-        }
-        let w = api.open_path(&cpath).map_err(|e| e.to_string())?;
-        let r = api.open_path(&cpath).map_err(|e| e.to_string())?;
-        Ok((w, r))
-    })?;
+    let api = api()?;
+    let writer = api.open_path(&cpath).map_err(|e| e.to_string())?;
+    let reader = api.open_path(&cpath).map_err(|e| e.to_string())?;
     let handle = hid.next.fetch_add(1, Ordering::SeqCst) + 1;
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();

@@ -9,6 +9,7 @@ mod headset;
 mod hid;
 mod openrgb;
 mod pads;
+mod pnp;
 mod procs;
 mod scan;
 mod sign;
