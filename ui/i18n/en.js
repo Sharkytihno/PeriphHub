@@ -395,6 +395,15 @@ const I18N_EN = {
   'Cette souris ne sait pas indiquer ses réglages actuels : les valeurs affichées sont les dernières envoyées par PeriphHub, ou celles par défaut. Choisir un DPI ici remplace les paliers du bouton DPI de la souris par cette seule valeur.': 'This mouse cannot report its current settings: the values shown are the last ones PeriphHub sent, or the defaults. Choosing a DPI here replaces the steps of the mouse’s DPI button with this single value.',
   'Cycle de couleurs': 'Colour cycle',
   'Respiration': 'Breathing',
+  'Par zone': 'Per zone',
+  'Arc-en-ciel': 'Rainbow',
+  'Lente': 'Slow',
+  'Rapide': 'Fast',
+  'Zones (de gauche à droite)': 'Zones (left to right)',
+  'Toutes les zones :': 'All zones:',
+  'Dégradé arc-en-ciel': 'Rainbow gradient',
+  'Dégradé': 'Gradient',
+  'Effet animé par PeriphHub, comme SteelSeries GG : il s’arrête quand PeriphHub est fermé (le clavier garde la dernière couleur affichée).': 'Effect animated by PeriphHub, like SteelSeries GG does: it stops when PeriphHub is closed (the keyboard keeps the last colour shown).',
   'Sensibilité (DPI)': 'Sensitivity (DPI)',
   'Fréquence d’interrogation': 'Polling rate',
   'Plus elle est haute, plus le curseur est fluide (et plus la batterie s’use vite).': 'The higher it is, the smoother the cursor (and the faster the battery drains).',
@@ -629,6 +638,8 @@ const I18N_EN = {
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  '{} zones': '{} zones',
+  'Zone {}': 'Zone {}',
   'Réglages aussi possibles sur {}, le configurateur officiel dans le navigateur.': 'Also adjustable on {}, the official in-browser configurator.',
   'Batterie {} %{} · firmware {}': 'Battery {} %{} · firmware {}',
   'Batterie {} %{}': 'Battery {} %{}',

@@ -236,6 +236,39 @@ test('Apex 3 TKL : 8 zones (0x21 0xFF) puis luminosité 0-16, rapports de 64 oct
   assert.equal(hex(dev.sent[1][1].slice(0, 2)), '23 10');
 });
 
+test('Apex 3 : couleurs par zone et arc-en-ciel, chaque zone à sa place', async () => {
+  const { drivers } = loadDrivers('steelseries-apex.js');
+  const dev = new FakeHid({ vendorId: 0x1038, productId: 0x161A, iface: 3 });
+  const [inst] = await drivers[0].connect(dev);
+  const zones = Array.from({ length: 10 }, (_, i) => '#0000' + (i + 1).toString(16).padStart(2, '0'));
+  await inst.set('light', { effect: 'zones', zones, brightness: 100 });
+  const c = dev.sent[1][1];
+  assert.equal(hex(c.slice(0, 5)), '0b 00 00 00 01');
+  assert.equal(hex(c.slice(29, 32)), '00 00 0a');
+  dev.sent.length = 0;
+  await inst.set('light', { effect: 'rainbow', brightness: 100 });
+  assert.equal(hex(dev.sent[1][1].slice(2, 5)), 'ff 00 00'); // 1re zone rouge
+  assert.equal(hex(dev.sent[1][1].slice(29, 32)), 'ff 00 ff'); // 10e zone magenta (300°)
+});
+
+test('Apex 3 : effet animé envoyé à chaque image, arrêté par un effet fixe ou au débranchement', async () => {
+  const { drivers, intervals } = loadDrivers('steelseries-apex.js');
+  const dev = new FakeHid({ vendorId: 0x1038, productId: 0x161A, iface: 3 });
+  const [inst] = await drivers[0].connect(dev);
+  await inst.set('light', { effect: 'wave', speed: 3, brightness: 80 });
+  assert.equal(intervals.filter(Boolean).length, 1);
+  const n = dev.sent.length;
+  await intervals.find(Boolean)();
+  await intervals.find(Boolean)();
+  assert.equal(dev.sent.length, n + 2);
+  assert.equal(dev.sent.at(-1)[1][0], 0x0B); // couleurs seulement, pas la luminosité
+  await inst.set('light', { effect: 'static', color: '#ffffff', brightness: 80 });
+  assert.equal(intervals.filter(Boolean).length, 0);
+  await inst.set('light', { effect: 'breathing', color: '#ff0000', brightness: 80 });
+  inst.release();
+  assert.equal(intervals.filter(Boolean).length, 0);
+});
+
 test('Apex : mauvaise interface refusée (le clavier a plusieurs interfaces)', () => {
   const { drivers } = loadDrivers('steelseries-apex.js');
   assert.equal(drivers[0].match(new FakeHid({ vendorId: 0x1038, productId: 0x161A, iface: 0 })), false);

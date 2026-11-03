@@ -203,6 +203,7 @@ async function driversScan() {
 function drvRelease(dev, quiet = false) {
   for (const [key, inst] of drvLive) {
     if (inst.dev !== dev && !inst.devs?.includes(dev)) continue;
+    try { inst.release?.(); } catch {} // effets animés, minuteries du pilote
     drvLive.delete(key);
     const visible = $(key) && !$(key).hidden;
     document.querySelector(`nav [data-tab="${CSS.escape(key)}"]`)?.remove();

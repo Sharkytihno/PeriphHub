@@ -10,8 +10,9 @@ export const REPO = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 export function loadDrivers(...files) {
   const drivers = [];
+  const intervals = []; // minuteries des pilotes, déclenchées à la main par les tests
   const ctx = vm.createContext({
-    console, setTimeout, clearTimeout, setInterval: () => 0, LOCALE: 'fr-FR', NATIVE: false, Promise, Uint8Array, DataView, ArrayBuffer, Map, Set, Math, JSON, Error, Number, String, Object, Array,
+    console, setTimeout, clearTimeout, setInterval: f => (intervals.push(f), intervals.length), clearInterval: n => { intervals[n - 1] = null; }, performance, LOCALE: 'fr-FR', NATIVE: false, Promise, Uint8Array, DataView, ArrayBuffer, Map, Set, Math, JSON, Error, Number, String, Object, Array,
     registerDriver: d => drivers.push(d),
     hex4: n => n.toString(16).toUpperCase().padStart(4, '0'),
     devId: dev => [dev.vendorId, dev.productId].map(n => n.toString(16).toUpperCase().padStart(4, '0')).join(':'),
@@ -22,7 +23,7 @@ export function loadDrivers(...files) {
     toast: () => {},
   });
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(REPO, 'ui/js/drivers', f), 'utf8'), ctx, { filename: f });
-  return { drivers, ctx };
+  return { drivers, ctx, intervals };
 }
 
 // Appareil WebHID minimal : les sous-classes répondent dans onReport / onFeature
