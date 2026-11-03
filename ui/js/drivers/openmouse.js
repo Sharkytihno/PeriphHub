@@ -117,7 +117,13 @@ const omBest = devices => omCandidates(devices)[0] || null;
 const OM_LOD = { Low: 'Basse', Medium: 'Moyenne', High: 'Haute' };
 const omSleep = s => s >= 60 ? (s % 60 ? (s / 60).toFixed(1) : s / 60) + ' min' : s + ' s';
 const omNear = (list, v) => list.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a, list[0]);
-const omCall = (client, name, ...args) => typeof client[name] === 'function' ? client[name](...args) : undefined;
+// Lecture synchrone d'une option du client. Certains pilotes (Logitech) la donnent en asynchrone et
+// interrogent la souris : ignoré ici (et son éventuel échec aussi, sinon « promesse rejetée non gérée »).
+const omCall = (client, name, ...args) => {
+  const v = typeof client[name] === 'function' ? client[name](...args) : undefined;
+  if (v && typeof v.then === 'function') { v.then(null, () => {}); return undefined; }
+  return v;
+};
 
 function omMap(inst, st) {
   const c = inst.client, ui = st.ui || {};
