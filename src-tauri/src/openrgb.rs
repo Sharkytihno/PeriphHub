@@ -5,7 +5,12 @@
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use sha2::{Digest, Sha256};
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use tauri::{AppHandle, Manager};
 
 const PORT: u16 = 6742;
 const REQUEST_CONTROLLER_COUNT: u32 = 0;
@@ -271,9 +276,136 @@ pub fn set_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     c.send(index, UPDATELEDS, &p)
 }
 
-// ---------- Installation et lancement ----------
-// OpenRGB n'a pas d'installateur unique : on le cherche aux emplacements habituels (installateur
-// officiel, winget, dossier dézippé dans Téléchargements/Bureau) et dans les processus lancés.
+// ---------- OpenRGB livré avec PeriphHub ----------
+// La version portable officielle d'OpenRGB (scripts/fetch-openrgb.ps1) est installée avec PeriphHub,
+// dans resources/openrgb : rien à télécharger ni à installer pour l'utilisateur. PeriphHub la lance
+// sans fenêtre (serveur SDK seul, réglages dans %LOCALAPPDATA%\PeriphHub\OpenRGB) et elle s'arrête
+// avec lui : elle est rattachée à un « job » Windows fermé à la fin de PeriphHub, même en cas de
+// plantage (aucun fichier verrouillé pour la mise à jour suivante).
+//
+// Sécurité : rien n'est lancé si un seul fichier diffère de la version publiée (empreintes ci-dessous).
+
+// OpenRGB 1.1 (à changer avec scripts/fetch-openrgb.ps1)
+pub(crate) const FILES: &[(&str, &str)] = &[
+    ("dxcompiler.dll", "6ec587d1952778a41a5a90647b39d0c86958e7dabf87fa1cf2b14408bfe1e8de"),
+    ("dxil.dll", "a0cfaf3e930894e9b5d48efcacaed6ace5c645bad3c4e99b4a23c9831a078120"),
+    ("hidapi-hotplug.dll", "263a662b014a7082871bb3e46f4d3c4790d7ed253768dcd585264fd598892dfb"),
+    ("imageformats/qgif.dll", "9cb2a7645576e72db54f957e9431b6145daf55bb83f4879cc01f864d4af96621"),
+    ("imageformats/qico.dll", "41038802daf3a01d4701f88e2c7730c41a9e7e63fa8c985e2ef4a9a9370b2d6e"),
+    ("imageformats/qjpeg.dll", "c6d100f40b051a1750cda26c46b66694b8854eae01de45a0d4510b779b5ea88d"),
+    ("LedsValve.bin", "1c1809281ae6f3e3c5b362f1536c0e6706013e6e33bfba66cad74636e61436d6"),
+    ("libusb-1.0.dll", "a8c91f0ff68fb7802a9f4416728f0eeb4d99af4ceaa4ef7dfe9374e76e375018"),
+    ("LpcIO.bin", "b3896a1cab0d808fca31fe2ebcae045d59dac690da87b17c858bb8da357eb45e"),
+    ("OpenRGB.exe", "e26ae71162795a8abcfb90c05c1572a00ba06ca63b886aca57392a0138963b1e"),
+    ("PawnIOLib.dll", "c6e7c2f54643ef9cb51b9a3ec7b0efc9e204803c206f33014e39f281546ea9b4"),
+    ("platforms/qwindows.dll", "d858a41e1617052f113442ea755696bc6dbe8030e64266e3ff3dc27fddea6bef"),
+    ("Qt6Core.dll", "8632f4a9f57355680f1b0de5013eb4657b1038b0cedc7c0534db827f73162014"),
+    ("Qt6Core5Compat.dll", "0d949a077144cfe2fecd4a030a3a6fbf0d651501e1b39bbdaaa11f56c74c25a2"),
+    ("Qt6Gui.dll", "1c6ab7a785ade7a8964f67cce21e6099b1209301498726019189ea0023e6f24c"),
+    ("Qt6OpenGL.dll", "bfb1be764c0e9d75682319b14d8ba0493d89a52d1680e1cc914525ea1ad944fb"),
+    ("Qt6Widgets.dll", "baf97dfdb7fe72a14e1675f37b21cc8634c7ec26cc9082f4883aa7492292a1db"),
+    ("SmbusI801.bin", "a0f7d066e7efda28c0e754c1f52dbd8dc280d388ba8575b514a80cb67490530c"),
+    ("SmbusIntelSkylakeIMC.bin", "2e2d6c1e541fdfe598aa8df4d334e11c491c8a84f23e8256dd18119dd420dbd2"),
+    ("SmbusNCT6793.bin", "db068c6a87c0066ebfb7f691d88422fee8af350898e7a7f0db100fd6632bab17"),
+    ("SmbusPIIX4.bin", "91f9b4b1c39e3d399ce48477a89d8f6bd3e58a2241064a4daec3a1513dff56e5"),
+    ("styles/qmodernwindowsstyle.dll", "518118bbe1eba484b431a5eff1a212a1ffe8b92305db18a3476a6a6217a78c9f"),
+];
+
+fn bundled_dir(app: &AppHandle) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(r) = app.path().resource_dir() {
+        dirs.push(r.join("resources"));
+        dirs.push(r);
+    }
+    if let Some(d) = std::env::current_exe().ok().and_then(|p| p.parent().map(PathBuf::from)) {
+        dirs.push(d.join("resources"));
+        // compilation de développement : src-tauri/target/release → src-tauri/resources
+        dirs.push(d.join("..").join("..").join("resources"));
+    }
+    dirs.into_iter().map(|d| d.join("openrgb")).find(|d| d.join("OpenRGB.exe").is_file())
+}
+
+/// Dossier de la copie livrée, vérifiée fichier par fichier (une fois par lancement de PeriphHub)
+fn bundled(app: &AppHandle) -> Result<PathBuf, String> {
+    static CHECKED: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    CHECKED
+        .get_or_init(|| {
+            let dir = bundled_dir(app).ok_or("OpenRGB livré avec PeriphHub absent")?;
+            verify_dir(&dir)?;
+            Ok(dir)
+        })
+        .clone()
+}
+
+pub(crate) fn sha256_file(p: &std::path::Path) -> Option<String> {
+    let bytes = std::fs::read(p).ok()?;
+    Some(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Chaque fichier de `dir` est celui de la version publiée (table FILES)
+pub(crate) fn verify_dir(dir: &std::path::Path) -> Result<(), String> {
+    for (name, want) in FILES {
+        match sha256_file(&dir.join(name)) {
+            None => return Err(format!("OpenRGB incomplet ({name} manquant)")),
+            Some(h) if h != *want => return Err(format!("OpenRGB modifié ({name}) : empreinte inattendue, il ne sera pas lancé")),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+// OpenRGB lancé par PeriphHub, et le job qui l'arrête avec lui
+static CHILD: Mutex<Option<Child>> = Mutex::new(None);
+static JOB: OnceLock<usize> = OnceLock::new();
+
+fn kill_with_us(child: &Child) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::*;
+    let job = *JOB.get_or_init(|| unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return 0;
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        // Jamais fermé : Windows le ferme à la fin de PeriphHub, ce qui arrête OpenRGB
+        job as usize
+    });
+    if job != 0 {
+        unsafe { AssignProcessToJobObject(job as _, child.as_raw_handle() as _) };
+    }
+}
+
+/// OpenRGB lancé par PeriphHub encore en marche ?
+fn ours_alive() -> bool {
+    let mut g = CHILD.lock().unwrap_or_else(|e| e.into_inner());
+    match g.as_mut().map(|c| c.try_wait()) {
+        Some(Ok(None)) => true,
+        Some(_) => {
+            *g = None;
+            false
+        }
+        None => false,
+    }
+}
+
+/// Arrête l'OpenRGB lancé par PeriphHub (fermeture, mise à jour). Celui de l'utilisateur n'est jamais touché.
+pub fn stop() {
+    if let Some(mut c) = CHILD.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+}
+
+// ---------- OpenRGB installé par l'utilisateur ----------
+// Utilisé seulement si la copie livrée manque (compilation de développement sans
+// scripts/fetch-openrgb.ps1) : emplacements habituels (installateur officiel, winget, dossier dézippé).
 
 const NO_WINDOW: u32 = 0x0800_0000;
 
@@ -336,31 +468,69 @@ fn server_up() -> bool {
     TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], PORT)), Duration::from_millis(300)).is_ok()
 }
 
-/// État d'OpenRGB, sans aucun chemin (le diagnostic est envoyé tel quel)
-pub fn info() -> Result<Value, String> {
+/// État d'OpenRGB, sans aucun chemin (le diagnostic est envoyé tel quel).
+/// `bundled` : copie livrée présente et intacte ; `ours` : c'est PeriphHub qui l'a lancée.
+pub fn info(app: &AppHandle) -> Result<Value, String> {
+    let ours = ours_alive();
     let proc_ = running();
-    let installed = proc_.is_some() || candidates().iter().any(|p| p.is_file());
-    Ok(json!({ "installed": installed, "running": proc_.is_some(), "server": server_up() }))
+    let bundled = bundled(app);
+    let installed = bundled.is_ok() || proc_.is_some() || candidates().iter().any(|p| p.is_file());
+    let mut v = json!({
+        "installed": installed, "running": proc_.is_some(), "server": server_up(), "ours": ours,
+        "bundled": bundled.is_ok(), "bundledError": bundled.err(),
+    });
+    // Service « mémoire et carte mère » (openrgb_service.rs) : service, serviceStale, pawnio
+    if let (Some(o), Value::Object(svc)) = (v.as_object_mut(), crate::openrgb_service::info()) {
+        o.extend(svc);
+    }
+    Ok(v)
 }
 
-/// Lance OpenRGB avec son serveur SDK, réduit. Refuse s'il tourne déjà sans serveur (il faudrait le
-/// fermer : on ne tue pas un logiciel de l'utilisateur).
-pub fn launch() -> Result<Value, String> {
+/// Lance OpenRGB avec son serveur SDK : la copie livrée, sans fenêtre ; sinon celle de l'utilisateur,
+/// réduite. Refuse si l'utilisateur a déjà ouvert le sien sans serveur (on ne tue pas son logiciel).
+pub fn launch(app: &AppHandle) -> Result<Value, String> {
     use std::os::windows::process::CommandExt;
-    if server_up() {
-        return info();
+    if server_up() || ours_alive() {
+        // Déjà prêt, ou lancé par PeriphHub et encore en train de détecter les appareils
+        return info(app);
+    }
+    // Service installé (mémoire et carte mère) : c'est lui qui sert, jamais un second OpenRGB à côté
+    match crate::openrgb_service::state(crate::openrgb_service::SERVICE) {
+        None => {}
+        Some(windows_sys::Win32::System::Services::SERVICE_RUNNING | windows_sys::Win32::System::Services::SERVICE_START_PENDING) => {
+            return info(app);
+        }
+        Some(_) => return Err("le service OpenRGB de PeriphHub est arrêté : réactivez l’éclairage de la mémoire (onglet Éclairage)".into()),
     }
     if running().is_some() {
         return Err("OpenRGB est déjà ouvert sans son serveur : fermez-le (icône près de l’horloge), puis relancez-le depuis PeriphHub".into());
     }
-    let exe = candidates().into_iter().find(|p| p.is_file()).ok_or("OpenRGB n’est pas installé")?;
-    let dir = exe.parent().map(|d| d.to_path_buf());
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.args(["--server", "--startminimized"]).creation_flags(NO_WINDOW);
-    if let Some(d) = dir {
-        cmd.current_dir(d);
-    }
-    cmd.spawn().map_err(|e| format!("lancement impossible : {e}"))?;
+    let mut cmd = match bundled(app) {
+        Ok(dir) => {
+            let mut cmd = Command::new(dir.join("OpenRGB.exe"));
+            // Réglages et profils à part : ceux d'un OpenRGB installé par l'utilisateur ne sont pas touchés
+            let conf = std::env::var("LOCALAPPDATA").map(|b| PathBuf::from(b).join("PeriphHub").join("OpenRGB"));
+            cmd.args(["--server", "--noautoconnect"]);
+            if let Ok(c) = conf {
+                let _ = std::fs::create_dir_all(&c);
+                cmd.arg("--config").arg(c);
+            }
+            cmd.current_dir(dir);
+            cmd
+        }
+        Err(e) => {
+            let exe = candidates().into_iter().find(|p| p.is_file()).ok_or(e)?;
+            let mut cmd = Command::new(&exe);
+            cmd.args(["--server", "--startminimized"]);
+            if let Some(d) = exe.parent() {
+                cmd.current_dir(d);
+            }
+            cmd
+        }
+    };
+    let child = cmd.creation_flags(NO_WINDOW).spawn().map_err(|e| format!("lancement impossible : {e}"))?;
+    kill_with_us(&child);
+    *CHILD.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
     // Le serveur répond après la détection des appareils (quelques secondes)
     for _ in 0..40 {
         if server_up() {
@@ -368,12 +538,41 @@ pub fn launch() -> Result<Value, String> {
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    info()
+    info(app)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // scripts/fetch-openrgb.ps1 et la table FILES doivent changer ensemble (ignoré si OpenRGB n'est pas téléchargé)
+    #[test]
+    fn copie_livree_conforme_a_la_table() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("openrgb");
+        if !dir.join("OpenRGB.exe").is_file() {
+            return;
+        }
+        let mut on_disk = Vec::new();
+        fn walk(d: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+            for e in std::fs::read_dir(d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, base, out);
+                } else if !e.file_name().to_string_lossy().starts_with('.') {
+                    out.push(p.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        walk(&dir, &dir, &mut on_disk);
+        on_disk.sort_by_key(|s| s.to_lowercase());
+        let mut table: Vec<String> = FILES.iter().map(|(n, _)| n.to_string()).collect();
+        table.sort_by_key(|s| s.to_lowercase());
+        assert_eq!(on_disk, table, "fichiers d'OpenRGB différents de la table FILES");
+        for (name, want) in FILES {
+            let hash: String = Sha256::digest(std::fs::read(dir.join(name)).unwrap()).iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(&hash, want, "{name}");
+        }
+    }
 
     #[test]
     fn description_d_effet_relue_a_l_identique() {

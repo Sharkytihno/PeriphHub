@@ -3,6 +3,23 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.4
+
+*In English: OpenRGB now ships with PeriphHub and starts by itself — motherboard, fan and other
+lighting works with nothing to download or install. Memory (RAM) lighting takes a single Windows
+permission, once.*
+
+- **OpenRGB est livré avec PeriphHub** (version 1.1, officielle et non modifiée) : plus rien à
+  télécharger ni à installer. Quand le PC a un appareil que seul OpenRGB sait piloter (carte mère,
+  ventilateurs branchés dessus, carte graphique…), PeriphHub le lance tout seul, sans fenêtre ni icône,
+  et l'arrête en se fermant. Un OpenRGB que vous avez installé et ouvert vous-même n'est jamais touché.
+- **Mémoire (RAM) et puces protégées de la carte mère** : Windows exige les droits administrateur.
+  Onglet Éclairage ou Options ▸ « Mémoire et carte mère » ▸ **Activer** : une seule validation Windows,
+  une fois pour toutes. PeriphHub installe le pilote PawnIO (signé) et fait tourner OpenRGB comme
+  service Windows ; ensuite, plus rien à faire, même après un redémarrage. « Retirer » l'enlève, et la
+  désinstallation de PeriphHub aussi.
+- Chaque fichier d'OpenRGB est vérifié avant chaque lancement : rien n'est lancé s'il a été modifié.
+
 ## 1.0.3
 
 *In English: lighting for the SteelSeries Rival 3 mouse, and SteelSeries headsets are no longer

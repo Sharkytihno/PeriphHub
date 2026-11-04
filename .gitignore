@@ -10,3 +10,5 @@ backups/
 
 # module casques téléchargé par scripts/fetch-headsetcontrol.ps1 (empreinte vérifiée)
 src-tauri/resources/headsetcontrol.exe
+src-tauri/resources/openrgb/
+src-tauri/resources/PawnIO_setup.exe

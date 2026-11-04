@@ -61,6 +61,7 @@ function orgbInstance(list) {
         field('Tous les appareils', h('div', { class: 'muted small' }, 'Couleur unie sur toutes les LED'), pick('Éclairage', null, null)),
         ...s.list.map(d => field(d.name, h('div', { class: 'muted small' }, `${d.kind} · ${d.leds} LED`),
           ...orgbModeRows(inst, d), pick(d.name, d.index, s.colors[d.index]))),
+        orgbAdminRow(),
       ];
     },
   };
@@ -95,8 +96,69 @@ function orgbModeRows(inst, d) {
   ];
 }
 
+// OpenRGB est livré avec PeriphHub (src-tauri/src/openrgb.rs) : lancé tout seul, sans fenêtre, quand
+// le PC a un appareil que seul OpenRGB sait piloter (carte mère, ventilateurs, mémoire, carte
+// graphique… : statut « rgb » du catalogue), ou quand l'utilisateur l'a lancé une fois depuis PeriphHub.
+// Jamais quand l'utilisateur a ouvert le sien (il garde la main) ; au plus un essai toutes les 2 min.
+let orgbAutoAt = 0;
+const orgbWanted = () => (typeof report !== 'undefined' && (report?.devices || []).some(d => d.status === 'rgb'))
+  || (() => { try { return localStorage.getItem('orgbAuto') === 'on'; } catch { return false; } })();
+async function orgbAuto() {
+  if (!NATIVE || Date.now() - orgbAutoAt < 120000 || !orgbWanted()) return;
+  orgbAutoAt = Date.now();
+  try {
+    const st = await nativeInvoke('openrgb_info');
+    if (st.server || st.running || !st.bundled || (st.service && st.service !== 'absent')) return;
+    await nativeInvoke('openrgb_launch');
+  } catch (e) { console.warn('[PeriphHub] lancement d’OpenRGB :', e?.message || e); }
+}
+
+// ---------- Mémoire (RAM) et puces protégées de la carte mère (src-tauri/src/openrgb_service.rs) ----------
+// Une validation Windows, une fois pour toutes : pilote PawnIO + OpenRGB en service. Ensuite plus rien à faire.
+let orgbSvc = null; // dernier openrgb_info : service, serviceStale, pawnio
+async function orgbAdmin(action, btn) {
+  btn.disabled = true;
+  btn.textContent = action === 'install' ? 'Installation… (validez la fenêtre de Windows)' : 'Retrait…';
+  try {
+    const done = await nativeInvoke('openrgb_admin', { action });
+    if (!done) toast('Autorisation refusée : rien n’a été changé.', 'err');
+    else toast(action === 'install' ? 'Éclairage de la mémoire et de la carte mère activé.' : 'Service OpenRGB retiré.', 'ok');
+  } catch (e) { toast(String(e?.message || e), 'err'); }
+  orgbAutoAt = 0; // service retiré ou refusé : l'OpenRGB livré peut reprendre aussitôt
+  // Le service détecte les appareils (quelques secondes) : nouvelle lecture tout de suite, puis 8 s après
+  await openrgbPoll();
+  if (!$('options').hidden) renderOptions();
+  setTimeout(async () => { await openrgbPoll(); if (!$('options').hidden) renderOptions(); }, 8000);
+}
+function orgbAdminRow() {
+  const s = orgbSvc;
+  if (!NATIVE || !s || !s.bundled) return null;
+  const btn = (label, action, cls = 'mini') => {
+    const b = h('button', { class: cls, onclick: () => orgbAdmin(action, b) }, label);
+    return b;
+  };
+  let text, buttons;
+  if (s.service === 'absent') {
+    text = 'Barrettes de mémoire (RAM) et certaines cartes mères : Windows exige une autorisation administrateur. '
+      + 'Une seule fois : PeriphHub installe le pilote PawnIO et OpenRGB en service Windows, puis plus rien à faire.';
+    buttons = [btn('Activer (une autorisation Windows)', 'install')];
+  } else if (s.serviceStale) {
+    text = 'OpenRGB a été mis à jour avec PeriphHub : une autorisation Windows met aussi à jour le service.';
+    buttons = [btn('Mettre à jour', 'install'), btn('Retirer', 'uninstall', 'mini ghost')];
+  } else {
+    text = s.service === 'stopped' ? 'Service OpenRGB installé mais arrêté.' : 'Activé : OpenRGB tourne en service Windows (mémoire et carte mère comprises).';
+    buttons = [s.service === 'stopped' ? btn('Relancer', 'install') : null, btn('Retirer', 'uninstall', 'mini ghost')];
+  }
+  return field('Mémoire et carte mère', h('div', { class: 'muted small' }, text), h('div', { class: 'row-inline' }, ...buttons));
+}
+
 async function openrgbPoll() {
   if (!NATIVE) return;
+  const svcKey = () => orgbSvc ? [orgbSvc.service, orgbSvc.serviceStale, orgbSvc.bundled].join() : '';
+  const before = svcKey();
+  try { orgbSvc = await nativeInvoke('openrgb_info'); } catch {}
+  const svcChanged = before !== svcKey(); // bouton « Mémoire et carte mère » à redessiner
+  await orgbAuto();
   let list = null;
   try { list = await nativeInvoke('openrgb_list'); } catch { list = null; }
   if (!list?.length) {
@@ -110,7 +172,7 @@ async function openrgbPoll() {
     // Redessinée seulement si quelque chose a changé (pas pendant qu'on choisit une couleur)
     const changed = JSON.stringify(orgbInst.state.list) !== JSON.stringify(list);
     orgbInst.state.list = list;
-    if (!changed) return;
+    if (!changed && !svcChanged) return;
   }
   const pl = list.length > 1 ? 's' : '';
   orgbInst.meta = `${list.length} appareil${pl} piloté${pl} par OpenRGB`;

@@ -68,6 +68,8 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
     // Laisse l'interface afficher « Installation… » avant que la fenêtre ne disparaisse
     tokio_sleep(Duration::from_millis(400)).await;
     // Sous Windows, install() lance l'installeur puis termine PeriphHub (ne revient qu'en cas d'erreur)
+    // OpenRGB livré tourne depuis le dossier de PeriphHub : arrêté pour que l'installeur remplace ses fichiers
+    crate::openrgb::stop();
     u.install(bytes).map_err(|e| e.to_string())?;
     app.restart();
 }

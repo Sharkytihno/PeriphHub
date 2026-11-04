@@ -62,6 +62,16 @@
   ${EndIf}
 !macroend
 
+!macro NSIS_HOOK_PREUNINSTALL
+  ; Éclairage de la mémoire activé (service OpenRGB de PeriphHub, src-tauri/src/openrgb_service.rs) :
+  ; PeriphHub le retire lui-même, avec une validation Windows, tant que son exe est encore là.
+  ; Jamais en mise à jour : le service continue avec la nouvelle version.
+  ${If} $UpdateMode <> 1
+  ${AndIf} ${FileExists} "$PROGRAMFILES64\PeriphHub-OpenRGB\OpenRGB.exe"
+    ExecShellWait "runas" "$INSTDIR\${MAINBINARYNAME}.exe" "--openrgb-service uninstall" SW_HIDE
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
   ; « Démarrer avec Windows » (option de PeriphHub) : rien ne doit survivre à la désinstallation,
   ; sauf en mise à jour (l'installeur désinstalle l'ancienne version avant d'installer la nouvelle)

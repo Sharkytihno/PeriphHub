@@ -11,6 +11,7 @@ mod hid;
 mod input;
 mod notify;
 mod openrgb;
+mod openrgb_service;
 mod pads;
 mod pnp;
 mod procs;
@@ -129,13 +130,36 @@ async fn openrgb_list() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn openrgb_info() -> Result<Value, String> {
-    blocking(openrgb::info).await
+async fn openrgb_info(app: tauri::AppHandle) -> Result<Value, String> {
+    blocking(move || openrgb::info(&app)).await
 }
 
 #[tauri::command]
-async fn openrgb_launch() -> Result<Value, String> {
-    blocking(openrgb::launch).await
+async fn openrgb_launch(app: tauri::AppHandle) -> Result<Value, String> {
+    blocking(move || openrgb::launch(&app)).await
+}
+
+/// Active (« install ») ou retire (« uninstall ») l'éclairage de la mémoire et de la carte mère :
+/// une validation Windows. false : l'utilisateur l'a refusée.
+#[tauri::command]
+async fn openrgb_admin(action: String) -> Result<bool, String> {
+    blocking(move || {
+        // L'OpenRGB lancé par PeriphHub occupe le port du serveur : arrêté, le service prend le relais
+        openrgb::stop();
+        let code = match openrgb_service::elevate(&action)? {
+            None => return Ok(false),
+            Some(c) => c,
+        };
+        match code {
+            0 => Ok(true),
+            1 => Err("OpenRGB livré avec PeriphHub est incomplet ou modifié : réinstallez PeriphHub".into()),
+            2 => Err("copie d’OpenRGB dans Program Files impossible".into()),
+            3 => Err("installation du pilote PawnIO impossible (antivirus ?)".into()),
+            4 => Err("création du service OpenRGB impossible".into()),
+            c => Err(format!("échec (code {c})")),
+        }
+    })
+    .await
 }
 
 #[tauri::command]
@@ -250,6 +274,10 @@ fn main() {
     if args.len() == 3 && args[1] == "--elevated" {
         std::process::exit(slim::elevated_main(&args[2]));
     }
+    // Instance administrateur : service OpenRGB pour la mémoire et la carte mère (openrgb_service.rs)
+    if args.len() == 3 && args[1] == "--openrgb-service" {
+        std::process::exit(openrgb_service::elevated_main(&args[2]));
+    }
     // `--scan` : affiche l'analyse en JSON dans la console (tests, rapports de bug)
     if std::env::args().any(|a| a == "--scan") {
         // l'exe de version finale n'a pas de console : on se rattache à celle qui l'a lancé
@@ -307,6 +335,7 @@ fn main() {
             openrgb_list,
             openrgb_info,
             openrgb_launch,
+            openrgb_admin,
             audio_list,
             audio_set,
             audio_formats,
@@ -342,6 +371,12 @@ fn main() {
             update::update_check,
             update::update_install
         ])
-        .run(tauri::generate_context!())
-        .expect("PeriphHub n'a pas pu démarrer");
+        .build(tauri::generate_context!())
+        .expect("PeriphHub n'a pas pu démarrer")
+        .run(|_, e| {
+            // OpenRGB lancé par PeriphHub : arrêté avec lui (le job Windows le ferait aussi, plus tard)
+            if let tauri::RunEvent::Exit = e {
+                openrgb::stop();
+            }
+        });
 }

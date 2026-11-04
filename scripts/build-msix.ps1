@@ -1,5 +1,5 @@
 ﻿# Construit le paquet MSIX destiné au Microsoft Store (non signé : le Store le signe lui-même).
-# À lancer après « npx tauri build --no-bundle » et scripts/fetch-headsetcontrol.ps1.
+# À lancer après « npx tauri build --no-bundle », scripts/fetch-headsetcontrol.ps1 et scripts/fetch-openrgb.ps1.
 #
 #   ./scripts/build-msix.ps1   (identité du Store par défaut, voir docs/MICROSOFT-STORE.md)
 #
@@ -26,6 +26,8 @@ New-Item -ItemType Directory -Force (Join-Path $stage 'Assets'), (Join-Path $sta
 # Même disposition que l'installeur NSIS : programme + resources/headsetcontrol.exe
 Copy-Item (Join-Path $release 'periphhub.exe') $stage
 Copy-Item (Join-Path $root 'src-tauri/resources/headsetcontrol.exe') (Join-Path $stage 'resources')
+Copy-Item (Join-Path $root 'src-tauri/resources/openrgb') (Join-Path $stage 'resources') -Recurse
+Copy-Item (Join-Path $root 'src-tauri/resources/PawnIO_setup.exe') (Join-Path $stage 'resources')
 
 # Logos demandés par Windows, tirés de l'icône de l'appli
 $src = [System.Drawing.Image]::FromFile((Join-Path $root 'src-tauri/icons/icon.png'))

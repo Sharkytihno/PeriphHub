@@ -64,7 +64,11 @@ function showTab(name) {
   for (const sec of document.querySelectorAll('main > section')) sec.hidden = sec.id !== name;
   try { localStorage.setItem('tab', name); } catch {}
   if (typeof kbRecord === 'function') { kbRecord(false); msRecord(false); }
-  if (name === 'options') { renderOptions(); bgLoad(); }
+  if (name === 'options') {
+    renderOptions(); bgLoad();
+    // État du service OpenRGB (mémoire et carte mère), relu à l'ouverture des options
+    if (typeof openrgbPoll === 'function') openrgbPoll().then(() => { if (!$('options').hidden) renderOptions(); });
+  }
   if (name === 'slim') renderSlim();
   refreshHome();
 }
@@ -97,6 +101,8 @@ async function rescan() {
     $('rescan').disabled = false;
   }
   applyReport();
+  // Appareil que seul OpenRGB sait piloter : OpenRGB livré lancé tout de suite (sinon au relevé suivant)
+  if (typeof openrgbPoll === 'function') openrgbPoll();
 }
 
 // Résultat de l'analyse → barre latérale, page d'allègement, accueil
@@ -228,17 +234,19 @@ function orgbTool() {
   const box = h('div', { class: 'muted small' });
   nativeInvoke('openrgb_info').then(st => {
     if (st.server) return box.replaceChildren('OpenRGB est lancé avec son serveur : son éclairage apparaît dans l’onglet Éclairage.');
-    if (!st.installed) return box.replaceChildren('OpenRGB n’est pas installé : téléchargez-le gratuitement sur openrgb.org, puis revenez ici.');
+    if (!st.installed) return box.replaceChildren('OpenRGB (livré avec PeriphHub) est introuvable : réinstallez PeriphHub.');
+    if (st.ours) return box.replaceChildren('OpenRGB démarre (détection des appareils, quelques secondes)…');
     const btn = h('button', { class: 'mini', onclick: async () => {
       btn.disabled = true; btn.textContent = 'Lancement…';
       try {
         await nativeInvoke('openrgb_launch');
+        try { localStorage.setItem('orgbAuto', 'on'); } catch {} // relancé tout seul les fois suivantes
         await openrgbPoll();
         toast('OpenRGB lancé avec son serveur.', 'ok');
         box.replaceChildren('OpenRGB est lancé avec son serveur : son éclairage apparaît dans l’onglet Éclairage.');
       } catch (e) { toast(String(e.message || e), 'err'); btn.disabled = false; btn.textContent = 'Lancer OpenRGB'; }
     } }, 'Lancer OpenRGB');
-    box.replaceChildren(h('span', {}, st.running ? 'OpenRGB est ouvert, mais sans son serveur. ' : 'OpenRGB est installé mais fermé. '), btn);
+    box.replaceChildren(h('span', {}, st.running ? 'OpenRGB est ouvert, mais sans son serveur. ' : st.bundled ? 'OpenRGB (livré avec PeriphHub) est arrêté. ' : 'OpenRGB est installé mais fermé. '), btn);
   }).catch(() => {});
   return box;
 }
@@ -252,7 +260,7 @@ function deviceHintText(d) {
     ? 'Appareil standard, sans protocole du fabricant : Windows le gère seul. Pointeur, molette et répétition des touches se règlent dans « Souris et clavier ».'
     : 'Appareil standard, sans protocole du fabricant : Windows le gère seul, PeriphHub n’y trouve aucun réglage à piloter.';
   if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Copier le diagnostic », puis envoyez-le pour qu’on corrige.';
-  if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB (lancé avec le serveur SDK). Ses autres réglages restent dans son logiciel d’origine.';
+  if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB, livré avec PeriphHub et lancé tout seul (onglet Éclairage). Ses autres réglages restent dans son logiciel d’origine.';
   if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
   return 'Son logiciel d’origine reste nécessaire pour le régler.';
 }
@@ -791,6 +799,7 @@ function renderOptions() {
       }),
       h('div', { class: 'muted small' }, 'Par défaut, seuls les casques, micros, DAC et enceintes USB ou Bluetooth ont un onglet. '
         + '« Tout afficher » ajoute le son de la carte mère, des écrans (HDMI) et les pilotes audio virtuels.')) : null,
+    NATIVE && typeof orgbAdminRow === 'function' ? orgbAdminRow() : null,
     NATIVE ? field('Diagnostics',
       segmented([{ v: 'on', label: 'Envoi automatique' }, { v: 'off', label: 'Jamais' }], diagAuto() === 'on' ? 'on' : 'off', v => {
         try { localStorage.setItem('diagAuto', v); } catch {}

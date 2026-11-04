@@ -148,6 +148,7 @@ Prérequis : [Rust](https://rustup.rs), Node.js 20+, Visual Studio Build Tools (
 ```bash
 npm install
 powershell -File scripts/fetch-headsetcontrol.ps1   # module casques, empreinte vérifiée
+powershell -File scripts/fetch-openrgb.ps1          # OpenRGB portable (éclairage), empreinte vérifiée
 npm run dev        # lancement en développement
 npm test           # pilotes contre des appareils simulés, relais des diagnostics
 npm run build      # installeur dans src-tauri/target/release/bundle/nsis/

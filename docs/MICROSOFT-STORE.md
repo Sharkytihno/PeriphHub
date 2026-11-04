@@ -55,5 +55,6 @@ Code source complet : <https://github.com/Sharkytihno/PeriphHub> (GPL-3.0).
 ```powershell
 npx tauri build --no-bundle
 ./scripts/fetch-headsetcontrol.ps1
+./scripts/fetch-openrgb.ps1
 ./scripts/build-msix.ps1 -IdentityName "..." -Publisher "CN=..." -PublisherName "..."
 ```

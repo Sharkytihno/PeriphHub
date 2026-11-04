@@ -162,8 +162,9 @@ async function globalDiag(probe) {
   let orgb = null;
   if (NATIVE) try { orgb = await nativeInvoke('openrgb_info'); } catch {}
   lines.push('OpenRGB : ' + (typeof orgbInst !== 'undefined' && orgbInst ? orgbInst.state.list.length + ' appareils'
-    : orgb ? (orgb.server ? 'serveur joignable, 0 appareil' : orgb.running ? 'ouvert SANS serveur SDK' : orgb.installed ? 'installé, fermé' : 'non installé')
-    : 'non joignable'));
+    : orgb ? (orgb.server ? 'serveur joignable, 0 appareil' : orgb.ours ? 'lancé par PeriphHub, détection en cours' : orgb.running ? 'ouvert SANS serveur SDK' : orgb.installed ? 'installé, fermé' : 'non installé')
+    : 'non joignable')
+    + (orgb ? (orgb.bundled ? ' · copie livrée intacte' : ' · copie livrée : ' + (orgb.bundledError || 'absente')) + (orgb.ours ? ' · lancé par PeriphHub' : '') : ''));
   if (typeof hsNativeIds !== 'undefined' && hsNativeIds.size) lines.push('Casques en pilote intégré : ' + [...hsNativeIds].join(', '));
   const running = (report?.vendors || []).filter(v => v.bytes > 0).map(v => v.name);
   lines.push('Logiciels constructeurs ouverts : ' + (running.join(', ') || 'aucun'));

@@ -1,6 +1,6 @@
 [package]
 name = "periphhub"
-version = "1.0.3"
+version = "1.0.4"
 description = "Un seul logiciel léger pour tous vos périphériques"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Sharkytihno/PeriphHub"
@@ -56,6 +56,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_Security_WinTrust",
   "Win32_System_Console",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
   "Win32_System_Power",
   "Win32_System_ProcessStatus",
   "Win32_System_Services",

@@ -38,6 +38,9 @@ jobs:
       - name: Module casques (HeadsetControl, empreinte vérifiée)
         shell: pwsh
         run: ./scripts/fetch-headsetcontrol.ps1
+      - name: Éclairage (OpenRGB portable, empreinte vérifiée)
+        shell: pwsh
+        run: ./scripts/fetch-openrgb.ps1
       - run: npm ci
 
       # 1. Programme seul
