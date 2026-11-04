@@ -116,5 +116,149 @@
     "kind": "refroidissement",
     "status": "experimental",
     "plugin": "nzxt-kraken"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A1",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B1",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A2",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A3",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A4",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A5",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A6",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0A7",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B2",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B3",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B4",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B5",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B6",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0B7",
+    "name": "Ranked Nova 60 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "B0A1",
+    "name": "Ranked Master 65 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "B0A2",
+    "name": "Ranked Master 65 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0C1",
+    "name": "Ranked Guardian 65 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
+  },
+  {
+    "vid": "3532",
+    "pid": "A0C2",
+    "name": "Ranked Guardian 65 %",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "ranked"
   }
 ]

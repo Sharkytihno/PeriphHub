@@ -654,3 +654,28 @@ test('NZXT Kraken : interface muette, rien n’est gardé ni écrit au-delà de 
   assert.equal(dev.opened, false);
   assert.ok(!drivers[0].match(new FakeHid({ vendorId: 0x1E71, productId: 0x300C, usagePage: 0xFF00 }))); // 2023 Elite : « broken » chez liquidctl
 });
+
+// ---------- Claviers Ranked (puce RY Micro, protocole du logiciel Ranked Utility) ----------
+test('Ranked Nova : lecture du modèle puis éclairage AE 01 (effet, vitesse, luminosité, couleur), rien d’autre', async () => {
+  const { drivers, ctx } = loadDrivers('ranked.js');
+  Object.assign(ctx, { drvSet: () => {}, field: (l, ...c) => ({ l, c }), h: (t, a, ...c) => ({ t, a, c }), slider: (...a) => a });
+  const dev = new FakeHid({ vendorId: 0x3532, productId: 0xA0B5, iface: 1, usagePage: 0xFF00, usage: 0 });
+  dev.onReport = (id, b) => dev.emit(4, [b[0], 1, 1, 1]);
+  const drv = drivers.find(d => d.id === 'ranked');
+  assert.ok(drv.match(dev));
+  assert.equal(drv.match(new FakeHid({ vendorId: 0x3532, productId: 0xA0B5, usagePage: 0x0001, usage: 6 })), false);
+  const [inst] = await drv.connect(dev);
+  assert.equal(inst.name, 'Ranked Nova 60 %');
+  assert.equal(inst.meta, 'éclairage');
+  assert.equal(hex(dev.sent[0][1].slice(0, 5)), 'a0 02 00 01 00');
+  await inst.set('rkled', { effect: 4, speed: 3, light: 9, color: 0 });
+  const [id, b] = dev.sent[1];
+  assert.equal(id, 4);
+  assert.equal(b.length, 63);
+  assert.equal(hex(b.slice(0, 9)), 'ae 01 00 00 04 03 09 00 00');
+  await inst.set('rkled', { effect: 6, speed: 5, light: 20, color: 0 }); // fixe : pas de multicolore, luminosité bornée
+  assert.equal(hex(dev.sent[2][1].slice(0, 8)), 'ae 01 00 00 06 05 09 07');
+  await assert.rejects(inst.set('rkled', { effect: 19 }));
+  assert.ok(dev.sent.every(([, p]) => p[0] === 0xA0 || p[0] === 0xAE)); // jamais A5 (bootloader)
+  assert.ok(inst.rows().length >= 3);
+});

@@ -901,6 +901,35 @@ const I18N_EN = {
     'Audio jack (motherboard)',
   'Branché en jack, le casque n’envoie rien au PC : Windows ne voit que la prise de la carte mère. Ses réglages sont donc ceux de la prise (volume, micro, retour micro, amplification). Les réglages propres au casque (égaliseur, son spatial THX) passent par le logiciel de sa marque.':
     'Plugged into a jack, the headset sends nothing to the PC: Windows only sees the motherboard jack. Its settings are therefore those of the jack (volume, mic, mic monitoring, boost). Settings specific to the headset (equalizer, THX spatial sound) go through its brand’s software.',
+  'éclairage (pas de réponse du clavier à la connexion)': 'lighting (the keyboard did not answer when connecting)',
+  'Protocole relevé dans le logiciel d’origine Ranked Utility, pas encore confirmé sur ce modèle dans PeriphHub. Seul l’éclairage est écrit : jamais le firmware, les touches ni les macros.': 'Protocol read from the original Ranked Utility software, not yet confirmed on this model in PeriphHub. Only the lighting is written: never the firmware, keys or macros.',
+  'Ce clavier ne sait pas indiquer son éclairage actuel : PeriphHub affiche le dernier choix fait ici, et le clavier le garde en mémoire. Fermez Ranked Utility, sinon il réimpose le sien.': 'This keyboard cannot report its current lighting: PeriphHub shows the last choice made here, and the keyboard keeps it in memory. Close Ranked Utility, otherwise it forces its own.',
+  'le clavier n’a pas répondu': 'the keyboard did not answer',
+  'Choisir un effet…': 'Choose an effect…',
+  'Multicolore': 'Multicolor',
+  'Rouge': 'Red',
+  'Vert': 'Green',
+  'Bleu': 'Blue',
+  'Jaune': 'Yellow',
+  'Magenta': 'Magenta',
+  'Cyan': 'Cyan',
+  'Blanc': 'White',
+  'Vortex': 'Vortex',
+  'Vague vers la droite': 'Wave to the right',
+  'Touche pressée': 'Key press',
+  'Ondulation': 'Ripple',
+  'Spectre en vague': 'Spectrum wave',
+  'Vague depuis le centre': 'Wave from the center',
+  'Serpent central': 'Center snake',
+  'Poisson lumineux': 'Glowing fish',
+  'Cœur': 'Heart',
+  'Fontaine colorée': 'Colorful fountain',
+  'Circulation': 'Traffic',
+  'Serpent glouton': 'Gluttonous snake',
+  'Danse sauvage': 'Wild dance',
+  'Vague en croix': 'Cross wave',
+  'Spectre': 'Spectrum',
+  'Fontaine aléatoire': 'Random fountain',
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -1022,6 +1051,7 @@ const I18N_EN_T = {
 
 // Plurals and sentences assembled from pieces
 const I18N_EN_RE = [
+  [/^Effet (\d+)$/, (m, n) => `Effect ${n}`],
   [/^(Casque|Micro|Son) en prise jack \((.+)\)$/, (m, k, a) => `${{ Casque: 'Headset', Micro: 'Microphone', Son: 'Sound' }[k]} on audio jack (${a})`],
   [/^Branché sur la (.+)$/, (m, l) => 'Plugged into the ' + l.split(', la ').map(x => x.replace(/^prise ?/, '').replace('arrière', 'rear').replace('avant', 'front').replace('gauche', 'left').replace('droite', 'right').replace('dessus', 'top').replace('dessous', 'bottom')
     .replace('verte', 'green').replace('rose', 'pink').replace('bleue', 'blue').replace('noire', 'black').replace('orange', 'orange').replace('grise', 'grey').replace('blanche', 'white') + ' jack').join(', the ')],

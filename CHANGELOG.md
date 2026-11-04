@@ -3,6 +3,19 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.10
+
+*In English: Ranked keyboards (Nova 60 %, including the Supernova, Master 65 %, Guardian 65 %) are now
+recognised and their lighting can be set from PeriphHub (effect, brightness, speed, color), without
+Ranked Utility. Experimental: the protocol was read from the official software and only lighting is written.*
+
+- **Claviers Ranked** (Nova 60 %, dont le Supernova, toutes dispositions ; Master 65 % ; Guardian 65 %) :
+  reconnus et réglables sans Ranked Utility. Effet d’éclairage (19 sur Nova et Master), luminosité,
+  vitesse et couleur (8 couleurs ou multicolore, selon l’effet). Le clavier garde le réglage en mémoire.
+- Protocole relevé dans le logiciel d’origine : seul l’éclairage est écrit, jamais le firmware, les
+  touches ni les macros. Expérimental tant qu’il n’a pas été confirmé sur chaque modèle.
+- Sur le Guardian, seuls « Éteint » et « Fixe » ont un nom : les autres effets sont numérotés.
+
 ## 1.0.9
 
 *In English: headsets, microphones and speakers plugged into a motherboard audio jack now get their own
