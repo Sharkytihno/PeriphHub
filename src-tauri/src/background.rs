@@ -218,9 +218,11 @@ fn run_set(on: bool) -> Result<(), String> {
     }
 }
 
-/// Au lancement : si PeriphHub a changé de dossier, la clé Run suit (sinon elle lancerait l'ancien)
+/// Au lancement : si PeriphHub a changé de dossier, la clé Run suit (sinon elle lancerait l'ancien).
+/// Jamais depuis une version de développement (`tauri dev`, target\debug) : elle détournerait vers
+/// elle le démarrage avec Windows de la version installée.
 pub fn refresh_run_path() {
-    if crate::update::from_store() {
+    if crate::update::from_store() || cfg!(debug_assertions) {
         return;
     }
     let Ok(k) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(RUN, KEY_READ | KEY_SET_VALUE) else { return };
