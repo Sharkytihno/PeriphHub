@@ -29,6 +29,7 @@ avant d'être lancé.
 | [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0 | Protocole réseau du serveur SDK (`src-tauri/src/openrgb.rs`), éclairage du Turtle Beach Vulcan II TKL Pro (`ui/js/drivers/turtle-vulcan.js`) |
 | [HeadsetControl](https://github.com/Sapd/HeadsetControl) | GPL-3.0 | Protocole du HyperX Cloud Alpha Wireless (`ui/js/drivers/headsets-native.js`) |
 | [OpenRazer](https://github.com/openrazer/openrazer) | GPL-2.0 | Format des commandes Razer (`ui/js/drivers/razer-chroma.js`) et de l'éclairage des Kraken (`ui/js/drivers/razer-kraken.js`) |
+| [liquidctl](https://github.com/liquidctl/liquidctl) | GPL-3.0 | Protocole des watercoolings NZXT Kraken Z, 2023 et 2024 (`ui/js/drivers/nzxt-kraken.js`) |
 
 L'AGPL-3.0 est compatible avec la GPL-3.0 de PeriphHub (article 13 des deux licences) : l'ensemble
 distribué reste libre, et le code source complet est publié dans ce dépôt.
@@ -43,5 +44,6 @@ et les noms de modèles de ces projets ; aucun code n'en est repris :
 [Solaar](https://github.com/pwr-Solaar/Solaar) (GPL-2.0),
 [rivalcfg](https://github.com/flozz/rivalcfg) (WTFPL),
 [HeadsetControl](https://github.com/Sapd/HeadsetControl) (GPL-3.0),
-[OpenMouse](https://github.com/OpenMouse-Project/openmouse) (AGPL-3.0).
+[OpenMouse](https://github.com/OpenMouse-Project/openmouse) (AGPL-3.0),
+[liquidctl](https://github.com/liquidctl/liquidctl) (GPL-3.0).
 Les noms de fabricants complètent [usb.ids](http://www.linux-usb.org/usb-ids.html).

@@ -33,7 +33,7 @@ const devId = dev => hex4(dev.vendorId) + ':' + hex4(dev.productId);
 const DEDICATED = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '1532:056E', '048D:5702']);
 
 const KIND_ICON_TAB = { souris: 'mouse', clavier: 'keyboard', casque: 'headset', rgb: 'rgb' };
-const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb: 'Éclairage', micro: 'Micro', audio: 'Son', webcam: 'Webcam', manette: 'Manette', autre: 'Appareil' };
+const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb: 'Éclairage', micro: 'Micro', audio: 'Son', webcam: 'Webcam', manette: 'Manette', refroidissement: 'Watercooling', autre: 'Appareil' };
 
 // ---------- Connexion automatique ----------
 

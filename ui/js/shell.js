@@ -25,6 +25,7 @@ const ICONS = {
   webcam: 'M12 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM12 7.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM7 21h10M12 17v4',
   autre: 'M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0zM12 17v5',
   chip: 'M6 6h12v12H6zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',
+  refroidissement: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M12 10c0-3 1-6 4-6s3 4 0 6M14 12c3 0 6 1 6 4s-4 3-6 0M12 14c0 3-1 6-4 6s-3-4 0-6M10 12c-3 0-6-1-6-4s4-3 6 0',
 };
 function kindIcon(kind) {
   const tab = KIND_TAB[kind];
@@ -129,7 +130,7 @@ function keptScan() {
 }
 
 // Appareils qui ont des réglages (le reste : hubs, puces internes, webcams…)
-const interesting = d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb'].includes(d.kind);
+const interesting = d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb', 'refroidissement'].includes(d.kind);
 // Détectés mais sans page dans PeriphHub
 var undetected = () => (report?.devices || []).filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown') && !driverHas(d.vid, d.pid));
 

@@ -33,12 +33,19 @@ def rd(p):
 def kind_of(name, hint=""):
     # Les dossiers OpenRGB s'appellent « …Controller » : ce mot n'y désigne pas une manette
     n = (name + " " + hint.replace("Controllers", "").replace("Controller", "")).lower()
+    # Watercoolings NZXT « Kraken » : pas des casques Razer
+    if "nzxt kraken" in n:
+        return "refroidissement"
+    # Supports de casque ASUS Throne, contrôleurs LED/ventilateurs : de l'éclairage
+    if any(w in n for w in ("cryorig", "throne", "led controller", "fan controller", "rgb controller",
+                            "strimer", "usb controller", "monitor", "optix")):
+        return "rgb"
     for words, k in (
         (("mousepad", "mouse pad", "mousemat", "mouse mat", "firefly", "goliathus", "mm800", "mm1000", "qck"), "tapis"),
         (("headset", "headphone", "earbud", "arctis", "kraken", "blackshark", "barracuda", "nari", "cloud ", "virtuoso", "void", "hs80", "hs70", "astro a", "audio"), "casque"),
-        (("keyboard", "keypad", "clavier", "keeb", "tkl", "huntsman", "blackwidow", "ornata", "cynosa", "apex", "alloy", "k70", "k95", "k65", "k100"), "clavier"),
-        (("mouse", "souris", "mice", "deathadder", "viper", "basilisk", "naga", "mamba", "lancehead", "orochi", "rival", "sensei", "aerox", "prime", "pulsefire", "kone", "burst", "model o", "model d", "superlight", "g502", "g pro"), "souris"),
-        (("controller", "gamepad", "manette", "wolverine", "raiju", "kishi"), "manette"),
+        (("keyboard", "keypad", "clavier", "keeb", "tkl", "huntsman", "blackwidow", "ornata", "cynosa", "apex", "alloy", "k70", "k95", "k65", "k100", "vigor gk"), "clavier"),
+        (("mouse", "souris", "mice", "deathadder", "viper", "basilisk", "naga", "mamba", "lancehead", "orochi", "rival", "sensei", "aerox", "prime", "pulsefire", "kone", "burst", "model o", "model d", "superlight", "g502", "g pro", "clutch gm"), "souris"),
+        (("gamepad", "manette", "wolverine", "raiju", "kishi", "dualsense", "dualshock", "joystick"), "manette"),
         (("receiver", "dongle", "récepteur", "unifying", "lightspeed", "bolt"), "récepteur"),
     ):
         if any(w in n for w in words):
@@ -186,6 +193,11 @@ for pid, name in {"0501": "Razer Kraken 7.1 Classic", "0506": "Razer Kraken 7.1 
                   "0510": "Razer Kraken 7.1 V2", "0520": "Razer Kraken Tournament Edition",
                   "0527": "Razer Kraken Ultimate", "0560": "Razer Kraken Kitty V2"}.items():
     add("1532", pid, name, "casque", "openrazer", "razer-kraken", "experimental")
+
+# ---- Watercoolings NZXT Kraken Z/2023/2024 : vitesses et écran par ui/js/drivers/nzxt-kraken.js (liquidctl) ----
+t = rd(os.path.join(REPO, "ui", "js", "drivers", "nzxt-kraken.js"))
+for pid, name in re.findall(r"0x([0-9A-F]{4}): \['([^']+)'", t):
+    add("1E71", pid, name, "refroidissement", "liquidctl", "nzxt-kraken", "experimental")
 
 # ---- SteelSeries Apex 3 : éclairage par ui/js/drivers/steelseries-apex.js (protocole OpenRGB) ----
 add("1038", "161A", "SteelSeries Apex 3", "clavier", "openrgb", "steelseries-apex", "experimental")

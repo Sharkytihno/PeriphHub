@@ -3,6 +3,21 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.8
+
+*In English: NZXT Kraken Z, 2023 and 2024 (Elite, Plus) liquid coolers get their own page (liquid
+temperature, pump and fan speeds, speed profiles, screen brightness), and coolers or LED controllers are
+no longer listed as headsets or game controllers.*
+
+- **Watercoolings NZXT Kraken Z, 2023 et 2024 (Elite, Plus)** : nouvelle page « Watercooling », avec en
+  direct la température du liquide et la vitesse de la pompe et des ventilateurs, des profils
+  Silencieux / Équilibré / Performance (toujours à 100 % dès 45 °C de liquide) et la luminosité de
+  l'écran. Protocole du logiciel libre liquidctl, encore expérimental. L'éclairage reste dans l'onglet
+  Éclairage (OpenRGB).
+- **Appareils mal rangés** : les watercoolings NZXT « Kraken » apparaissaient comme des casques, et les
+  contrôleurs LED et ventilateurs (NZXT, Dell, SRGBmods…) comme des manettes. Ils sont maintenant rangés
+  avec l'éclairage ou le refroidissement.
+
 ## 1.0.7
 
 *In English: choosing a lighting effect (Static, Breathing, Color Cycle…) for a device driven through

@@ -84,5 +84,37 @@
     "kind": "clavier",
     "status": "experimental",
     "plugin": "turtle-vulcan"
+  },
+  {
+    "vid": "1E71",
+    "pid": "3008",
+    "name": "NZXT Kraken Z (Z53, Z63, Z73)",
+    "kind": "refroidissement",
+    "status": "experimental",
+    "plugin": "nzxt-kraken"
+  },
+  {
+    "vid": "1E71",
+    "pid": "300E",
+    "name": "NZXT Kraken 2023",
+    "kind": "refroidissement",
+    "status": "experimental",
+    "plugin": "nzxt-kraken"
+  },
+  {
+    "vid": "1E71",
+    "pid": "3012",
+    "name": "NZXT Kraken 2024 Elite RGB",
+    "kind": "refroidissement",
+    "status": "experimental",
+    "plugin": "nzxt-kraken"
+  },
+  {
+    "vid": "1E71",
+    "pid": "3014",
+    "name": "NZXT Kraken 2024 Plus",
+    "kind": "refroidissement",
+    "status": "experimental",
+    "plugin": "nzxt-kraken"
   }
 ]

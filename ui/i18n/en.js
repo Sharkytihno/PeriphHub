@@ -839,10 +839,55 @@ const I18N_EN = {
     'Settings applied live, without touching the mouse’s mode or memory: PeriphHub re-sends them every time it is plugged in. Lighting goes through OpenRGB. If a setting is refused, the mouse is probably applying an iCUE profile stored in its memory.',
   'Protocole du logiciel libre OpenRGB (GPL-2.0-or-later), pas encore confirmé sur ce modèle dans PeriphHub. Seul le réglage d’éclairage est écrit, jamais le firmware.':
     'Protocol of the open-source OpenRGB software (GPL-2.0-or-later), not yet confirmed on this model in PeriphHub. Only the lighting setting is written, never the firmware.',
+  'Watercooling':
+    'Liquid cooler',
+  'En direct':
+    'Live',
+  'Relu toutes les 3 secondes tant que cette page est ouverte.':
+    'Read every 3 seconds while this page is open.',
+  'Pompe':
+    'Pump',
+  'Ventilateurs':
+    'Fans',
+  'Ventilateurs du radiateur':
+    'Radiator fans',
+  'Silencieux':
+    'Quiet',
+  'Équilibré':
+    'Balanced',
+  'Performance':
+    'Performance',
+  'Vitesse selon la température du liquide, 100 % dès 45 °C.':
+    'Speed follows the liquid temperature, 100 % from 45 °C.',
+  'Courbe actuelle du watercooling, gardée tant que vous ne choisissez rien.':
+    'The cooler’s current curve, kept as long as you choose nothing.',
+  'Écran : luminosité':
+    'Screen brightness',
+  'Luminosité de l’écran':
+    'Screen brightness',
+  'Courbe d’origine':
+    'Original curve',
+  'Ne plus renvoyer ces profils':
+    'Stop re-sending these profiles',
+  'Le watercooling n’a pas de commande pour reprendre sa courbe d’origine tout de suite : elle revient au prochain démarrage à froid.':
+    'The cooler has no command to go back to its original curve right away: it returns at the next cold start.',
+  'Profils oubliés : la courbe d’origine revient quand le PC est complètement éteint puis rallumé':
+    'Profiles forgotten: the original curve returns once the PC is fully shut down and turned back on',
+  'lecture…':
+    'reading…',
+  'Liquide : capteur illisible':
+    'Liquid: sensor unreadable',
+  'Kraken : pas de réponse':
+    'Kraken: no response',
+  'Protocole du pilote libre liquidctl (GPL-3.0), pas encore confirmé sur ce modèle. Seuls les profils de vitesse et la luminosité de l’écran sont écrits.':
+    'Protocol of the open-source liquidctl driver (GPL-3.0), not yet confirmed on this model. Only the speed profiles and the screen brightness are written.',
+  'Le watercooling oublie ces réglages quand il n’est plus alimenté : PeriphHub renvoie votre choix à chaque démarrage. Pour retrouver sa courbe d’origine : « Ne plus renvoyer ces profils », puis éteignez complètement le PC. NZXT CAM ouvert en même temps réécrit ses propres réglages : fermez-le. L’éclairage se règle dans l’onglet Éclairage (OpenRGB).':
+    'The cooler forgets these settings when it loses power: PeriphHub re-sends your choice at every start. To get its original curve back: “Stop re-sending these profiles”, then fully shut down the PC. NZXT CAM running at the same time rewrites its own settings: close it. Lighting is set in the Lighting tab (OpenRGB).',
 };
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  'Liquide {} °C · pompe {} tr/min ({} %) · ventilateurs {} tr/min ({} %)': 'Liquid {} °C · pump {} rpm ({} %) · fans {} rpm ({} %)',
   'plus que {} %': '{} % left',
   '{} zones': '{} zones',
   'Zone {}': 'Zone {}',

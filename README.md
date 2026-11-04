@@ -45,6 +45,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 | Claviers à effet Hall Wooting (ARM), SteelSeries Apex Pro et Keychron HE ; claviers Razer et Logitech en secours | Bibliothèque OpenMouse (`@openmouse/keyboard-protocol`) | Point d'activation, rapid trigger, fréquence, luminosité (réglages globaux) | 🧪 |
 | Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
 | Casques Razer Kraken filaires (7.1, V2, Tournament Edition, Ultimate, Kitty V2, Classic) | D'après OpenRazer | Éclairage (fixe, respiration, cycle, éteint) | 🧪 |
+| Watercoolings NZXT Kraken Z, 2023 et 2024 (Elite, Plus) | D'après [liquidctl](https://github.com/liquidctl/liquidctl) | Température du liquide, vitesses de la pompe et des ventilateurs, profils de vitesse, luminosité de l'écran | 🧪 |
 | Casques Razer BlackShark V2 HyperSpeed | Protocole observé | Égaliseur, retour micro, veille, THX | ✅ |
 | Casque HyperX Cloud Alpha Wireless | Pilote intégré | Batterie, retour micro, extinction auto, annonces vocales | 🧪 |
 | Casques SteelSeries, Corsair, HyperX, Logitech, Audeze, Sony… | [HeadsetControl](https://github.com/Sapd/HeadsetControl) | Batterie, retour micro, égaliseur, extinction auto… | 🧪 |

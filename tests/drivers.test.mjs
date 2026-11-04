@@ -558,3 +558,62 @@ test('OpenRGB : vitesse en %, bornes croissantes ou inversées', () => {
   assert.equal(ctx.orgbSpeed({ min: 10, max: 0 }, 50), 5);
   eq(ctx.hexRgb('#ff8000'), [255, 128, 0]);
 });
+
+// ---------- Watercoolings NZXT Kraken 2023/2024 (liquidctl kraken3.py) ----------
+for (const numbered of [true, false]) {
+  test(`NZXT Kraken 2024 Elite : état, profils de vitesse, écran (rapports ${numbered ? 'numérotés' : 'sans numéro'})`, async () => {
+    const { drivers } = loadDrivers('nzxt-kraken.js');
+    const dev = new FakeHid({ vendorId: 0x1E71, productId: 0x3012, usagePage: 0xFF00, iface: 1 });
+    const lcd = { brightness: 70, orientation: 1 };
+    // Réponse : msg[0] = numéro du rapport ; séparé (numéroté) ou en tête des données (sans numéro)
+    const reply = msg => numbered ? dev.emit(msg[0], msg.slice(1)) : dev.emit(0, msg);
+    const msg = (id, sub, at = {}) => { const m = new Array(64).fill(0); m[0] = id; m[1] = sub; for (const [i, v] of Object.entries(at)) m[i] = v; return m; };
+    dev.onReport = (id, b) => {
+      assert.equal(b.length, 63);
+      if (id === 0x10 && b[0] === 0x01) reply(msg(0x11, 0x01, { 17: 2, 18: 1, 19: 0 }));
+      if (id === 0x74 && b[0] === 0x01) reply(msg(0x75, 0x01, { 15: 31, 16: 4, 17: 0x10, 18: 0x0B, 19: 60, 23: 0x84, 24: 0x03, 25: 35 }));
+      if (id === 0x30 && b[0] === 0x01) reply(msg(0x31, 0x01, { 24: lcd.brightness, 26: lcd.orientation }));
+      if (id === 0x30 && b[0] === 0x02) lcd.brightness = b[2];
+    };
+    assert.ok(drivers[0].match(dev));
+    const [inst] = await drivers[0].connect(dev, [dev]);
+    assert.equal(inst.meta, 'firmware 2.1.0');
+    assert.deepEqual({ ...inst.state.status }, { liquid: 31.4, pumpRpm: 0x0B10, pumpDuty: 60, fanRpm: 0x0384, fanDuty: 35 });
+    assert.deepEqual({ ...inst.state.lcd }, { brightness: 70, orientation: 1 });
+    // Mise en route de liquidctl, puis rien n'est écrit tant qu'aucun profil n'est choisi
+    assert.deepEqual(dev.sent.filter(([id]) => id === 0x70 || id === 0x72).map(([id, b]) => [id, ...b.slice(0, 4)]),
+      [[0x70, 0x02, 0x01, 0xB8, 0x01], [0x70, 0x01, 0, 0, 0]]);
+    await inst.set('pump', 'silent');
+    await inst.set('fan', 'balanced');
+    const curves = dev.sent.filter(([id]) => id === 0x72).map(([, b]) => [...b.slice(0, 43)]);
+    assert.equal(curves.length, 2);
+    const [pump, fan] = curves;
+    assert.deepEqual(pump.slice(0, 3), [0x1, 0x1, 0x0]);
+    assert.deepEqual(fan.slice(0, 3), [0x2, 0x1, 0x1]);
+    // 40 points de 20 à 59 °C : jamais sous le minimum, 100 % dès 45 °C, jamais en baisse
+    for (const [c, min] of [[pump, 50], [fan, 25]]) {
+      const d = c.slice(3);
+      assert.equal(d.length, 40);
+      assert.ok(d.every(x => x >= min && x <= 100));
+      assert.ok(d.slice(25).every(x => x === 100));
+      assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1]));
+    }
+    assert.equal(pump[3], 50);   // 20 °C
+    assert.equal(pump[3 + 15], 60); // 35 °C
+    await assert.rejects(inst.set('pump', 'turbo'));
+    await inst.set('lcd', { brightness: 40 });
+    assert.equal(lcd.brightness, 40);
+    const scr = dev.sent.filter(([id, b]) => id === 0x30 && b[0] === 0x02).map(([, b]) => [...b.slice(0, 7)]);
+    assert.deepEqual(scr, [[0x02, 0x01, 40, 0, 0, 1, 1]]); // orientation relue gardée
+    inst.release();
+  });
+}
+
+test('NZXT Kraken : interface muette, rien n’est gardé ni écrit au-delà de la mise en route', async () => {
+  const { drivers } = loadDrivers('nzxt-kraken.js');
+  const dev = new FakeHid({ vendorId: 0x1E71, productId: 0x3012, usagePage: 0xFF00, iface: 1 });
+  assert.equal((await drivers[0].connect(dev, [dev])).length, 0);
+  assert.ok(dev.sent.every(([id]) => id === 0x70 || id === 0x10));
+  assert.equal(dev.opened, false);
+  assert.ok(!drivers[0].match(new FakeHid({ vendorId: 0x1E71, productId: 0x300C, usagePage: 0xFF00 }))); // 2023 Elite : « broken » chez liquidctl
+});
