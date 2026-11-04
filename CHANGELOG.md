@@ -3,6 +3,13 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.1
+
+*In English: switching the interface language no longer re-runs the PC scan.*
+
+Changer la langue de l'interface (Options ▸ Langue) ne relance plus l'analyse du PC : l'interface se
+recharge dans la nouvelle langue avec le résultat de l'analyse qui venait d'être faite.
+
 ## 1.0.0
 
 *In English: settings for every mouse and keyboard (Windows settings, any brand), Bluetooth battery

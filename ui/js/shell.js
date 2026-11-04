@@ -96,6 +96,11 @@ async function rescan() {
     document.body.classList.remove('scanning');
     $('rescan').disabled = false;
   }
+  applyReport();
+}
+
+// Résultat de l'analyse → barre latérale, page d'allègement, accueil
+function applyReport() {
   // Appareils pris en charge détectés : leur page apparaît dans la barre latérale
   for (const d of report?.devices || []) {
     const tab = PLUGIN_TAB[d.plugin];
@@ -103,6 +108,18 @@ async function rescan() {
   }
   if (!$('slim').hidden) renderSlim();
   refreshHome();
+}
+
+// Changer de langue recharge l'interface (i18n.js) : l'analyse qui vient d'être faite est gardée
+// le temps du rechargement au lieu d'être refaite. sessionStorage disparaît à la fermeture de PeriphHub.
+function keepScan() {
+  if (!report || scanning) return;
+  try { sessionStorage.setItem('scanKept', JSON.stringify({ at: Date.now(), report, journal })); } catch {}
+}
+function keptScan() {
+  let k = null;
+  try { k = JSON.parse(sessionStorage.getItem('scanKept')); sessionStorage.removeItem('scanKept'); } catch {}
+  return k?.report && Date.now() - k.at < 60000 ? k : null;
 }
 
 // Appareils qui ont des réglages (le reste : hubs, puces internes, webcams…)
@@ -751,7 +768,7 @@ function renderOptions() {
       segmented([{ v: 'system', label: 'Comme Windows' }, { v: 'light', label: 'Clair' }, { v: 'dark', label: 'Sombre' }], themeChoice(),
         v => { setTheme(v); renderOptions(); })),
     field('Langue',
-      segmented(Object.entries(LANGS).map(([v, label]) => ({ v, label })), LANG, v => { if (v !== LANG) setLang(v); })),
+      segmented(Object.entries(LANGS).map(([v, label]) => ({ v, label })), LANG, v => { if (v !== LANG) { keepScan(); setLang(v); } })),
     NATIVE ? field('Mises à jour', ...(upd?.store
       ? [h('div', { class: 'muted small' }, 'Assurées par le Microsoft Store.')]
       : [segmented([{ v: 'on', label: 'Automatiques' }, { v: 'off', label: 'Désactivées' }], autoUpdate() ? 'on' : 'off', v => {
@@ -934,8 +951,11 @@ function diagAsk() {
 
 bgSync();
 bgLoad();
+// Rechargé pour changer de langue : l'analyse d'avant le rechargement est reprise telle quelle
+const keptReport = NATIVE ? keptScan() : null;
+if (keptReport) { report = keptReport.report; journal = keptReport.journal || []; $('copyReport').disabled = false; }
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
-rescan();
+if (keptReport) applyReport(); else rescan();
 if (window.omApi) [window.omApi.driver, ...(window.omApi.keyboardDrivers || [])].forEach(registerDriver);
 driversStart();
 // Batterie et état relus régulièrement sur l'accueil (fenêtre visible seulement)

@@ -14,7 +14,8 @@ const LANG = langChoice();
 const LOCALE = LANG === 'en' ? 'en-GB' : 'fr-FR';
 document.documentElement.lang = LANG;
 
-// Changement de langue : rechargement complet (les appareils se reconnectent tout seuls)
+// Changement de langue : rechargement complet (les appareils se reconnectent tout seuls ;
+// l'analyse du PC n'est pas refaite, voir keepScan dans shell.js)
 function setLang(l) {
   try { localStorage.setItem('lang', l); } catch {}
   location.reload();
