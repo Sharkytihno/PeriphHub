@@ -883,6 +883,24 @@ const I18N_EN = {
     'Protocol of the open-source liquidctl driver (GPL-3.0), not yet confirmed on this model. Only the speed profiles and the screen brightness are written.',
   'Le watercooling oublie ces réglages quand il n’est plus alimenté : PeriphHub renvoie votre choix à chaque démarrage. Pour retrouver sa courbe d’origine : « Ne plus renvoyer ces profils », puis éteignez complètement le PC. NZXT CAM ouvert en même temps réécrit ses propres réglages : fermez-le. L’éclairage se règle dans l’onglet Éclairage (OpenRGB).':
     'The cooler forgets these settings when it loses power: PeriphHub re-sends your choice at every start. To get its original curve back: “Stop re-sending these profiles”, then fully shut down the PC. NZXT CAM running at the same time rewrites its own settings: close it. Lighting is set in the Lighting tab (OpenRGB).',
+  'Rien de branché sur cette prise':
+    'Nothing plugged into this jack',
+  'S’entendre dans le casque (retour micro)':
+    'Hear yourself in the headset (mic monitoring)',
+  'Le son du micro est renvoyé dans la sortie audio par défaut, comme « Écouter ce périphérique » de Windows. Léger décalage possible.':
+    'The mic sound is sent back to the default audio output, like Windows’ “Listen to this device”. Slight delay possible.',
+  'Retour micro activé':
+    'Mic monitoring on',
+  'Retour micro coupé':
+    'Mic monitoring off',
+  'Amplification du micro':
+    'Microphone boost',
+  'À monter si on vous entend mal ; trop haute, elle ajoute du souffle.':
+    'Raise it if people hear you poorly; too high adds hiss.',
+  'Prise jack (carte mère)':
+    'Audio jack (motherboard)',
+  'Branché en jack, le casque n’envoie rien au PC : Windows ne voit que la prise de la carte mère. Ses réglages sont donc ceux de la prise (volume, micro, retour micro, amplification). Les réglages propres au casque (égaliseur, son spatial THX) passent par le logiciel de sa marque.':
+    'Plugged into a jack, the headset sends nothing to the PC: Windows only sees the motherboard jack. Its settings are therefore those of the jack (volume, mic, mic monitoring, boost). Settings specific to the headset (equalizer, THX spatial sound) go through its brand’s software.',
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -1004,6 +1022,9 @@ const I18N_EN_T = {
 
 // Plurals and sentences assembled from pieces
 const I18N_EN_RE = [
+  [/^(Casque|Micro|Son) en prise jack \((.+)\)$/, (m, k, a) => `${{ Casque: 'Headset', Micro: 'Microphone', Son: 'Sound' }[k]} on audio jack (${a})`],
+  [/^Branché sur la (.+)$/, (m, l) => 'Plugged into the ' + l.split(', la ').map(x => x.replace(/^prise ?/, '').replace('arrière', 'rear').replace('avant', 'front').replace('gauche', 'left').replace('droite', 'right').replace('dessus', 'top').replace('dessous', 'bottom')
+    .replace('verte', 'green').replace('rose', 'pink').replace('bleue', 'blue').replace('noire', 'black').replace('orange', 'orange').replace('grise', 'grey').replace('blanche', 'white') + ' jack').join(', the ')],
   [/^(.+) · non connecté$/, (m, n) => `${n} · not connected`],
   [/^Prise (.+) : nombre de LED \((\d+) à (\d+)\)$/, (m, z, a, b) => `${z} header: number of LEDs (${a} to ${b})`],
   [/^Ventilateurs ou bandeau branchés sur (.+) : indiquez combien de LED y sont branchées, sinon ils restent éteints \(OpenRGB ne peut pas les compter\)\. .*$/,

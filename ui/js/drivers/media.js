@@ -25,7 +25,20 @@ const AUDIO_MICS = /\b(mic|micro|microphone|quadcast|solocast|duocast|yeti|snowb
 const AUDIO_BUILTIN = /realtek|nvidia|\bamd\b|radeon|intel\(r\)|intel display|high definition audio|hd audio|\bhdmi\b|displayport|steam streaming|virtual|voicemeeter|vb-audio|\bcable (in|out)put|broadcast|sonar|nahimic|oculus|wave link|droidcam|obs\b|microsoft teams/i;
 const audioAll = () => { try { return localStorage.getItem('audioAll') === 'on'; } catch { return false; } };
 
+// Prises jack de la carte mère (casque, micro ou enceintes en 3,5 mm) : Windows ne voit que la
+// prise, pas l'appareil branché. Elles ont un onglet dès qu'elles servent vraiment : sortie ou micro
+// par défaut, casque reconnu par la prise, micro branché (une prise micro vide n'est pas active).
+const AUDIO_VIRTUAL = /steam streaming|virtual|voicemeeter|vb-audio|cable (in|out)put|broadcast|sonar|nahimic|oculus|wave link|droidcam|obs|microsoft teams/i;
+const AUDIO_STEREO_MIX = /st[eé]r[eé]o ?mix|mixage st[eé]r[eé]o|what u hear|wave out mix/i;
+function audioJackGroup(g) {
+  if (g.eps.every(e => e.form === 9) || AUDIO_VIRTUAL.test(g.adapter)) return false;
+  const board = g.eps.every(e => e.bus === 'carte mère') || g.vid === 0x0DB0 || /realtek/i.test(g.adapter);
+  return board && g.eps.some(e => !AUDIO_STEREO_MIX.test(e.name || '')
+    && ((e.default || []).length || e.form === 3 || e.form === 5 || e.flow === 'capture'));
+}
+
 function audioPeripheral(g) {
+  if (g.jack) return true;
   const bus = g.eps.map(e => e.bus);
   if (!bus.some(b => b === 'usb' || b === 'bluetooth')) return false; // carte mère ou virtuel
   if (g.eps.every(e => e.form === 9)) return false; // écran
@@ -54,11 +67,39 @@ function audioGroups(list) {
     const capture = eps.some(e => e.flow === 'capture'), render = eps.some(e => e.flow === 'render');
     // Les micros USB ont souvent une prise casque (sortie de contrôle) : le nom tranche
     const mic = AUDIO_MICS.test(adapter);
-    const kind = mic || (capture && !render) ? 'micro' : eps.some(e => e.form === 3 || e.form === 5) || (capture && render && eps[0].vid != null) ? 'casque' : 'audio';
-    const name = hdmi ? `Son des écrans (${adapter.replace(/high definition audio( device)?/i, '').trim() || 'HDMI'})` : adapter;
+    const g = { key: 'drv-audio-' + key, adapter, eps, vid: eps[0].vid, pid: eps[0].pid };
+    g.jack = audioJackGroup(g);
+    // Prise jack : sortie + micro actifs (ou prise « casque ») = un casque micro branché en jack
+    const kind = mic || (capture && !render) ? 'micro'
+      : eps.some(e => e.form === 3 || e.form === 5) || (capture && render && (eps[0].vid != null || g.jack)) ? 'casque' : 'audio';
+    g.kind = kind;
+    g.name = hdmi ? `Son des écrans (${adapter.replace(/high definition audio( device)?/i, '').trim() || 'HDMI'})`
+      : g.jack ? `${kind === 'casque' ? 'Casque' : kind === 'micro' ? 'Micro' : 'Son'} en prise jack (${adapter})` : adapter;
     eps.sort((a, b) => (a.flow === b.flow ? 0 : a.flow === 'render' ? -1 : 1));
-    return { key: 'drv-audio-' + key, name, kind, eps, vid: eps[0].vid, pid: eps[0].pid };
+    return g;
   });
+}
+
+// Prise physique (topologie audio) : emplacement et couleur, pour reconnaître où le casque est branché
+const JACK_GEO = { 1: 'arrière', 2: 'avant', 3: 'gauche', 4: 'droite', 5: 'dessus', 6: 'dessous', 7: 'arrière' };
+const JACK_ANALOG = [1, 2, 7, 11]; // 3,5 mm, 6,35 mm, autre analogique, combinée
+function jackColor(c) {
+  if (!c) return '';
+  const r = c >> 16 & 255, g = c >> 8 & 255, b = c & 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx < 60) return 'noire';
+  if (mx - mn < 40) return mx > 200 ? 'blanche' : 'grise';
+  if (g === mx && r < 200) return 'verte';
+  if (b === mx) return 'bleue';
+  if (r === mx && b > 80) return 'rose';
+  if (r === mx && g > 80) return 'orange';
+  return '';
+}
+function jackText(e) {
+  const j = (e.jacks || []).filter(j => JACK_ANALOG.includes(j.type) && j.gen !== 1);
+  if (!j.length) return null;
+  const on = j.filter(x => x.connected);
+  const label = x => ['prise', JACK_GEO[x.geo], jackColor(x.color)].filter(Boolean).join(' ');
+  return on.length ? 'Branché sur la ' + [...new Set(on.map(label))].join(', la ') : 'Rien de branché sur cette prise';
 }
 
 const fmtLabel = f => `${(f.rate / 1000).toLocaleString(LOCALE, { maximumFractionDigits: 1 })} kHz · ${f.bits} bits`;
@@ -71,7 +112,9 @@ function audioInstance(g) {
     caps: { audio: true }, state: { eps: g.eps },
     source: 'Réglages audio standard de Windows (les mêmes que le panneau Son), valables pour toutes les marques. ' +
       'Windows les garde en mémoire : rien ne tourne en fond pour eux.',
-    meta: [...new Set(g.eps.map(e => e.bus).filter(Boolean))].map(b => b === 'usb' ? 'USB' : b === 'bluetooth' ? 'Bluetooth' : 'Carte mère').join(', '),
+    meta: g.jack ? 'Prise jack (carte mère)' : [...new Set(g.eps.map(e => e.bus).filter(Boolean))].map(b => b === 'usb' ? 'USB' : b === 'bluetooth' ? 'Bluetooth' : 'Carte mère').join(', '),
+    note: g.jack ? 'Branché en jack, le casque n’envoie rien au PC : Windows ne voit que la prise de la carte mère. Ses réglages sont donc ceux de la prise '
+      + '(volume, micro, retour micro, amplification). Les réglages propres au casque (égaliseur, son spatial THX) passent par le logiciel de sa marque.' : undefined,
     async set(cap, v) {
       await nativeInvoke('audio_set', { id: v.id, what: v.what, value: v.value });
     },
@@ -100,6 +143,12 @@ function audioInstance(g) {
           e.volume != null ? h('div', {}, h('div', { class: 'muted small' }, e.flow === 'capture' ? 'Niveau du micro' : 'Volume'),
             slider(0, 100, 1, e.volume, ' %', v => set(e.flow === 'capture' ? 'Niveau du micro' : 'Volume', 'volume', v))) : null,
           e.mute != null ? h('div', { class: 'toggles' }, toggle(e.flow === 'capture' ? 'Micro coupé' : 'Son coupé', e.mute, on => set(on ? 'Coupé' : 'Rétabli', 'mute', on))) : null,
+          jackText(e) ? h('div', { class: 'muted small' }, jackText(e)) : null,
+          e.listen != null ? h('div', {}, h('div', { class: 'toggles' }, toggle('S’entendre dans le casque (retour micro)', e.listen, on => set(on ? 'Retour micro activé' : 'Retour micro coupé', 'listen', on))),
+            h('div', { class: 'muted small' }, 'Le son du micro est renvoyé dans la sortie audio par défaut, comme « Écouter ce périphérique » de Windows. Léger décalage possible.')) : null,
+          e.boost ? h('div', {}, h('div', { class: 'muted small' }, 'Amplification du micro'),
+            slider(e.boost.min, e.boost.max, e.boost.step || 1, Math.round(e.boost.db * 10) / 10, ' dB', v => set('Amplification du micro', 'boost', v)),
+            h('div', { class: 'muted small' }, 'À monter si on vous entend mal ; trop haute, elle ajoute du souffle.')) : null,
           e.balance != null && e.flow === 'render' ? h('div', {}, h('div', { class: 'muted small' }, 'Balance (gauche ↔ droite)'),
             slider(-100, 100, 5, e.balance, '', v => set('Balance', 'balance', v))) : null,
           !isMain || !isComms ? h('div', { class: 'row-inline' },

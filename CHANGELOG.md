@@ -3,6 +3,26 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.9
+
+*In English: headsets, microphones and speakers plugged into a motherboard audio jack now get their own
+page as soon as they are in use (volume, mic level, balance, default device, quality, which jack is in
+use), and every microphone gains mic monitoring (“Listen to this device”) and, when the sound card has
+one, microphone boost.*
+
+- **Casques en prise jack** : un casque, un micro ou des enceintes branchés en jack sur la carte mère
+  (Realtek…) ont maintenant leur onglet dès qu'ils servent (sortie ou micro par défaut, micro branché).
+  Jusqu'ici, ce son était masqué avec les puces intégrées. La page indique sur quelle prise l'appareil
+  est branché (avant / arrière, couleur). Un casque en jack n'envoie rien au PC : seuls les réglages de
+  la prise sont possibles (volume, micro, balance, sortie par défaut, qualité), pas ceux propres au
+  casque (égaliseur, son spatial), qui restent dans le logiciel de sa marque.
+- **Retour micro** sur tous les micros (USB, Bluetooth, jack) : « S'entendre dans le casque », comme
+  « Écouter ce périphérique » de Windows.
+- **Amplification du micro** (+10, +20, +30 dB…) quand la carte son en a une, comme dans l'onglet
+  Niveaux de Windows : utile pour les micros de casque en jack, souvent faibles.
+- Le diagnostic liste aussi le son (sorties, micros, prises jack), pour voir pourquoi un casque n'a pas
+  d'onglet.
+
 ## 1.0.8
 
 *In English: NZXT Kraken Z, 2023 and 2024 (Elite, Plus) liquid coolers get their own page (liquid

@@ -159,6 +159,17 @@ async function globalDiag(probe) {
   // Identifiants seulement (pas de nom : un appareil Bluetooth peut porter celui de son propriétaire)
   if (hidden.length) lines.push(`Autres appareils sans réglages (hubs, puces internes…) : ${hidden.join(', ')}`);
   if (typeof hsStatus !== 'undefined') lines.push('Module casques : ' + hsStatus);
+  // Son Windows : casques en jack, Bluetooth ou USB (nom des appareils Bluetooth omis : il peut porter celui du propriétaire)
+  if (NATIVE && typeof audioGroups === 'function') try {
+    const groups = audioGroups(await nativeInvoke('audio_list'));
+    lines.push(`Son (Windows) : ${groups.length} appareils`);
+    for (const g of groups) {
+      const bus = g.eps[0]?.bus || '?';
+      lines.push(`  ${bus === 'bluetooth' ? 'appareil Bluetooth' : g.name} · ${g.kind} · ${bus}${g.jack ? ' · prise jack' : ''}${audioPeripheral(g) ? '' : ' · masqué'}`
+        + ' · ' + g.eps.map(e => [e.flow === 'capture' ? 'entrée' : 'sortie', AUDIO_FORM[e.form] || e.form, (e.default || []).join('+'),
+          typeof jackText === 'function' ? jackText(e) : '', e.boost ? `ampli ${e.boost.db}/${e.boost.max} dB` : '', e.listen ? 'retour micro' : ''].filter(Boolean).join(' ')).join(' ; '));
+    }
+  } catch (e) { lines.push('Son (Windows) : ' + e); }
   let orgb = null;
   if (NATIVE) try { orgb = await nativeInvoke('openrgb_info'); } catch {}
   lines.push('OpenRGB : ' + (typeof orgbInst !== 'undefined' && orgbInst ? orgbInst.state.list.length + ' appareils'

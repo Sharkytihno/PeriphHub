@@ -519,6 +519,43 @@ test('Son : points de terminaison regroupés par appareil (USB, carte mère, éc
   eq(by['Son des écrans (AMD)'].eps.map(e => e.id), ['c', 'd']);
 });
 
+test('Son : casque en prise jack (carte mère) affiché dès qu’il sert, prise vide masquée', () => {
+  const { ctx } = loadDrivers('media.js');
+  const jack = (geo, color, connected) => ({ type: 1, gen: 0, geo, color, connected });
+  // Casque Razer branché en jack à l'avant : sortie et micro Realtek actifs, sortie par défaut
+  const used = [
+    { id: 'a', flow: 'render', adapter: 'Realtek(R) Audio', form: 1, vid: null, bus: 'carte mère', name: 'Haut-parleurs (Realtek(R) Audio)', default: ['render'], jacks: [jack(1, 0x00FF00, false), jack(2, 0x00FF00, true)] },
+    { id: 'b', flow: 'capture', adapter: 'Realtek(R) Audio', form: 4, vid: null, bus: 'carte mère', name: 'Microphone (Realtek(R) Audio)', default: [], jacks: [jack(2, 0xFF8080, true)], boost: { db: 20, min: 0, max: 30, step: 10 }, listen: false },
+    { id: 'c', flow: 'render', adapter: '2- AMD High Definition Audio Device', form: 9, vid: null, bus: 'carte mère', name: '4 - VG249QM1A', default: [] },
+  ];
+  const g = JSON.parse(JSON.stringify(ctx.audioGroups(used)));
+  const rt = g.find(x => x.adapter === 'Realtek(R) Audio');
+  assert.equal(rt.jack, true);
+  assert.equal(rt.kind, 'casque');
+  assert.equal(rt.name, 'Casque en prise jack (Realtek(R) Audio)');
+  assert.equal(ctx.audioPeripheral(rt), true);
+  assert.equal(ctx.audioPeripheral(g.find(x => x.adapter !== 'Realtek(R) Audio')), false); // écrans HDMI : toujours masqués
+  assert.equal(ctx.jackText(used[0]), 'Branché sur la prise avant verte');
+  assert.equal(ctx.jackText(used[1]), 'Branché sur la prise avant rose');
+  // Realtek inutilisé (casque USB par défaut, rien en jack) : masqué comme avant
+  const idle = [{ id: 'a', flow: 'render', adapter: 'Realtek(R) Audio', form: 1, vid: null, bus: 'carte mère', default: [], jacks: [jack(1, 0x00FF00, false)] },
+    { id: 's', flow: 'capture', adapter: 'Realtek(R) Audio', form: 2, vid: null, bus: 'carte mère', name: 'Mixage stéréo (Realtek(R) Audio)', default: [] }];
+  const gi = JSON.parse(JSON.stringify(ctx.audioGroups(idle)))[0];
+  assert.equal(gi.jack, false);
+  assert.equal(ctx.audioPeripheral(gi), false);
+  assert.equal(ctx.jackText(idle[0]), 'Rien de branché sur cette prise');
+  // La page de la prise propose le retour micro et l'amplification
+  ctx.nativeInvoke = () => new Promise(() => {});
+  const txt = k => Array.isArray(k) ? k.map(txt).join(' ') : k?.textContent ?? (typeof k === 'string' ? k : '');
+  ctx.h = (tag, attrs, ...kids) => ({ textContent: txt(kids) });
+  ctx.field = (label, ...kids) => ({ textContent: label + ' ' + txt(kids) });
+  ctx.toggle = label => ({ textContent: label });
+  ctx.slider = () => ({ textContent: '' });
+  const inst = ctx.audioInstance(ctx.audioGroups(used).find(x => x.jack));
+  const text = JSON.stringify(inst.rows().map(r => r?.textContent ?? ''));
+  assert.ok(/retour micro/.test(text) && /Amplification du micro/.test(text), text);
+});
+
 test('Son Bluetooth : sortie stéréo et mains libres d’un même casque = un seul appareil', () => {
   const { ctx } = loadDrivers('media.js');
   const list = [

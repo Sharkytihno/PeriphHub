@@ -3,20 +3,27 @@
 // tout périphérique audio reconnu par Windows est réglable.
 //
 // Réglages : volume, coupure, balance gauche/droite, périphérique par défaut (général et
-// communications), format (fréquence d'échantillonnage, profondeur). Le périphérique par défaut
-// et le format passent par l'interface IPolicyConfig de Windows : non documentée, mais stable
-// depuis Windows 7 et utilisée par EarTrumpet, SoundSwitch ou SoundVolumeView.
+// communications), format (fréquence d'échantillonnage, profondeur), retour micro (« Écouter ce
+// périphérique ») et amplification du micro. Le périphérique par défaut, le format et le retour
+// micro passent par l'interface IPolicyConfig de Windows : non documentée, mais stable depuis
+// Windows 7 et utilisée par EarTrumpet, SoundSwitch ou SoundVolumeView.
+//
+// Casques et micros en prise jack (carte mère) : Windows ne voit que la prise, pas l'appareil.
+// La prise elle-même (avant / arrière, couleur, branchée ou non) se lit dans la topologie audio
+// (IKsJackDescription), l'amplification du micro est un nœud de volume de cette topologie.
 use serde_json::{json, Value};
 use windows::core::{Interface, GUID, PCWSTR, PWSTR};
 use windows::Win32::Devices::FunctionDiscovery::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc, PKEY_Device_FriendlyName};
 use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
-    eCapture, eCommunications, eConsole, eMultimedia, eRender, EDataFlow, ERole, IAudioClient, IDeviceTopology, IMMDevice,
-    IMMDeviceEnumerator, IMMEndpoint, MMDeviceEnumerator, AUDCLNT_SHAREMODE_EXCLUSIVE, DEVICE_STATE_ACTIVE, WAVEFORMATEX,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, EDataFlow, ERole, IAudioClient, IAudioVolumeLevel, IDeviceTopology,
+    IMMDevice, IMMDeviceEnumerator, IMMEndpoint, IPart, MMDeviceEnumerator, AUDCLNT_SHAREMODE_EXCLUSIVE, DEVICE_STATE_ACTIVE, WAVEFORMATEX,
     WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
 };
-use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc, PropVariantToUInt32, PROPVARIANT};
+use windows::Win32::Media::KernelStreaming::{IKsJackDescription, KSJACK_DESCRIPTION};
+use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToBoolean, PropVariantToStringAlloc, PropVariantToUInt32, PROPVARIANT};
+use windows::Win32::System::Variant::VT_BOOL;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
 
 /// COM initialisé pour le fil courant (les commandes tournent sur des fils de travail)
@@ -36,6 +43,8 @@ impl Drop for Com {
 
 const PKEY_FORM_FACTOR: PROPERTYKEY = PROPERTYKEY { fmtid: GUID::from_u128(0x1da5d803_d492_4edd_8c23_e0c0ffee7f0e), pid: 0 };
 const PKEY_DEVICE_FORMAT: PROPERTYKEY = PROPERTYKEY { fmtid: GUID::from_u128(0xf19f064d_082c_4e27_bc73_6882a1bb8e4c), pid: 0 };
+// « Écouter ce périphérique » (onglet Écouter des propriétés d'un micro) : activé (booléen)
+const PKEY_LISTEN: PROPERTYKEY = PROPERTYKEY { fmtid: GUID::from_u128(0x24dbb0fc_9311_4b3d_9cf0_18ff155639d4), pid: 1 };
 const SUBTYPE_PCM: GUID = GUID::from_u128(0x00000001_0000_0010_8000_00aa00389b71);
 const SUBTYPE_FLOAT: GUID = GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
 const CLSID_POLICY_CONFIG: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
@@ -65,6 +74,12 @@ impl Props {
         let s = unsafe { PropVariantToStringAlloc(&v) }.map(pwstr_take).unwrap_or_default();
         unsafe { let _ = PropVariantClear(&mut v); }
         s
+    }
+    fn bool(&self, key: &PROPERTYKEY) -> Option<bool> {
+        let mut v = self.raw(key)?;
+        let r = unsafe { if v.Anonymous.Anonymous.vt.0 != 0 { PropVariantToBoolean(&v).ok().map(|b| b.as_bool()) } else { None } };
+        unsafe { let _ = PropVariantClear(&mut v); }
+        r
     }
     fn u32(&self, key: &PROPERTYKEY) -> Option<u32> {
         let mut v = self.raw(key)?;
@@ -116,6 +131,83 @@ fn usb_ids(dev: &IMMDevice) -> (Option<u16>, Option<u16>, String) {
     (hex_after("vid_"), hex_after("pid_"), bus.to_string())
 }
 
+/// Partie de l'adaptateur audio reliée à ce point de terminaison (début de sa topologie)
+fn adapter_part(dev: &IMMDevice) -> Option<IPart> {
+    unsafe {
+        let topo: IDeviceTopology = dev.Activate(CLSCTX_ALL, None).ok()?;
+        topo.GetConnector(0).ok()?.GetConnectedTo().ok()?.cast().ok()
+    }
+}
+
+/// Prises physiques du point de terminaison : emplacement, couleur, branchée ou non
+fn jacks(part: &IPart) -> Vec<Value> {
+    let mut out = Vec::new();
+    unsafe {
+        let mut p: *mut core::ffi::c_void = std::ptr::null_mut();
+        if part.Activate(CLSCTX_ALL.0, &IKsJackDescription::IID, Some(&mut p)).is_err() || p.is_null() {
+            return out;
+        }
+        let jd = IKsJackDescription::from_raw(p);
+        for i in 0..jd.GetJackCount().unwrap_or(0).min(8) {
+            let mut d = KSJACK_DESCRIPTION::default();
+            if jd.GetJackDescription(i, &mut d).is_ok() {
+                // GeoLocation : 1 arrière, 2 avant, 7 panneau arrière… ; GenLocation : 0 boîtier, 1 interne, 2 séparé
+                out.push(json!({
+                    "color": d.Color & 0xFF_FFFF, "connected": d.IsConnected.as_bool(),
+                    "geo": d.GeoLocation.0, "gen": d.GenLocation.0, "type": d.ConnectionType.0,
+                }));
+            }
+        }
+    }
+    out
+}
+
+/// Nœud « amplification du micro » (Microphone Boost) : volume en dB placé avant le volume du micro.
+/// Depuis la sortie de l'adaptateur vers le point de terminaison, les nœuds du micro (muet,
+/// amplification, volume) se suivent dans le sens « sortant » de la topologie (relevé sur Realtek :
+/// Microphone → Muet → Ampli microphone). Le nom du nœud est traduit par le pilote.
+fn boost_level(part: &IPart) -> Option<IAudioVolumeLevel> {
+    const NAMES: &[&str] = &["boost", "ampli", "verstärk", "aument", "potenzia", "wzmoc", "усил"];
+    fn walk(part: &IPart, depth: u32, seen: &mut Vec<u32>) -> Option<IAudioVolumeLevel> {
+        unsafe {
+            let id = part.GetLocalId().unwrap_or(u32::MAX);
+            if depth > 8 || seen.contains(&id) {
+                return None;
+            }
+            seen.push(id);
+            // Une autre prise ou connexion : fin du chemin de ce micro
+            if depth > 0 && part.GetPartType().map(|t| t.0 == 0).unwrap_or(true) {
+                return None;
+            }
+            let name = part.GetName().map(pwstr_take).unwrap_or_default().to_lowercase();
+            if NAMES.iter().any(|n| name.contains(n)) {
+                let mut p: *mut core::ffi::c_void = std::ptr::null_mut();
+                if part.Activate(CLSCTX_ALL.0, &IAudioVolumeLevel::IID, Some(&mut p)).is_ok() && !p.is_null() {
+                    return Some(IAudioVolumeLevel::from_raw(p));
+                }
+            }
+            let list = part.EnumPartsOutgoing().ok()?;
+            for i in 0..list.GetCount().unwrap_or(0) {
+                if let Some(v) = list.GetPart(i).ok().and_then(|p| walk(&p, depth + 1, seen)) {
+                    return Some(v);
+                }
+            }
+        }
+        None
+    }
+    walk(part, 0, &mut Vec::new())
+}
+
+/// Amplification actuelle et ses bornes (dB)
+fn boost_info(v: &IAudioVolumeLevel) -> Option<Value> {
+    unsafe {
+        let (mut min, mut max, mut step) = (0f32, 0f32, 0f32);
+        v.GetLevelRange(0, &mut min, &mut max, &mut step).ok()?;
+        let level = v.GetLevel(0).ok()?;
+        (max > min).then(|| json!({ "db": level, "min": min, "max": max, "step": if step > 0.0 { step } else { (max - min) / 10.0 } }))
+    }
+}
+
 fn endpoint(dev: &IMMDevice, defaults: &[(String, &str)]) -> Option<Value> {
     unsafe {
         let id = pwstr_take(dev.GetId().ok()?);
@@ -140,6 +232,10 @@ fn endpoint(dev: &IMMDevice, defaults: &[(String, &str)]) -> Option<Value> {
             None => (None, None, 0, None),
         };
         let fmt = props.format();
+        let part = adapter_part(dev);
+        let capture = flow == eCapture;
+        let jack = part.as_ref().map(jacks).unwrap_or_default();
+        let boost = if capture { part.as_ref().and_then(boost_level).as_ref().and_then(boost_info) } else { None };
         let roles: Vec<&str> = defaults.iter().filter(|(d, _)| *d == id).map(|(_, r)| *r).collect();
         Some(json!({
             "id": id,
@@ -152,6 +248,9 @@ fn endpoint(dev: &IMMDevice, defaults: &[(String, &str)]) -> Option<Value> {
             "volume": volume, "mute": mute, "channels": channels, "balance": balance,
             "format": fmt.map(|(rate, bits, ch)| json!({ "rate": rate, "bits": bits, "channels": ch })),
             "default": roles,
+            "jacks": jack,
+            "boost": boost,
+            "listen": if capture { props.bool(&PKEY_LISTEN).or(Some(false)) } else { None },
         }))
     }
 }
@@ -223,6 +322,23 @@ fn set_default(id: &str, roles: &[ERole]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// « Écouter ce périphérique » : le son du micro est renvoyé dans la sortie par défaut (retour micro)
+fn set_listen(id: &str, on: bool) -> Result<(), String> {
+    let w: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+    let mut v = PROPVARIANT::default();
+    unsafe {
+        let inner = &mut v.Anonymous.Anonymous;
+        inner.vt = VT_BOOL;
+        inner.Anonymous.boolVal = windows::Win32::Foundation::VARIANT_BOOL(if on { -1 } else { 0 });
+        policy_call(|p, vtbl| {
+            // SetPropertyValue(PCWSTR, BOOL bFxStore, PROPERTYKEY*, PROPVARIANT*) : rang 12
+            let f: unsafe extern "system" fn(*mut core::ffi::c_void, PCWSTR, windows::core::BOOL, *const PROPERTYKEY, *const PROPVARIANT) -> windows::core::HRESULT =
+                std::mem::transmute(*vtbl.add(12));
+            f(p, PCWSTR(w.as_ptr()), false.into(), &PKEY_LISTEN, &v)
+        })
+    }
 }
 
 fn wave(rate: u32, bits: u16, container: u16, channels: u16, mask: u32, float: bool) -> WAVEFORMATEXTENSIBLE {
@@ -303,7 +419,8 @@ fn set_format(id: &str, rate: u32, bits: u16, container: u16) -> Result<(), Stri
     }
 }
 
-/// Réglage : "volume" 0-100, "mute" bool, "balance" -100..100, "default" "all" | "comms", "format" {rate, bits, container}
+/// Réglage : "volume" 0-100, "mute" bool, "balance" -100..100, "default" "all" | "comms", "format" {rate, bits, container},
+/// "listen" bool (micros), "boost" dB (micros qui ont une amplification)
 pub fn set(id: &str, what: &str, value: &Value) -> Result<(), String> {
     let _com = Com::init();
     let e = enumerator()?;
@@ -333,6 +450,22 @@ pub fn set(id: &str, what: &str, value: &Value) -> Result<(), String> {
                 Some("main") => set_default(id, &[eConsole, eMultimedia]),
                 _ => Err("rôle inconnu".into()),
             },
+            "listen" => {
+                if dev.cast::<IMMEndpoint>().map_err(err)?.GetDataFlow().map_err(err)? != eCapture {
+                    return Err("retour réservé aux micros".into());
+                }
+                set_listen(id, value.as_bool().ok_or("oui ou non attendu")?)
+            }
+            "boost" => {
+                let db = value.as_f64().ok_or("dB attendus")? as f32;
+                let v = adapter_part(&dev).as_ref().and_then(boost_level).ok_or("pas d’amplification réglable sur ce micro")?;
+                let (mut min, mut max, mut step) = (0f32, 0f32, 0f32);
+                v.GetLevelRange(0, &mut min, &mut max, &mut step).map_err(err)?;
+                if !(min - 0.01..=max + 0.01).contains(&db) {
+                    return Err(format!("amplification entre {min} et {max} dB"));
+                }
+                v.SetLevelUniform(db.clamp(min, max), None).map_err(err)
+            }
             "format" => {
                 let n = |k: &str| value[k].as_u64().ok_or("format incomplet");
                 set_format(id, n("rate")? as u32, n("bits")? as u16, n("container")? as u16)
@@ -364,6 +497,14 @@ mod tests {
                 super::set(id, "default", &serde_json::json!("comms")).unwrap();
                 println!("défaut communications réaffirmé : {}", e["name"]);
             }
+            if let Some(l) = e["listen"].as_bool() {
+                super::set(id, "listen", &serde_json::json!(l)).unwrap();
+                println!("retour micro réaffirmé : {} {l}", e["name"]);
+            }
+            if let Some(b) = e["boost"]["db"].as_f64() {
+                super::set(id, "boost", &serde_json::json!(b)).unwrap();
+                println!("amplification réaffirmée : {} {b} dB", e["name"]);
+            }
             let f = &e["format"];
             let formats = super::formats(id).unwrap();
             if let Some(m) = formats.as_array().unwrap().iter().find(|x| x["rate"] == f["rate"] && x["bits"] == f["bits"]) {
@@ -390,3 +531,4 @@ mod tests {
         }
     }
 }
+
