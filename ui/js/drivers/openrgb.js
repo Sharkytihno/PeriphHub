@@ -38,6 +38,21 @@ function orgbInstance(list) {
         delete inst.state.colors[v.index];
         return;
       }
+      if (cap === 'zone') {
+        await nativeInvoke('openrgb_resize', { index: v.index, zone: v.zone, size: v.size });
+        // Les LED ajoutées sont éteintes : l'éclairage de l'appareil est renvoyé sur toute la nouvelle taille
+        const d = (await nativeInvoke('openrgb_list'))?.find(x => x.index === v.index);
+        const m = d?.modes?.[d.active];
+        if (!d) return;
+        if (inst.state.colors[v.index] || !m || /^(direct|custom)$/i.test(m.name)) {
+          await nativeInvoke('openrgb_color', { index: v.index, rgb: hexRgb(inst.state.colors[v.index] || '#ffffff') });
+          inst.state.colors[v.index] ||= '#ffffff';
+        } else {
+          await nativeInvoke('openrgb_mode', { index: v.index, mode: d.active, speed: m.speed?.value ?? null, direction: m.direction ?? null,
+            colors: m.colors ? m.colors.value.map(hexRgb) : null, save: false });
+        }
+        return;
+      }
       // Clics rapides (ou nuancier glissé) : seule la dernière couleur demandée part, les autres sont
       // sautées tant qu'une commande est en cours (un appareil lent ne prend pas des secondes de retard)
       const key = v.index == null ? 'all' : v.index;
@@ -88,12 +103,39 @@ function orgbInstance(list) {
         todo ? admin : null,
         field('Tous les appareils', h('div', { class: 'muted small' }, 'Couleur unie sur toutes les LED'), pick('Éclairage', null, null)),
         ...s.list.map(d => field(d.name, h('div', { class: 'muted small' }, `${d.kind} · ${d.leds} LED`),
-          ...orgbModeRows(inst, d), pick(d.name, d.index, s.colors[d.index]))),
+          ...orgbZoneRows(inst, d), ...orgbModeRows(inst, d), pick(d.name, d.index, s.colors[d.index]))),
         todo ? null : admin,
       ];
     },
   };
   return inst;
+}
+
+// Prises à taille réglable (ARGB de carte mère : JRAINBOW, D_LED…, bandeaux) : OpenRGB ne sait pas
+// combien de LED y sont branchées et part de 0, donc ventilateurs et bandeaux restent éteints tant
+// qu'on ne le dit pas. OpenRGB garde la taille choisie (ses réglages), même après un redémarrage.
+function orgbZoneRows(inst, d) {
+  const zones = (d.zones || []).map((z, i) => ({ ...z, i })).filter(z => z.max > z.min);
+  if (!zones.length) return [];
+  const empty = zones.filter(z => !z.count);
+  return [
+    empty.length ? h('div', { class: 'notice' }, h('p', { class: 'muted small' },
+      `Ventilateurs ou bandeau branchés sur ${empty.map(z => z.name).join(', ')} : indiquez combien de LED y sont branchées, `
+      + 'sinon ils restent éteints (OpenRGB ne peut pas les compter). Repère : souvent 8 à 12 LED par ventilateur ; '
+      + 'plusieurs ventilateurs en chaîne sur la même prise, additionnez. Trop de LED ne gêne pas ; pas assez, les dernières restent éteintes.')) : null,
+    ...zones.map(z => {
+      const input = h('input', { type: 'number', min: z.min, max: z.max, value: z.count, style: 'width:5em' });
+      const go = () => {
+        const size = Math.max(z.min, Math.min(z.max, Math.round(Number(input.value) || 0)));
+        if (size !== z.count) drvSet(inst, `${d.name} : ${z.name} à ${size} LED`, 'zone', { index: d.index, zone: z.i, size });
+      };
+      input.onchange = go;
+      return h('div', {}, h('div', { class: 'muted small' }, `Prise ${z.name} : nombre de LED (${z.min} à ${z.max})`),
+        h('div', { class: 'row-inline' }, input,
+          ...[12, 24, 36].filter(n => n <= z.max).map(n => h('button', { class: 'mini ghost' + (z.count === n ? ' on' : ''),
+            title: n / 12 + ' ventilateur(s) de 12 LED', onclick: () => { input.value = n; go(); } }, String(n)))));
+    }),
+  ];
 }
 
 // Effet de l'appareil : liste, vitesse, sens, couleurs, enregistrement

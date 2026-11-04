@@ -169,7 +169,8 @@ async function globalDiag(probe) {
   // Appareils vus par OpenRGB : sans eux, impossible de savoir lequel ne réagit pas
   if (typeof orgbInst !== 'undefined' && orgbInst) {
     for (const d of orgbInst.state.list)
-      lines.push(`  #${d.index} ${d.name} · ${d.kind} · ${d.leds} LED · effet ${d.modes?.[d.active]?.name || '?'} (${(d.modes || []).map(m => m.name).join(', ')})`);
+      lines.push(`  #${d.index} ${d.name} · ${d.kind} · ${d.leds} LED · effet ${d.modes?.[d.active]?.name || '?'} (${(d.modes || []).map(m => m.name).join(', ')})`
+        + ((d.zones || []).length ? ' · zones ' + d.zones.map(z => `${z.name} ${z.count}${z.max > z.min ? `/${z.min}-${z.max}` : ''}`).join(', ') : ''));
   }
   if (typeof hsNativeIds !== 'undefined' && hsNativeIds.size) lines.push('Casques en pilote intégré : ' + [...hsNativeIds].join(', '));
   const running = (report?.vendors || []).filter(v => v.bytes > 0).map(v => v.name);

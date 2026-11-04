@@ -3,6 +3,23 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.6
+
+*In English: fans and strips plugged into the motherboard light up (set how many LEDs each ARGB header
+has), a mouse or keyboard that is detected but not connected stays in the sidebar, and a device briefly
+held by another program comes back by itself.*
+
+- **Ventilateurs et bandeaux branchés sur la carte mère** : OpenRGB ne peut pas compter les LED d'une
+  prise ARGB (JRAINBOW chez MSI, D_LED/ARGB chez Gigabyte, ADD_GEN chez ASUS…) et la laissait à 0 : rien
+  ne s'allumait, la carte mère semblait ne pas réagir. Onglet Éclairage ▸ la carte mère ▸ « Prise … :
+  nombre de LED » (souvent 8 à 12 par ventilateur, additionnez ceux en chaîne). OpenRGB garde la taille,
+  même après un redémarrage, et l'éclairage est renvoyé aussitôt sur toutes les LED.
+- **Souris (ou clavier, casque) détectée mais pas connectée** : elle reste dans « Mes appareils », avec un
+  point orange, au lieu de disparaître ; le clic mène à sa fiche (pourquoi, que faire, Signaler).
+- **Appareil occupé un moment par un autre logiciel** (OpenRGB qui démarre ou se met à jour…) : il était
+  écarté jusqu'au débranchement. Il revient maintenant tout seul dès que Windows répond à nouveau.
+- Diagnostic : les zones de chaque appareil OpenRGB et leur taille.
+
 ## 1.0.5
 
 *In English: OpenRGB no longer takes over the keyboards, mice and headsets PeriphHub drives itself

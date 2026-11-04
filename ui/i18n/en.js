@@ -561,6 +561,7 @@ const I18N_EN = {
   'OpenRGB démarre (détection des appareils, quelques secondes)…': 'OpenRGB is starting (detecting devices, a few seconds)…',
   'OpenRGB (livré avec PeriphHub) est arrêté.': 'OpenRGB (bundled with PeriphHub) is stopped.',
   'Mémoire et carte mère': 'Memory and motherboard',
+  'Détecté, pas encore connecté : voir pourquoi': 'Detected, not connected yet: see why',
   'Barrettes de mémoire (RAM) et certaines cartes mères : Windows exige une autorisation administrateur. Une seule fois : PeriphHub installe le pilote PawnIO et OpenRGB en service Windows, puis plus rien à faire.': 'Memory sticks (RAM) and some motherboards: Windows requires administrator permission. Just once: PeriphHub installs the PawnIO driver and OpenRGB as a Windows service, then there is nothing left to do.',
   'Activer (une autorisation Windows)': 'Enable (one Windows permission)',
   'OpenRGB a été mis à jour avec PeriphHub : une autorisation Windows met aussi à jour le service.': 'OpenRGB was updated with PeriphHub: one Windows permission updates the service too.',
@@ -958,6 +959,10 @@ const I18N_EN_T = {
 
 // Plurals and sentences assembled from pieces
 const I18N_EN_RE = [
+  [/^(.+) · non connecté$/, (m, n) => `${n} · not connected`],
+  [/^Prise (.+) : nombre de LED \((\d+) à (\d+)\)$/, (m, z, a, b) => `${z} header: number of LEDs (${a} to ${b})`],
+  [/^Ventilateurs ou bandeau branchés sur (.+) : indiquez combien de LED y sont branchées, sinon ils restent éteints \(OpenRGB ne peut pas les compter\)\. .*$/,
+    (m, z) => `Fans or strip on ${z}: enter how many LEDs are connected, otherwise they stay off (OpenRGB cannot count them). Usually 8 to 12 LEDs per fan; for daisy-chained fans on one header, add them up. Too many does no harm; too few leaves the last ones off.`],
   [/^PeriphHub (\S+) est disponible$/, (m, v) => `PeriphHub ${v} is available`],
   [/^Vérification impossible : (.+)$/, (m, e) => `Check failed: ${e}`],
   [/^Mise à jour impossible : (.+)$/, (m, e) => `Update failed: ${e}`],

@@ -169,6 +169,11 @@ async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn openrgb_resize(index: u32, zone: u32, size: u32) -> Result<(), String> {
+    blocking(move || openrgb::resize_zone(index, zone, size)).await
+}
+
+#[tauri::command]
 async fn openrgb_color_all(rgb: [u8; 3]) -> Result<serde_json::Value, String> {
     blocking(move || openrgb::set_color_all(rgb)).await
 }
@@ -351,6 +356,7 @@ fn main() {
             pads_rumble,
             openrgb_color,
             openrgb_color_all,
+            openrgb_resize,
             openrgb_mode,
             input_get,
             input_set,

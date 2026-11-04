@@ -272,7 +272,7 @@ function otherDevices() {
   return h('section', { class: 'block' },
     h('div', { class: 'bhead' }, h('h3', {}, 'Autres appareils détectés'),
       h('span', { class: 'muted small' }, 'Pas de réglages complets dans PeriphHub pour l’instant : voici ce qu’il est possible d’en faire.')),
-    h('div', { class: 'devlist' }, others.map(d => h('div', { class: 'dev' },
+    h('div', { class: 'devlist' }, others.map(d => h('div', { class: 'dev', id: 'dev-' + (d.vid + d.pid).toUpperCase() },
       h('div', { class: 'tico' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
@@ -292,6 +292,26 @@ function drvReason(d) {
   return h('div', { class: 'muted small' }, 'Dernier essai : ' + errs[errs.length - 1]);
 }
 
+// Souris, clavier, casque ou manette qu'un pilote de PeriphHub connaît mais qui n'est pas (encore) connecté :
+// gardé dans « Mes appareils », point orange, au lieu de disparaître de la barre latérale. Le clic mène à
+// sa fiche sur l'accueil (pourquoi, que faire, Signaler). Retiré dès qu'un pilote le prend.
+function pendingNav() {
+  const want = new Map((report ? undetected() : [])
+    .filter(d => ['experimental', 'supported', 'partial'].includes(d.status) && ['souris', 'clavier', 'casque', 'manette'].includes(d.kind))
+    .map(d => [(d.vid + d.pid).toUpperCase(), d]));
+  for (const b of document.querySelectorAll('nav .pending')) if (!want.has(b.dataset.pending)) b.remove();
+  for (const [id, d] of want) {
+    if (document.querySelector(`nav [data-pending="${id}"]`)) continue;
+    const tab = KIND_TAB[d.kind];
+    const icon = tab ? document.querySelector(`nav [data-tab="${tab}"] svg`)?.cloneNode(true) : kindIcon(d.kind);
+    const name = d.product || d.catalog_name || `${d.vid}:${d.pid}`;
+    document.querySelector('nav .nfoot').before(h('button', { class: 'pending', 'data-pending': id, title: 'Détecté, pas encore connecté : voir pourquoi',
+      onclick: () => { showTab('home'); setTimeout(() => $('dev-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); } },
+      icon || '', h('span', { class: 'nl' }, (KIND_NAME?.[d.kind] || d.kind[0].toUpperCase() + d.kind.slice(1)), h('small', { title: name }, name + ' · non connecté')),
+      h('span', { class: 'dot warn' })));
+  }
+}
+
 function refreshHome() {
   const sub = (id, t) => { const e = $(id); if (e && e.textContent !== t) e.textContent = t; };
   const ms = mouse?.decode?.();
@@ -301,7 +321,9 @@ function refreshHome() {
   const hb = hs?.state?.battery;
   sub('hsSub', hs ? (hb != null ? hb + ' %' + (hs.state.charging ? ' · en charge' : '') : 'Connecté') : 'Non connecté');
   sub('rgbSub', rgb ? 'Connecté' : 'Carte mère');
-  $('devGroup').hidden = !drvDevices().length && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
+  pendingNav();
+  $('devGroup').hidden = !drvDevices().length && !document.querySelector('nav .pending')
+    && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
   bgTipSync();
   batAlerts();
   if (report) {

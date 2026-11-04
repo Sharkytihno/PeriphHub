@@ -118,6 +118,10 @@ pub struct Hid {
     // Interfaces qui n'ont pas répondu à temps : écartées tant qu'elles restent branchées,
     // pour ne pas relancer à chaque relecture un appel qui reste bloqué dans Windows
     stuck: Mutex<HashSet<String>>,
+    // Lecture de descripteur qui a dépassé son délai mais continue dans son fil : si Windows finit par
+    // répondre (appareil occupé un moment par un autre logiciel, OpenRGB qui démarre…), l'interface
+    // revient au passage suivant au lieu de rester écartée jusqu'au débranchement
+    late: Mutex<HashMap<String, Arc<Mutex<Option<Result<Vec<u8>, String>>>>>>,
     // Pourquoi le descripteur n'a pas pu être lu (pour le diagnostic)
     notes: Mutex<HashMap<String, String>>,
     tally: Mutex<HashMap<String, Tally>>,
@@ -209,19 +213,40 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
     let present = |p: &str| infos.iter().any(|d| d.path == p);
     lk(&hid.descriptors).retain(|p, _| present(p));
     lk(&hid.stuck).retain(|p| present(p));
+    lk(&hid.late).retain(|p, _| present(p));
     lk(&hid.notes).retain(|p, _| present(p));
     lk(&hid.tally).retain(|p, _| present(p));
     let mut out = Vec::new();
     for d in infos {
         if lk(&hid.stuck).contains(&d.path) {
-            continue;
+            // Lecture en retard enfin terminée : l'interface revient
+            let done = lk(&hid.late).get(&d.path).and_then(|slot| lk(slot).take());
+            match done {
+                Some(r) => {
+                    lk(&hid.late).remove(&d.path);
+                    lk(&hid.stuck).remove(&d.path);
+                    let x = r.unwrap_or_else(|e| {
+                        lk(&hid.notes).insert(d.path.clone(), e);
+                        Vec::new()
+                    });
+                    lk(&hid.descriptors).insert(d.path.clone(), x);
+                }
+                None => continue,
+            }
         }
         let cached = lk(&hid.descriptors).get(&d.path).cloned();
         let descriptor = match cached {
             Some(x) => x,
             None => {
                 let p = d.path.clone();
-                match crate::watchdog::timed(DESCRIPTOR_LIMIT, move || read_descriptor(&p)) {
+                let slot: Arc<Mutex<Option<Result<Vec<u8>, String>>>> = Arc::new(Mutex::new(None));
+                let s2 = slot.clone();
+                let r = crate::watchdog::timed(DESCRIPTOR_LIMIT, move || {
+                    let r = read_descriptor(&p);
+                    *lk(&s2) = Some(r.clone());
+                    r
+                });
+                match r {
                     Some(r) => {
                         let x = r.unwrap_or_else(|e| {
                             lk(&hid.notes).insert(d.path.clone(), e);
@@ -232,6 +257,7 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
                     }
                     None => {
                         lk(&hid.stuck).insert(d.path.clone());
+                        lk(&hid.late).insert(d.path.clone(), slot);
                         continue;
                     }
                 }

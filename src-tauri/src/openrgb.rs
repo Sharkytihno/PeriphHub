@@ -16,6 +16,7 @@ const PORT: u16 = 6742;
 const REQUEST_CONTROLLER_COUNT: u32 = 0;
 const REQUEST_CONTROLLER_DATA: u32 = 1;
 const SET_CLIENT_NAME: u32 = 50;
+const RESIZEZONE: u32 = 1000;
 const UPDATELEDS: u32 = 1050;
 const SETCUSTOMMODE: u32 = 1100;
 const UPDATEMODE: u32 = 1101;
@@ -152,12 +153,23 @@ const MANUAL_SAVE: u32 = 1 << 8;
 /// Couleurs propres à l'effet (et non LED par LED)
 const COLORS_MODE_SPECIFIC: u32 = 2;
 
+/// Zone d'un appareil. Taille réglable (min ≠ max) : prise ARGB de carte mère, bandeau… OpenRGB ne peut
+/// pas compter les LED d'un ventilateur branché dessus : elle vaut 0 tant qu'on ne la règle pas, et ce qui
+/// y est branché reste éteint.
+struct Zone {
+    name: String,
+    min: u32,
+    max: u32,
+    count: u32,
+}
+
 struct Controller {
     index: u32,
     ty: usize,
     name: String,
     active: u32,
     modes: Vec<Mode>,
+    zones: Vec<Zone>,
     leds: u16,
 }
 
@@ -192,15 +204,18 @@ fn controller(c: &mut Client, i: u32) -> Result<Controller, String> {
             colors,
         });
     }
-    let zones = r.u16()?;
-    for _ in 0..zones {
-        r.string()?;
-        r.take(4 * 4)?; // type, LED min, max, nombre
+    let nz = r.u16()?;
+    let mut zones = Vec::with_capacity(nz as usize);
+    for _ in 0..nz {
+        let name = r.string()?;
+        r.u32()?; // type
+        let (min, max, count) = (r.u32()?, r.u32()?, r.u32()?);
         let m = r.u16()? as usize;
         r.take(m)?;
+        zones.push(Zone { name, min, max, count });
     }
     let leds = r.u16()?;
-    Ok(Controller { index: i, ty, name, active, modes, leds })
+    Ok(Controller { index: i, ty, name, active, modes, zones, leds })
 }
 
 fn hex(c: &[u8; 3]) -> String {
@@ -230,6 +245,7 @@ impl Controller {
         json!({
             "index": self.index, "name": self.name, "kind": TYPES.get(self.ty).copied().unwrap_or("autre"),
             "leds": self.leds, "active": self.active, "modes": modes,
+            "zones": self.zones.iter().map(|z| json!({ "name": z.name, "min": z.min, "max": z.max, "count": z.count })).collect::<Vec<_>>(),
         })
     }
 }
@@ -310,6 +326,29 @@ pub fn set_mode(
 fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
     static OPS: Mutex<()> = Mutex::new(());
     OPS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Nombre de LED de la zone `zone` (prise ARGB de carte mère…), borné à ce que l'appareil accepte.
+/// OpenRGB l'enregistre dans ses réglages : il reste après un redémarrage.
+pub fn resize_zone(index: u32, zone: u32, size: u32) -> Result<(), String> {
+    let _one = one_at_a_time();
+    let mut c = Client::connect()?;
+    let ctl = controller(&mut c, index)?;
+    let z = ctl.zones.get(zone as usize).ok_or("zone inconnue de cet appareil")?;
+    if z.min == z.max {
+        return Err("la taille de cette zone est fixe".into());
+    }
+    let size = size.clamp(z.min, z.max);
+    let mut p = Vec::with_capacity(8);
+    p.extend_from_slice(&(zone as i32).to_le_bytes());
+    p.extend_from_slice(&(size as i32).to_le_bytes());
+    c.send(index, RESIZEZONE, &p)?;
+    // Relecture : la nouvelle taille est prise en compte au retour
+    let after = controller(&mut c, index)?;
+    match after.zones.get(zone as usize) {
+        Some(z) if z.count == size => Ok(()),
+        _ => Err("OpenRGB n'a pas changé la taille de la zone".into()),
+    }
 }
 
 /// Une couleur unie sur toutes les LED de l'appareil `index` (mode « personnalisé » d'OpenRGB)
@@ -747,6 +786,23 @@ mod live {
             let t = std::time::Instant::now();
             let r = set_color_all([255, 0, 0]).unwrap();
             println!("tous en rouge : {:?} · {r}", t.elapsed());
+        }
+        // Zones à taille réglable : 12 LED puis taille d'origine
+        for d in &before {
+            for (zi, z) in d.zones.iter().enumerate() {
+                println!("#{} zone {} : {} ({}-{})", d.index, z.name, z.count, z.min, z.max);
+                if z.max > z.min {
+                    let t = std::time::Instant::now();
+                    resize_zone(d.index, zi as u32, 12).unwrap();
+                    let mut c = Client::connect().unwrap();
+                    let now = controller(&mut c, d.index).unwrap();
+                    println!("  → 12 LED en {:?} : zone {} LED, appareil {} LED", t.elapsed(), now.zones[zi].count, now.leds);
+                    drop(c);
+                    set_color(d.index, [0, 0, 255]).unwrap();
+                    resize_zone(d.index, zi as u32, z.count.max(z.min)).unwrap();
+                    println!("  → remise à {}", z.count);
+                }
+            }
         }
         for d in &before {
             let t = std::time::Instant::now();
