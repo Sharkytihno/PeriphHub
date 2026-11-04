@@ -1,7 +1,9 @@
 // Passerelle OpenRGB (https://openrgb.org, GPL-2.0) : si OpenRGB tourne avec son serveur SDK,
 // PeriphHub pilote l'éclairage de tous les appareils qu'il connaît (plus de 1 000 modèles).
-// Client du protocole réseau d'OpenRGB, version 0 (la plus simple, acceptée par tous les serveurs),
-// uniquement sur 127.0.0.1. Paquet : "ORGB", index d'appareil, identifiant, taille (u32 LE), données.
+// Client du protocole réseau d'OpenRGB, version 3 négociée (0 avec un serveur trop ancien pour la
+// négocier), uniquement sur 127.0.0.1. Pas moins de 3 : sans la luminosité des effets (version 3),
+// OpenRGB 1.1 refuse en silence tout effet qui en a une (RGBController::SetModeValuesFromMode) et
+// renvoie l'ancien à l'appareil. Paquet : "ORGB", index d'appareil, identifiant, taille (u32 LE), données.
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -15,14 +17,18 @@ use tauri::{AppHandle, Manager};
 const PORT: u16 = 6742;
 const REQUEST_CONTROLLER_COUNT: u32 = 0;
 const REQUEST_CONTROLLER_DATA: u32 = 1;
+const REQUEST_PROTOCOL_VERSION: u32 = 40;
 const SET_CLIENT_NAME: u32 = 50;
+/// Version du protocole demandée. 4 ajouterait les segments des zones, 6 des identifiants d'appareil :
+/// rien d'utile ici, et chaque version change le format des descriptions.
+const PROTOCOL: u32 = 3;
 const RESIZEZONE: u32 = 1000;
 const UPDATELEDS: u32 = 1050;
 const SETCUSTOMMODE: u32 = 1100;
 const UPDATEMODE: u32 = 1101;
 const SAVEMODE: u32 = 1102;
 
-struct Client(TcpStream);
+struct Client(TcpStream, u32);
 
 impl Client {
     fn connect() -> Result<Client, String> {
@@ -30,7 +36,15 @@ impl Client {
         let s = TcpStream::connect_timeout(&addr, Duration::from_millis(400)).map_err(|_| "OpenRGB n'est pas lancé (serveur SDK)".to_string())?;
         s.set_read_timeout(Some(Duration::from_secs(3))).ok();
         s.set_write_timeout(Some(Duration::from_secs(3))).ok();
-        let mut c = Client(s);
+        let mut c = Client(s, 0);
+        // Version négociée : la plus basse des deux. Un serveur d'avant cette commande ne répond pas.
+        c.send(0, REQUEST_PROTOCOL_VERSION, &PROTOCOL.to_le_bytes())?;
+        let deadline = std::time::Instant::now() + Duration::from_millis(800);
+        if c.wait_data(u32::MAX, deadline).is_ok() {
+            let body = c.recv(u32::MAX, REQUEST_PROTOCOL_VERSION)?;
+            let server = u32::from_le_bytes(body.get(..4).ok_or("réponse OpenRGB vide")?.try_into().unwrap());
+            c.1 = server.min(PROTOCOL);
+        }
         c.send(0, SET_CLIENT_NAME, b"PeriphHub\0")?;
         Ok(c)
     }
@@ -63,7 +77,8 @@ impl Client {
                     }
                     // Réveil à 300 ms puis toutes les 1,2 s (un appareil lent n'est pas noyé de demandes)
                     if waits % 4 == 0 && dev != u32::MAX {
-                        if let Err(e) = self.send(dev, REQUEST_CONTROLLER_DATA, &0u32.to_le_bytes()) {
+                        let v = self.1;
+                        if let Err(e) = self.send(dev, REQUEST_CONTROLLER_DATA, &v.to_le_bytes()) {
                             break Err(e);
                         }
                     }
@@ -138,9 +153,13 @@ struct Mode {
     flags: u32,
     speed_min: u32,
     speed_max: u32,
+    // Protocole 3 et plus (0 sinon)
+    brightness_min: u32,
+    brightness_max: u32,
     colors_min: u32,
     colors_max: u32,
     speed: u32,
+    brightness: u32,
     direction: u32,
     color_mode: u32,
     colors: Vec<[u8; 3]>,
@@ -173,37 +192,38 @@ struct Controller {
     leds: u16,
 }
 
+/// Un effet dans l'ordre du protocole `v` (lecture de REQUEST_CONTROLLER_DATA)
+fn read_mode(r: &mut Reader, v: u32) -> Result<Mode, String> {
+    let name = r.string()?;
+    let (value, flags, speed_min, speed_max) = (r.u32()?, r.u32()?, r.u32()?, r.u32()?);
+    let (brightness_min, brightness_max) = if v >= 3 { (r.u32()?, r.u32()?) } else { (0, 0) };
+    let (colors_min, colors_max, speed) = (r.u32()?, r.u32()?, r.u32()?);
+    let brightness = if v >= 3 { r.u32()? } else { 0 };
+    let (direction, color_mode) = (r.u32()?, r.u32()?);
+    let n = r.u16()? as usize;
+    let colors = (0..n).map(|_| r.take(4).map(|b| [b[0], b[1], b[2]])).collect::<Result<_, _>>()?;
+    Ok(Mode {
+        name, value, flags, speed_min, speed_max, brightness_min, brightness_max, colors_min, colors_max, speed, brightness,
+        direction, color_mode, colors,
+    })
+}
+
 fn controller(c: &mut Client, i: u32) -> Result<Controller, String> {
-    c.send(i, REQUEST_CONTROLLER_DATA, &0u32.to_le_bytes())?;
+    let v = c.1;
+    c.send(i, REQUEST_CONTROLLER_DATA, &v.to_le_bytes())?;
     let body = c.recv(i, REQUEST_CONTROLLER_DATA)?;
     let mut r = Reader(&body, 4); // taille totale
     let ty = r.u32()? as usize;
     let name = r.string()?;
+    if v >= 1 {
+        r.string()?; // fabricant
+    }
     for _ in 0..4 {
         r.string()?; // description, version, numéro de série, emplacement
     }
     let count = r.u16()?;
     let active = r.u32()?;
-    let mut modes = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let name = r.string()?;
-        let v: Vec<u32> = (0..9).map(|_| r.u32()).collect::<Result<_, _>>()?;
-        let n = r.u16()? as usize;
-        let colors = (0..n).map(|_| r.take(4).map(|b| [b[0], b[1], b[2]])).collect::<Result<_, _>>()?;
-        modes.push(Mode {
-            name,
-            value: v[0],
-            flags: v[1],
-            speed_min: v[2],
-            speed_max: v[3],
-            colors_min: v[4],
-            colors_max: v[5],
-            speed: v[6],
-            direction: v[7],
-            color_mode: v[8],
-            colors,
-        });
-    }
+    let modes = (0..count).map(|_| read_mode(&mut r, v)).collect::<Result<Vec<_>, _>>()?;
     let nz = r.u16()?;
     let mut zones = Vec::with_capacity(nz as usize);
     for _ in 0..nz {
@@ -264,16 +284,25 @@ fn count(c: &mut Client) -> Result<u32, String> {
     Ok(n.min(64))
 }
 
-/// Description d'un effet telle que l'attend le serveur (protocole 0) : taille totale, numéro de
+/// Description d'un effet telle que l'attend le serveur (protocole `v`) : taille totale, numéro de
 /// l'effet, puis l'effet lui-même dans l'ordre de REQUEST_CONTROLLER_DATA.
-fn mode_packet(idx: u32, m: &Mode) -> Vec<u8> {
+fn mode_packet(idx: u32, m: &Mode, v: u32) -> Vec<u8> {
     let mut p = vec![0u8; 4];
     p.extend_from_slice(&idx.to_le_bytes());
     p.extend_from_slice(&(m.name.len() as u16 + 1).to_le_bytes());
     p.extend_from_slice(m.name.as_bytes());
     p.push(0);
-    for v in [m.value, m.flags, m.speed_min, m.speed_max, m.colors_min, m.colors_max, m.speed, m.direction, m.color_mode] {
-        p.extend_from_slice(&v.to_le_bytes());
+    let mut fields = vec![m.value, m.flags, m.speed_min, m.speed_max];
+    if v >= 3 {
+        fields.extend([m.brightness_min, m.brightness_max]);
+    }
+    fields.extend([m.colors_min, m.colors_max, m.speed]);
+    if v >= 3 {
+        fields.push(m.brightness);
+    }
+    fields.extend([m.direction, m.color_mode]);
+    for f in fields {
+        p.extend_from_slice(&f.to_le_bytes());
     }
     p.extend_from_slice(&(m.colors.len() as u16).to_le_bytes());
     for c in &m.colors {
@@ -312,13 +341,19 @@ pub fn set_mode(
         }
         m.colors = cols;
     }
-    let body = mode_packet(mode, &m);
+    let body = mode_packet(mode, &m, c.1);
     c.send(index, UPDATEMODE, &body)?;
     if save && m.flags & MANUAL_SAVE != 0 {
         c.send(index, SAVEMODE, &body)?;
     }
-    // Relecture : le serveur traite les paquets dans l'ordre, l'effet est appliqué au retour
-    controller(&mut c, index).map(|_| ())
+    // Relecture : le serveur traite les paquets dans l'ordre, l'effet est appliqué au retour. OpenRGB
+    // répond « ok » même quand il refuse l'effet : c'est l'effet actif relu qui fait foi.
+    let after = controller(&mut c, index)?;
+    if after.active != mode {
+        let now = after.modes.get(after.active as usize).map(|x| x.name.as_str()).unwrap_or("?");
+        return Err(format!("OpenRGB a refusé l’effet « {} » (l’appareil reste sur « {} »)", m.name, now));
+    }
+    Ok(())
 }
 
 /// Une commande d'éclairage à la fois : plusieurs clics rapides ne s'empilent pas en parallèle dans les
@@ -748,23 +783,27 @@ mod tests {
             flags: HAS_SPEED | MANUAL_SAVE,
             speed_min: 0,
             speed_max: 4,
+            brightness_min: 0,
+            brightness_max: 100,
             colors_min: 1,
             colors_max: 2,
             speed: 3,
+            brightness: 80,
             direction: 0,
             color_mode: COLORS_MODE_SPECIFIC,
             colors: vec![[255, 0, 16], [0, 32, 255]],
         };
-        let p = mode_packet(5, &m);
-        assert_eq!(u32::from_le_bytes(p[..4].try_into().unwrap()) as usize, p.len());
-        let mut r = Reader(&p, 4);
-        assert_eq!(r.u32().unwrap(), 5);
-        assert_eq!(r.string().unwrap(), "Breathing");
-        let v: Vec<u32> = (0..9).map(|_| r.u32().unwrap()).collect();
-        assert_eq!(v, [2, HAS_SPEED | MANUAL_SAVE, 0, 4, 1, 2, 3, 0, COLORS_MODE_SPECIFIC]);
-        assert_eq!(r.u16().unwrap(), 2);
-        assert_eq!(r.take(8).unwrap(), &[255, 0, 16, 0, 0, 32, 255, 0]);
-        assert_eq!(r.1, p.len());
+        for v in [0, 3] {
+            let p = mode_packet(5, &m, v);
+            assert_eq!(u32::from_le_bytes(p[..4].try_into().unwrap()) as usize, p.len());
+            let mut r = Reader(&p, 4);
+            assert_eq!(r.u32().unwrap(), 5);
+            let back = read_mode(&mut r, v).unwrap();
+            assert_eq!(r.1, p.len());
+            assert_eq!((back.name.as_str(), back.flags, back.speed, back.colors.clone()), ("Breathing", m.flags, 3, m.colors.clone()));
+            let b = if v >= 3 { (0, 100, 80) } else { (0, 0, 0) };
+            assert_eq!((back.brightness_min, back.brightness_max, back.brightness), b);
+        }
     }
 }
 
@@ -802,6 +841,13 @@ mod live {
                     resize_zone(d.index, zi as u32, z.count.max(z.min)).unwrap();
                     println!("  → remise à {}", z.count);
                 }
+            }
+        }
+        // Chaque effet de chaque appareil : accepté (effet actif relu) ou refus signalé
+        for d in &before {
+            for (mi, m) in d.modes.iter().enumerate() {
+                let r = set_mode(d.index, mi as u32, None, None, None, false);
+                println!("#{} effet {} « {} » : {:?}", d.index, mi, m.name, r);
             }
         }
         for d in &before {

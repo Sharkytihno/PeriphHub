@@ -3,6 +3,17 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.7
+
+*In English: choosing a lighting effect (Static, Breathing, Color Cycle…) for a device driven through
+OpenRGB now really applies it; before, OpenRGB silently kept "Direct".*
+
+- **Effets d'éclairage (OpenRGB)** : choisir « Statique », « Respiration », « Cycle de couleurs »… sur
+  la carte mère ou un autre appareil passant par OpenRGB n'avait aucun effet : OpenRGB refusait l'effet
+  sans le dire (PeriphHub lui parlait dans une version trop ancienne de son protocole, sans la
+  luminosité) et l'appareil restait sur « Direct », malgré le message de réussite. L'effet choisi est
+  maintenant appliqué, et un effet vraiment refusé affiche une erreur au lieu d'un faux succès.
+
 ## 1.0.6
 
 *In English: fans and strips plugged into the motherboard light up (set how many LEDs each ARGB header
