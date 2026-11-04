@@ -75,8 +75,16 @@ pub fn info() -> Value {
     // Seul l'exe est comparé ici (il change à chaque version ; relu toutes les 30 s) : la copie entière
     // est vérifiée à l'installation.
     let exe_hash = FILES.iter().find(|(n, _)| *n == "OpenRGB.exe").map(|(_, h)| *h);
+    // Réglages d'une version de PeriphHub qui ne coupait pas encore les détecteurs de ses propres appareils
+    let conf_ok = || {
+        service_dir()
+            .and_then(|d| std::fs::read(d.join("service_config").join("OpenRGB.json")).ok())
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .is_some_and(|v| crate::openrgb::config_ok(&v))
+    };
     let stale = st.is_some()
-        && service_dir().and_then(|d| crate::openrgb::sha256_file(&d.join("OpenRGB.exe"))).as_deref() != exe_hash;
+        && (service_dir().and_then(|d| crate::openrgb::sha256_file(&d.join("OpenRGB.exe"))).as_deref() != exe_hash
+            || !conf_ok());
     json!({ "service": label, "serviceStale": stale, "pawnio": state("PawnIO").is_some() })
 }
 
@@ -131,6 +139,11 @@ fn install() -> i32 {
     }
     // Revérifié à l'arrivée, dans le dossier protégé : c'est cette copie que le service lancera
     if verify_dir(&dst).is_err() {
+        return 2;
+    }
+    // Réglages du service (OpenRGB lancé en service les lit dans service_config, à côté de lui)
+    let conf = dst.join("service_config");
+    if std::fs::create_dir_all(&conf).is_err() || crate::openrgb::write_config(&conf).is_err() {
         return 2;
     }
 

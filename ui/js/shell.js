@@ -219,7 +219,7 @@ const WEB_TOOL = { '31E3': 'wootility.io', '03EB': 'wootility.io', '3434': 'laun
 
 // Ce que l'utilisateur peut faire pour un appareil que PeriphHub ne règle pas (encore)
 function deviceHint(d) {
-  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d), d.status === 'rgb' ? orgbTool() : ''];
+  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d), d.status === 'rgb' ? orgbTool() : '', d.status === 'rgb' && typeof orgbAdminRow === 'function' ? orgbAdminRow() : ''];
 }
 
 function deviceTool(d) {

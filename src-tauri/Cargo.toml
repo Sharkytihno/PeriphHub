@@ -1,6 +1,6 @@
 [package]
 name = "periphhub"
-version = "1.0.4"
+version = "1.0.5"
 description = "Un seul logiciel léger pour tous vos périphériques"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Sharkytihno/PeriphHub"

@@ -11,6 +11,7 @@ mod hid;
 mod input;
 mod notify;
 mod openrgb;
+mod openrgb_off;
 mod openrgb_service;
 mod pads;
 mod pnp;
@@ -165,6 +166,11 @@ async fn openrgb_admin(action: String) -> Result<bool, String> {
 #[tauri::command]
 async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     blocking(move || openrgb::set_color(index, rgb)).await
+}
+
+#[tauri::command]
+async fn openrgb_color_all(rgb: [u8; 3]) -> Result<serde_json::Value, String> {
+    blocking(move || openrgb::set_color_all(rgb)).await
 }
 
 #[tauri::command]
@@ -344,6 +350,7 @@ fn main() {
             pads_list,
             pads_rumble,
             openrgb_color,
+            openrgb_color_all,
             openrgb_mode,
             input_get,
             input_set,

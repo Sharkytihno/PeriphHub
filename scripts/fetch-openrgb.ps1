@@ -1,7 +1,8 @@
 ﻿# Télécharge OpenRGB (GPL-2.0, version portable officielle) dans src-tauri/resources/openrgb et
 # vérifie son empreinte. À lancer une fois avant de compiler (la CI le fait aussi). Changer de version :
 # mettre à jour $Version, $Url et $Sha256 ici ET la table FILES de src-tauri/src/openrgb.rs
-# (empreinte de chaque fichier, vérifiée avant chaque lancement).
+# (empreinte de chaque fichier, vérifiée avant chaque lancement). Puis relancer
+# scripts/build-openrgb-detectors.py (détecteurs coupés : appareils que PeriphHub pilote lui-même).
 $ErrorActionPreference = 'Stop'
 $Version = '1.1'
 $Url = 'https://codeberg.org/OpenRGB/OpenRGB/releases/download/release_1.1/OpenRGB_1.1_Windows_64_8e16de2.zip'

@@ -28,6 +28,7 @@ function orgbInstance(list) {
   const dev = { vendorId: 0, productId: 0 };
   const inst = {
     key: 'drv-openrgb', name: 'Éclairage OpenRGB', kind: 'rgb', dev, caps: {}, state: { list, colors: {} }, noOrigin: true, diagId: null,
+    want: {}, busy: {},
     meta: '', source: 'Passerelle OpenRGB (projet libre, GPL-2.0) : effets de chaque appareil, ou couleur unie en mode personnalisé. '
       + 'Pour garder l’éclairage sans PeriphHub ni OpenRGB, « Enregistrer dans l’appareil » quand il le permet ; sinon, un profil OpenRGB lancé avec Windows.',
     async set(cap, v) {
@@ -37,11 +38,35 @@ function orgbInstance(list) {
         delete inst.state.colors[v.index];
         return;
       }
-      const targets = v.index == null ? inst.state.list.map(d => d.index) : [v.index];
-      for (const index of targets) {
-        await nativeInvoke('openrgb_color', { index, rgb: hexRgb(v.color) });
-        inst.state.colors[index] = v.color;
-      }
+      // Clics rapides (ou nuancier glissé) : seule la dernière couleur demandée part, les autres sont
+      // sautées tant qu'une commande est en cours (un appareil lent ne prend pas des secondes de retard)
+      const key = v.index == null ? 'all' : v.index;
+      inst.want[key] = v.color;
+      if (inst.busy[key]) return inst.busy[key];
+      inst.busy[key] = (async () => {
+        try {
+          while (inst.want[key] != null) {
+            const color = inst.want[key];
+            inst.want[key] = null;
+            if (v.index == null) {
+              // Tous les appareils sur une seule connexion : un appareil en erreur n'arrête pas les autres
+              const r = await nativeInvoke('openrgb_color_all', { rgb: hexRgb(color) });
+              const bad = new Set((r?.errors || []).map(e => e.index));
+              for (const d of inst.state.list) if (!bad.has(d.index)) inst.state.colors[d.index] = color;
+              if (bad.size) {
+                const names = (r.errors || []).map(e => (inst.state.list.find(d => d.index === e.index)?.name || `#${e.index}`) + ' : ' + e.error);
+                throw new Error(names.join(' · '));
+              }
+            } else {
+              await nativeInvoke('openrgb_color', { index: v.index, rgb: hexRgb(color) });
+              inst.state.colors[v.index] = color;
+            }
+          }
+        } finally {
+          inst.busy[key] = null;
+        }
+      })();
+      return inst.busy[key];
     },
     async refresh() {
       const list = await nativeInvoke('openrgb_list');
@@ -57,11 +82,14 @@ function orgbInstance(list) {
           onclick: () => drvSet(inst, label, 'color', { index, color: col }) })),
         h('button', { class: 'mini ghost', onclick: () => drvSet(inst, label + ' éteint', 'color', { index, color: '#000000' }) }, 'Éteindre'),
         h('input', { type: 'color', value: current || '#ffffff', onchange: e => drvSet(inst, label, 'color', { index, color: e.target.value }) }));
+      // « Mémoire et carte mère » en tête tant qu'il reste à activer : en bas d'une longue liste, on ne le voyait pas
+      const admin = orgbAdminRow(), todo = orgbSvc && (orgbSvc.service === 'absent' || orgbSvc.serviceStale);
       return [
+        todo ? admin : null,
         field('Tous les appareils', h('div', { class: 'muted small' }, 'Couleur unie sur toutes les LED'), pick('Éclairage', null, null)),
         ...s.list.map(d => field(d.name, h('div', { class: 'muted small' }, `${d.kind} · ${d.leds} LED`),
           ...orgbModeRows(inst, d), pick(d.name, d.index, s.colors[d.index]))),
-        orgbAdminRow(),
+        todo ? null : admin,
       ];
     },
   };

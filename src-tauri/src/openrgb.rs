@@ -44,9 +44,44 @@ impl Client {
         self.0.write_all(&p).map_err(|e| e.to_string())
     }
 
-    /// Réponse à `id` (les notifications du serveur sont ignorées)
-    fn recv(&mut self, id: u32) -> Result<Vec<u8>, String> {
-        for _ in 0..16 {
+    /// Attend que le serveur ait quelque chose à dire. OpenRGB 1.1 a un défaut : le fil de chaque appareil
+    /// se rendort sans regarder sa file (condition_variable sans prédicat, NetworkServer.cpp), et une
+    /// commande arrivée à ce moment-là attend la suivante. Sans réponse après 300 ms, on lui envoie donc
+    /// une demande de description qui le réveille (la réponse en trop est ignorée, comme les notifications).
+    fn wait_data(&mut self, dev: u32, deadline: std::time::Instant) -> Result<(), String> {
+        use std::io::ErrorKind::{TimedOut, WouldBlock};
+        self.0.set_read_timeout(Some(Duration::from_millis(300))).ok();
+        let mut waits = 0u32;
+        let r = loop {
+            match self.0.peek(&mut [0u8; 1]) {
+                Ok(0) => break Err("OpenRGB a fermé la connexion".to_string()),
+                Ok(_) => break Ok(()),
+                Err(e) if matches!(e.kind(), TimedOut | WouldBlock) => {
+                    if std::time::Instant::now() >= deadline {
+                        break Err("OpenRGB ne répond pas (appareil occupé ?)".to_string());
+                    }
+                    // Réveil à 300 ms puis toutes les 1,2 s (un appareil lent n'est pas noyé de demandes)
+                    if waits % 4 == 0 && dev != u32::MAX {
+                        if let Err(e) = self.send(dev, REQUEST_CONTROLLER_DATA, &0u32.to_le_bytes()) {
+                            break Err(e);
+                        }
+                    }
+                    waits += 1;
+                }
+                Err(e) => break Err(e.to_string()),
+            }
+        };
+        self.0.set_read_timeout(Some(Duration::from_secs(3))).ok();
+        r
+    }
+
+    /// Réponse à `id` pour l'appareil `dev` (les notifications du serveur et les réponses en trop sont
+    /// ignorées). Un appareil lent (carte mère, mémoire) peut mettre plusieurs secondes à appliquer
+    /// la commande précédente : jusqu'à 10 s.
+    fn recv(&mut self, dev: u32, id: u32) -> Result<Vec<u8>, String> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        for _ in 0..64 {
+            self.wait_data(dev, deadline)?;
             let mut head = [0u8; 16];
             self.0.read_exact(&mut head).map_err(|e| e.to_string())?;
             if &head[..4] != b"ORGB" {
@@ -58,7 +93,8 @@ impl Client {
             }
             let mut body = vec![0u8; size];
             self.0.read_exact(&mut body).map_err(|e| e.to_string())?;
-            if u32::from_le_bytes(head[8..12].try_into().unwrap()) == id {
+            let from = u32::from_le_bytes(head[4..8].try_into().unwrap());
+            if u32::from_le_bytes(head[8..12].try_into().unwrap()) == id && (dev == u32::MAX || from == dev) {
                 return Ok(body);
             }
         }
@@ -127,7 +163,7 @@ struct Controller {
 
 fn controller(c: &mut Client, i: u32) -> Result<Controller, String> {
     c.send(i, REQUEST_CONTROLLER_DATA, &0u32.to_le_bytes())?;
-    let body = c.recv(REQUEST_CONTROLLER_DATA)?;
+    let body = c.recv(i, REQUEST_CONTROLLER_DATA)?;
     let mut r = Reader(&body, 4); // taille totale
     let ty = r.u32()? as usize;
     let name = r.string()?;
@@ -200,10 +236,16 @@ impl Controller {
 
 pub fn list() -> Result<Value, String> {
     let mut c = Client::connect()?;
-    c.send(0, REQUEST_CONTROLLER_COUNT, &[])?;
-    let n = u32::from_le_bytes(c.recv(REQUEST_CONTROLLER_COUNT)?.get(..4).ok_or("réponse vide")?.try_into().unwrap());
-    let list: Vec<Value> = (0..n.min(64)).filter_map(|i| controller(&mut c, i).ok().map(|d| d.json())).collect();
+    let n = count(&mut c)?;
+    let list: Vec<Value> = (0..n).filter_map(|i| controller(&mut c, i).ok().map(|d| d.json())).collect();
     Ok(json!(list))
+}
+
+fn count(c: &mut Client) -> Result<u32, String> {
+    c.send(0, REQUEST_CONTROLLER_COUNT, &[])?;
+    // Traitée par le fil du client, pas par celui d'un appareil : pas de réveil à envoyer
+    let n = u32::from_le_bytes(c.recv(u32::MAX, REQUEST_CONTROLLER_COUNT)?.get(..4).ok_or("réponse vide")?.try_into().unwrap());
+    Ok(n.min(64))
 }
 
 /// Description d'un effet telle que l'attend le serveur (protocole 0) : taille totale, numéro de
@@ -236,6 +278,7 @@ pub fn set_mode(
     colors: Option<Vec<[u8; 3]>>,
     save: bool,
 ) -> Result<(), String> {
+    let _one = one_at_a_time();
     let mut c = Client::connect()?;
     let ctl = controller(&mut c, index)?;
     let mut m = ctl.modes.get(mode as usize).cloned().ok_or("effet inconnu de cet appareil")?;
@@ -262,10 +305,22 @@ pub fn set_mode(
     controller(&mut c, index).map(|_| ())
 }
 
+/// Une commande d'éclairage à la fois : plusieurs clics rapides ne s'empilent pas en parallèle dans les
+/// files d'OpenRGB (un appareil lent les appliquerait l'une après l'autre, avec des secondes de retard)
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static OPS: Mutex<()> = Mutex::new(());
+    OPS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Une couleur unie sur toutes les LED de l'appareil `index` (mode « personnalisé » d'OpenRGB)
 pub fn set_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
+    let _one = one_at_a_time();
     let mut c = Client::connect()?;
-    let leds = controller(&mut c, index)?.leds as usize;
+    color_on(&mut c, index, rgb)
+}
+
+fn color_on(c: &mut Client, index: u32, rgb: [u8; 3]) -> Result<(), String> {
+    let leds = controller(c, index)?.leds as usize;
     c.send(index, SETCUSTOMMODE, &[])?;
     let mut p = Vec::with_capacity(6 + 4 * leds);
     p.extend_from_slice(&((6 + 4 * leds) as u32).to_le_bytes());
@@ -273,7 +328,27 @@ pub fn set_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     for _ in 0..leds {
         p.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0]);
     }
-    c.send(index, UPDATELEDS, &p)
+    c.send(index, UPDATELEDS, &p)?;
+    // Relecture : la couleur est appliquée au retour (et le fil de l'appareil est réveillé s'il dormait :
+    // sinon la couleur attendait le clic suivant)
+    controller(c, index).map(|_| ())
+}
+
+/// La même couleur sur tous les appareils, sur une seule connexion ; un appareil en erreur n'arrête pas
+/// les autres. Renvoie les erreurs par appareil.
+pub fn set_color_all(rgb: [u8; 3]) -> Result<Value, String> {
+    let _one = one_at_a_time();
+    let mut c = Client::connect()?;
+    let n = count(&mut c)?;
+    let mut errors = Vec::new();
+    for i in 0..n {
+        if let Err(e) = color_on(&mut c, i, rgb) {
+            errors.push(json!({ "index": i, "error": e }));
+            // Connexion peut-être désynchronisée après un délai dépassé : on repart d'une neuve
+            c = Client::connect()?;
+        }
+    }
+    Ok(json!({ "count": n, "errors": errors }))
 }
 
 // ---------- OpenRGB livré avec PeriphHub ----------
@@ -352,6 +427,33 @@ pub(crate) fn verify_dir(dir: &std::path::Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Réglages d'OpenRGB (OpenRGB.json dans `dir`) : détecteurs des appareils que PeriphHub pilote lui-même
+/// coupés (openrgb_off.rs). Sans ça, OpenRGB garde leurs interfaces HID ouvertes et PeriphHub, ou
+/// HeadsetControl, ne peut plus leur parler (clavier qui apparaît puis disparaît, casque muet…).
+/// Les autres réglages du fichier sont gardés.
+pub(crate) fn write_config(dir: &std::path::Path) -> Result<(), String> {
+    let f = dir.join("OpenRGB.json");
+    let mut v: Value = std::fs::read(&f).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(json!({}));
+    if !v.is_object() {
+        v = json!({});
+    }
+    if !v["Detectors"].is_object() {
+        v["Detectors"] = json!({});
+    }
+    if !v["Detectors"]["detectors"].is_object() {
+        v["Detectors"]["detectors"] = json!({});
+    }
+    for n in crate::openrgb_off::OFF.iter().chain(crate::openrgb_off::OFF_UNLISTED) {
+        v["Detectors"]["detectors"][*n] = json!(false);
+    }
+    std::fs::write(&f, serde_json::to_vec_pretty(&v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Tous les détecteurs de openrgb_off.rs sont coupés dans ces réglages (sauf OFF_UNLISTED, qu'OpenRGB efface)
+pub(crate) fn config_ok(v: &Value) -> bool {
+    crate::openrgb_off::OFF.iter().all(|n| v["Detectors"]["detectors"][*n] == json!(false))
 }
 
 // OpenRGB lancé par PeriphHub, et le job qui l'arrête avec lui
@@ -513,6 +615,7 @@ pub fn launch(app: &AppHandle) -> Result<Value, String> {
             cmd.args(["--server", "--noautoconnect"]);
             if let Ok(c) = conf {
                 let _ = std::fs::create_dir_all(&c);
+                let _ = write_config(&c);
                 cmd.arg("--config").arg(c);
             }
             cmd.current_dir(dir);
@@ -574,6 +677,30 @@ mod tests {
         }
     }
 
+    // openrgb_off.rs vient des sources de la même version qu'OpenRGB livré : chaque nom y figure
+    #[test]
+    fn detecteurs_coupes_connus_d_openrgb() {
+        let exe = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("openrgb").join("OpenRGB.exe");
+        let Ok(bin) = std::fs::read(&exe) else { return };
+        for n in crate::openrgb_off::OFF.iter().chain(crate::openrgb_off::OFF_UNLISTED) {
+            assert!(bin.windows(n.len()).any(|w| w == n.as_bytes()), "détecteur inconnu d'OpenRGB : {n}");
+        }
+    }
+
+    #[test]
+    fn reglages_gardes_et_detecteurs_coupes() {
+        let dir = std::env::temp_dir().join(format!("ph-orgb-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("OpenRGB.json"), r#"{"Server":{"port":6742},"Detectors":{"detectors":{"SteelSeries Rival 3":true,"MSI Mystic Light":true}}}"#).unwrap();
+        write_config(&dir).unwrap();
+        let v: Value = serde_json::from_slice(&std::fs::read(dir.join("OpenRGB.json")).unwrap()).unwrap();
+        assert!(config_ok(&v));
+        assert_eq!(v["Detectors"]["detectors"]["SteelSeries Rival 3"], json!(false));
+        assert_eq!(v["Detectors"]["detectors"]["MSI Mystic Light"], json!(true));
+        assert_eq!(v["Server"]["port"], json!(6742));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn description_d_effet_relue_a_l_identique() {
         let m = Mode {
@@ -599,5 +726,33 @@ mod tests {
         assert_eq!(r.u16().unwrap(), 2);
         assert_eq!(r.take(8).unwrap(), &[255, 0, 16, 0, 0, 32, 255, 0]);
         assert_eq!(r.1, p.len());
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+    // Contre un serveur OpenRGB lancé à la main : cargo test openrgb::live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn couleur_partout_puis_effet_d_origine() {
+        let mut c = Client::connect().unwrap();
+        let n = count(&mut c).unwrap();
+        let before: Vec<Controller> = (0..n).map(|i| controller(&mut c, i).unwrap()).collect();
+        drop(c);
+        for d in &before {
+            println!("#{} {} · {} LED · effet {}", d.index, d.name, d.leds, d.modes.get(d.active as usize).map(|m| m.name.as_str()).unwrap_or("?"));
+        }
+        for _ in 0..3 {
+            let t = std::time::Instant::now();
+            let r = set_color_all([255, 0, 0]).unwrap();
+            println!("tous en rouge : {:?} · {r}", t.elapsed());
+        }
+        for d in &before {
+            let t = std::time::Instant::now();
+            let m = &d.modes[d.active as usize];
+            set_mode(d.index, d.active, Some(m.speed), Some(m.direction), Some(m.colors.clone()), false).unwrap();
+            println!("#{} effet d'origine remis : {:?}", d.index, t.elapsed());
+        }
     }
 }

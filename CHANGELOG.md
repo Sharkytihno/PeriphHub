@@ -3,6 +3,28 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.5
+
+*In English: OpenRGB no longer takes over the keyboards, mice and headsets PeriphHub drives itself
+(they stopped responding or disappeared), lighting commands no longer time out or lag, "All devices"
+sets every device in one go, and the "Memory and motherboard" button is shown where it is needed.*
+
+- **Clavier, souris et casque à nouveau pilotés par PeriphHub** quand OpenRGB tourne. OpenRGB ouvrait
+  aussi les appareils que PeriphHub sait régler lui-même (SteelSeries Apex 3, Rival 3, Logitech,
+  Corsair…) et les gardait : le clavier apparaissait puis disparaissait, la souris refusait les réglages
+  et HeadsetControl ne répondait plus. OpenRGB laisse désormais ces appareils-là à PeriphHub ; il garde
+  la mémoire, la carte mère, la carte graphique, les ventilateurs et tout ce que PeriphHub ne pilote pas.
+  Service « Mémoire et carte mère » déjà activé : « Mettre à jour » (une validation Windows).
+- **Éclairage sans latence ni délai dépassé** : OpenRGB 1.1 laissait parfois une commande en attente
+  jusqu'à la suivante (la couleur arrivait au clic d'après, ou « délai dépassé »). PeriphHub le relance
+  quand il tarde, et attend qu'une couleur soit appliquée avant d'envoyer la suivante. Clics rapides :
+  seule la dernière couleur part.
+- **« Tous les appareils »** : une seule commande pour tous ; un appareil qui ne répond pas n'empêche plus
+  les autres de changer, et l'erreur dit lequel.
+- **Mémoire et carte mère** : le bouton « Activer » est en tête de l'onglet Éclairage et sur la page de la
+  carte mère. Plus besoin de lancer PeriphHub en administrateur.
+- Diagnostic : la liste des appareils vus par OpenRGB (nom, LED, effet), l'état du service et de PawnIO.
+
 ## 1.0.4
 
 *In English: OpenRGB now ships with PeriphHub and starts by itself — motherboard, fan and other
