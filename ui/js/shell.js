@@ -951,6 +951,8 @@ function diagAsk() {
 
 bgSync();
 bgLoad();
+// Version de PeriphHub sous son nom, en haut de la barre latérale
+if (NATIVE) window.__TAURI__.app.getVersion().then(v => { $('appVer').textContent = 'Version ' + v; }, () => {});
 // Rechargé pour changer de langue : l'analyse d'avant le rechargement est reprise telle quelle
 const keptReport = NATIVE ? keptScan() : null;
 if (keptReport) { report = keptReport.report; journal = keptReport.journal || []; $('copyReport').disabled = false; }

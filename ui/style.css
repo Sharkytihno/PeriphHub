@@ -539,8 +539,11 @@ main { background: radial-gradient(900px 340px at 18% -60px, var(--glow), transp
 .brand:hover .mark .orbit { transform: rotate(120deg); }
 body.scanning .brand .mark .orbit { animation: orbit 1.6s linear infinite; }
 @keyframes orbit { to { transform: rotate(360deg); } }
-.brand .wm { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
+.brand .wm { font-weight: 700; font-size: 16px; line-height: 1.2; letter-spacing: -.02em; }
 .brand .wm b { font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Version sous le nom (remplie au démarrage, rien hors de l'application) */
+.brand .wm small { display: block; margin-top: 2px; font: 400 11px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: 0; color: var(--faint); }
+.brand .wm small:empty { display: none; }
 
 /* Boutons principaux : dégradé de la marque */
 button:not(.ghost):not(.mini):not(.swatch):not(.x):not(.tile):not(.dot):not(.key):not(.eff):not(.preset) {
