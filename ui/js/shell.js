@@ -177,11 +177,11 @@ function deviceTiles() {
 const gained = () => journal.reduce((s, l) => s + Math.max(0, l.before_bytes - l.after_bytes), 0);
 
 // Compteur qui monte jusqu'à la valeur, à l'ouverture de la page seulement
-function countUp(el, bytes) {
-  if (document.body.classList.contains('settled') || matchMedia('(prefers-reduced-motion: reduce)').matches || !bytes) return el;
+function countUp(el, bytes, force = false) {
+  if ((!force && document.body.classList.contains('settled')) || matchMedia('(prefers-reduced-motion: reduce)').matches || !bytes) return el;
   const t0 = performance.now(), dur = 700;
   const step = t => {
-    const k = Math.min(1, (t - t0) / dur);
+    const k = Math.max(0, Math.min(1, (t - t0) / dur));
     el.textContent = mo(bytes * (1 - Math.pow(1 - k, 3)));
     if (k < 1) requestAnimationFrame(step);
   };
@@ -189,9 +189,58 @@ function countUp(el, bytes) {
   return el;
 }
 
+// Petites icônes au trait (cartes de l'accueil et de l'allègement)
+const PICT = {
+  search: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM20 20l-4-4',
+  heavy: 'M6 8h12l2 12H4zM9 8a3 3 0 0 1 6 0',
+  light: 'M20 6 9 17l-5-5',
+  pause: 'M8 5v14M16 5v14',
+  undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
+  apps: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+};
+function pict(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', PICT[name]);
+  svg.append(p);
+  return svg;
+}
+
+// Accueil : l'état du PC en une phrase, et un seul bouton
+function pcCard() {
+  const r = report;
+  if (!r) return h('div', { class: 'pcard wait' }, h('div', { class: 'pcico' }, pict('search')),
+    h('div', { class: 'pctext' }, h('div', { class: 'pctitle' }, NATIVE ? 'Analyse de votre PC…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'),
+      NATIVE ? h('div', { class: 'pbar-ind' }) : null));
+  const running = r.vendors.filter(v => v.bytes > 0);
+  const freed = gained() > 0 ? h('div', { class: 'gain' }, `${mo(gained())} libérés grâce à l’allègement`) : null;
+  if (!running.length) return h('div', { class: 'pcard light' }, h('div', { class: 'pcico' }, pict('light')),
+    h('div', { class: 'pctext' }, h('div', { class: 'pctitle' }, 'Votre PC est léger'),
+      h('div', { class: 'muted small' }, 'Aucun logiciel de marque ne tourne en fond pour rien.'), freed));
+  return h('div', { class: 'pcard' }, h('div', { class: 'pcico' }, pict('heavy')),
+    h('div', { class: 'pctext' },
+      h('div', { class: 'pctitle' }, countUp(h('b', {}, mo(r.vendor_bytes)), r.vendor_bytes), ' ', 'de mémoire prise en fond'),
+      h('div', { class: 'muted small' }, `Par : ${running.map(v => v.name).join(', ')}`), freed),
+    h('button', { class: 'lg', onclick: () => showTab('slim') }, 'Alléger mon PC'));
+}
+
+// Allègement expliqué en trois cases, pour qui ne connaît pas le mot
+function slimExplain() {
+  const step = (icon, title, text) => h('div', { class: 'xstep' }, h('div', { class: 'xico' }, pict(icon)), h('strong', {}, title), h('p', {}, text));
+  const steps = h('div', { class: 'explain' },
+    step('heavy', 'Le problème', 'Les logiciels des marques (Razer, Logitech, Corsair…) restent ouverts en permanence et prennent de la mémoire.'),
+    step('pause', 'Ce que fait PeriphHub', 'Il les ferme et les empêche de se relancer avec Windows. Vos réglages restent enregistrés dans vos appareils.'),
+    step('undo', 'Sans risque', 'Rien n’est supprimé ni désinstallé. Un clic sur « Annuler l’allègement » remet tout comme avant.'));
+  // Déjà utilisé : l'explication se replie
+  return journal.length ? h('details', { class: 'more' }, h('summary', {}, 'Comment ça marche ?'), steps) : steps;
+}
+
 function ramHero() {
   const r = report;
-  if (!r) return h('div', { class: 'hero' }, h('div', { class: 'muted' }, NATIVE ? 'Analyse du PC…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'));
+  if (!r) return h('div', { class: 'pcard wait' }, h('div', { class: 'pcico' }, pict('search')),
+    h('div', { class: 'pctext' }, h('div', { class: 'pctitle' }, NATIVE ? 'Analyse de votre PC…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'),
+      NATIVE ? h('div', { class: 'pbar-ind' }) : null));
   const running = r.vendors.filter(v => v.bytes > 0);
   const max = Math.max(r.vendor_bytes, r.periphhub_bytes, 1);
   const bar = (cls, label, bytes) => h('div', { class: 'hbar ' + cls },
@@ -199,7 +248,7 @@ function ramHero() {
     h('div', { class: 'htrack' }, h('i', { style: `width:${Math.max(1.5, bytes / max * 100)}%` })));
   return h('div', { class: 'hero' },
     h('div', { class: 'hleft' },
-      h('div', { class: 'hlabel' }, 'Mémoire des logiciels constructeurs'),
+      h('div', { class: 'hlabel' }, 'Mémoire prise par les logiciels de marque'),
       countUp(h('div', { class: 'hvalue' + (r.vendor_bytes ? '' : ' zero') }, mo(r.vendor_bytes)), r.vendor_bytes),
       h('div', { class: 'muted small' }, running.length
         ? `${plural(running.length, 'logiciel ouvert', 'logiciels ouverts')} en arrière-plan : ${running.map(v => v.name).join(', ')}.`
@@ -207,7 +256,7 @@ function ramHero() {
       gained() > 0 ? h('div', { class: 'gain' }, `${mo(gained())} libérés grâce à l’allègement`) : null,
       running.length && $('slim').hidden ? h('button', { class: 'cta', onclick: () => showTab('slim') }, 'Voir comment alléger') : null),
     h('div', { class: 'hright' },
-      bar('vendor', 'Logiciels constructeurs', r.vendor_bytes),
+      bar('vendor', 'Logiciels de marque', r.vendor_bytes),
       bar('self', 'PeriphHub (cette fenêtre)', r.periphhub_bytes),
       h('div', { class: 'muted small' }, 'Mémoire privée, mesurée comme dans le Gestionnaire des tâches.')));
 }
@@ -266,13 +315,16 @@ function deviceHintText(d) {
   return 'Son logiciel d’origine reste nécessaire pour le régler.';
 }
 
+var othersOpen = null; // « Autres appareils détectés » ouvert ou replié (gardé d'un rendu à l'autre)
 function otherDevices() {
   if (!report) return null;
   const others = undetected();
   if (!others.length) return null;
-  return h('section', { class: 'block' },
-    h('div', { class: 'bhead' }, h('h3', {}, 'Autres appareils détectés'),
-      h('span', { class: 'muted small' }, 'Pas de réglages complets dans PeriphHub pour l’instant : voici ce qu’il est possible d’en faire.')),
+  // Replié par défaut (détails pour les curieux) ; ouvert si un appareil connu n'a pas pu se connecter
+  if (othersOpen == null) othersOpen = others.some(d => ['experimental', 'supported', 'partial'].includes(d.status));
+  return h('details', { class: 'more', id: 'othersBox', open: othersOpen, ontoggle: e => { othersOpen = e.target.open; } },
+    h('summary', {}, 'Autres appareils détectés', h('span', { class: 'chip unknown' }, String(others.length)),
+      h('span', { class: 'muted small' }, 'pas encore réglables ici')),
     h('div', { class: 'devlist' }, others.map(d => h('div', { class: 'dev', id: 'dev-' + (d.vid + d.pid).toUpperCase() },
       h('div', { class: 'tico' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
@@ -307,7 +359,11 @@ function pendingNav() {
     const icon = tab ? document.querySelector(`nav [data-tab="${tab}"] svg`)?.cloneNode(true) : kindIcon(d.kind);
     const name = d.product || d.catalog_name || `${d.vid}:${d.pid}`;
     document.querySelector('nav .nfoot').before(h('button', { class: 'pending', 'data-pending': id, title: 'Détecté, pas encore connecté : voir pourquoi',
-      onclick: () => { showTab('home'); setTimeout(() => $('dev-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); } },
+      onclick: () => {
+        othersOpen = true;
+        showTab('home');
+        setTimeout(() => { if ($('othersBox')) $('othersBox').open = true; $('dev-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
+      } },
       icon || '', h('span', { class: 'nl' }, (KIND_NAME?.[d.kind] || d.kind[0].toUpperCase() + d.kind.slice(1)), h('small', { title: name }, name + ' · non connecté')),
       h('span', { class: 'dot warn' })));
   }
@@ -335,32 +391,27 @@ function refreshHome() {
   }
   if ($('home').hidden) return;
 
-  const hour = new Date().getHours();
-  $('homeTitle').textContent = hour < 6 || hour >= 18 ? 'Bonsoir' : 'Bonjour';
   const tiles = deviceTiles();
   const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
-  $('homeLead').textContent = live ? `${plural(live, 'appareil connecté', 'appareils connectés')} · réglages enregistrés dans les appareils eux-mêmes`
-    : 'Tous vos périphériques, d’un coup d’œil.';
+  $('homeLead').textContent = live ? plural(live, 'appareil connecté', 'appareils connectés') : 'Vos appareils et votre PC, en un coup d’œil.';
   $('homeBody').replaceChildren(...[
     updateNotice(),
     hidBlockedNotice(),
-    ramHero(),
+    pcCard(),
     h('section', { class: 'block' },
-      h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils')),
+      h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils'),
+        tiles.length ? h('span', { class: 'muted small' }, 'Cliquez sur un appareil pour le régler') : null),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
         : h('div', { class: 'empty' }, !report ? 'Recherche des appareils…'
-          : otherDevices() ? 'Aucun de vos appareils n’est encore réglable directement ici. Ceux que PeriphHub a détectés sont listés juste en dessous, avec ce qu’il est possible d’en faire.'
-          : 'Aucun appareil pris en charge n’est branché. Les appareils reconnus apparaissent ici tout seuls.')),
-    otherDevices(),
+          : otherDevices() ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
+          : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
-    NATIVE && report ? h('div', { class: 'notice' },
-      h('p', { class: 'muted small' }, 'Un appareil manque ou ne marche pas ? Envoyez le diagnostic au développeur de PeriphHub, sans compte : '
-        + 'il contient la liste des appareils USB et ce que PeriphHub a essayé, sans numéro de série ni information personnelle. '
-        + 'Vous pouvez aussi le copier pour l’envoyer vous-même (Discord, mail…).'),
+    otherDevices(),
+    NATIVE && report ? h('div', { class: 'homefoot' },
+      h('span', {}, 'Un appareil manque ou ne marche pas ?'),
       h('div', { class: 'row-inline' },
-        h('button', { disabled: diagBusy, onclick: () => diagDialog() }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic'),
-        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier le diagnostic'),
-        h('button', { class: 'ghost', onclick: reportProblem }, 'Ouvrir un ticket GitHub'))) : null].filter(Boolean));
+        h('button', { class: 'ghost', disabled: diagBusy, onclick: () => diagDialog() }, diagBusy ? 'Envoi…' : 'Signaler un problème'),
+        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier le diagnostic'))) : null].filter(Boolean));
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment
@@ -653,7 +704,7 @@ function vendorActions(v) {
         h('button', { class: 'ghost', onclick: () => slimRun('slim_undo', v, 'Annulation') }, 'Annuler l’allègement')));
   }
   if (!v.bytes && !active) return h('div', { class: 'vact' }, h('span', { class: 'muted small' }, 'Ne tourne pas et ne démarre pas avec Windows : rien à faire.'));
-  return h('div', { class: 'vact' }, h('button', { onclick: () => slimWizard(v) }, 'Alléger…'));
+  return h('div', { class: 'vact' }, h('button', { onclick: () => slimWizard(v) }, 'Alléger'));
 }
 
 // Ouvrir, refermer, annuler : résultat en notification puis nouvelle analyse
@@ -690,15 +741,28 @@ function brandDevices(v) {
 function modal(...kids) {
   const ov = h('div', { class: 'overlay' }, h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true' }, ...kids));
   const close = () => { ov.remove(); document.removeEventListener('keydown', esc); };
-  const esc = e => { if (e.key === 'Escape' && !ov.querySelector('.spin')) close(); };
-  ov.addEventListener('click', e => { if (e.target === ov && !ov.querySelector('.spin')) close(); });
+  const busy = () => ov.querySelector('.spin, .wbusy');
+  const esc = e => { if (e.key === 'Escape' && !busy()) close(); };
+  ov.addEventListener('click', e => { if (e.target === ov && !busy()) close(); });
   document.addEventListener('keydown', esc);
   document.body.append(ov);
   return { close, box: ov.firstChild };
 }
 
+function svgCheck() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 84 84');
+  const c = document.createElementNS(ns, 'circle');
+  c.setAttribute('cx', '42'); c.setAttribute('cy', '42'); c.setAttribute('r', '36');
+  const p = document.createElementNS(ns, 'path');
+  p.setAttribute('d', 'M27 43l10 10 20-22');
+  svg.append(c, p);
+  return svg;
+}
+
 async function slimWizard(v) {
-  const m = modal(h('div', { class: 'wbusy' }, h('div', { class: 'spin' }), h('div', { class: 'muted' }, 'Préparation…')));
+  const m = modal(h('div', { class: 'wbusy' }, h('div', { class: 'muted' }, 'Préparation…'), h('div', { class: 'pbar-ind' })));
   let plan;
   try {
     plan = await nativeInvoke('slim_plan', { vendor: v.id });
@@ -716,52 +780,87 @@ async function slimWizard(v) {
     h('span', {}, label, hint ? h('small', {}, hint) : null));
 
   const go = async () => {
-    m.box.replaceChildren(h('div', { class: 'wbusy' }, h('div', { class: 'spin' }), h('div', {}, 'Allègement de ' + plan.name + '…'),
-      h('div', { class: 'muted small' }, 'Acceptez la fenêtre de validation Windows si elle apparaît.')));
+    // Progression par étapes pendant que Windows travaille, puis 100 % à la réponse
+    const phases = [close ? `Fermeture de ${plan.name}…` : null, picked.size ? 'Retrait du démarrage de Windows…' : null, 'Mesure de la mémoire libérée…'].filter(Boolean);
+    const bar = h('i', { style: 'width:4%' });
+    const prog = h('div', { class: 'prog' }, bar);
+    const phase = h('div', { class: 'wphase' }, phases[0]);
+    const admin = plan.items.some(i => i.admin && picked.has(i.id)) || close;
+    m.box.replaceChildren(h('div', { class: 'wbusy' }, h('div', {}, 'Allègement de ' + plan.name), prog, phase,
+      admin ? h('div', { class: 'muted small' }, 'Si Windows demande une validation, cliquez sur « Oui ».') : null));
+    let k = 0;
+    const tick = setInterval(() => {
+      k++;
+      bar.style.width = Math.min(90, 4 + k * 14) + '%';
+      const p = phases[Math.min(phases.length - 1, Math.floor(k / 2))];
+      if (phase.textContent !== p) phase.textContent = p;
+    }, 700);
+    requestAnimationFrame(() => { bar.style.width = '18%'; });
     let r;
     try {
       r = await nativeInvoke('slim_apply', { vendor: v.id, ids: [...picked], close });
     } catch (e) {
+      clearInterval(tick);
       console.error('[PeriphHub]', e);
       m.close();
       return toast('Allègement impossible : ' + e, 'err');
     }
+    clearInterval(tick);
+    bar.style.width = '100%';
+    prog.classList.add('done');
+    phase.textContent = 'Terminé';
+    await new Promise(res => setTimeout(res, 550));
     const freed = Math.max(0, (r.before_bytes || 0) - (r.after_bytes || 0));
+    // Coche dessinée et petits confettis (couleurs de l'interface), puis compteur de mémoire libérée
+    const colors = ['var(--ok)', 'var(--accent)', 'var(--cost)', 'var(--warn)'];
+    const bits = Array.from({ length: 14 }, (_, i) => {
+      const a = i / 14 * Math.PI * 2, d = 60 + (i % 3) * 18;
+      return h('i', { style: `background:${colors[i % 4]};--x:${Math.round(Math.cos(a) * d)}px;--y:${Math.round(Math.sin(a) * d)}px;--rot:${i * 47}deg` });
+    });
+    const big = h('div', { class: 'big' }, freed ? mo(freed) : plural(r.done || 0, 'changement', 'changements'));
     m.box.replaceChildren(h('div', { class: 'wdone' },
-      h('div', { class: 'big' }, freed ? mo(freed) : '✓'),
-      h('div', {}, freed ? 'de mémoire libérée, mesurés à l’instant.' : plural(r.done || 0, 'modification faite', 'modifications faites') + '.'),
+      h('div', { class: 'check' }, svgCheck(), ...bits),
+      freed ? countUp(big, freed, true) : big,
+      h('div', { class: 'wsub' }, freed ? 'de mémoire libérée. Votre PC est plus léger !' : `${plan.name} ne démarrera plus avec Windows.`),
       r.cancelled ? h('p', { class: 'warnline' }, 'Validation Windows refusée : seules les modifications possibles sans elle ont été faites.') : null,
       r.failed?.length ? h('p', { class: 'warnline' }, 'Pas modifié : ' + r.failed.join(', ')) : null,
       h('p', { class: 'muted small' }, `Besoin de ${plan.name} pour un réglage ? « Ouvrir pour un réglage » sur sa carte, puis « Refermer ».`),
-      h('button', { onclick: m.close }, 'Terminer')));
+      h('button', { class: 'lg', onclick: m.close }, 'Terminer')));
     rescan();
   };
 
   const draw = () => {
     const admin = plan.items.some(i => i.admin && picked.has(i.id)) || close;
+    const n = picked.size + (close ? 1 : 0);
+    const wasOpen = m.box.querySelector('details.more')?.open;
     m.box.replaceChildren(
       h('header', { class: 'dhead' }, h('h3', {}, 'Alléger ' + plan.name),
         h('button', { class: 'x', title: 'Fermer', onclick: m.close }, '×')),
-      step(1, 'Ce qui change',
+      h('div', { class: 'stack' },
+        h('p', { class: 'wlead' }, plan.running
+          ? `PeriphHub va fermer ${plan.name} et l’empêcher de se relancer avec Windows.`
+          : `PeriphHub va empêcher ${plan.name} de se lancer avec Windows.`),
         v.keeps ? h('div', { class: 'vkeep' }, h('strong', {}, 'Continue sans lui'), h('span', {}, LANG === 'en' && v.keeps_en || v.keeps)) : null,
         v.loses ? h('div', { class: 'vlose' }, h('strong', {}, 'S’arrête sans lui'), h('span', {}, LANG === 'en' && v.loses_en || v.loses)) : null,
         devs.length ? h('ul', { class: 'wdevs' }, devs.map(d => h('li', {},
           h('span', { class: 'chip ' + d.status }, d.status === 'supported' ? 'Réglable dans PeriphHub' : 'Pas encore dans PeriphHub'), ' ',
           d.product || d.vid + ':' + d.pid))) : null,
         devs.some(d => d.status !== 'supported') ? h('p', { class: 'muted small' },
-          `Pour les appareils pas encore réglables ici, gardez ${plan.name} installé : vous l’ouvrirez à la demande depuis cette page, le temps d’un réglage.`) : null),
-      step(2, 'Ce que PeriphHub va faire',
-        plan.items.map(i => check(picked.has(i.id), ITEM_LABEL[i.kind]?.(i.name) || i.name, i.admin ? 'validation Windows' : '',
-          on => { if (on) picked.add(i.id); else picked.delete(i.id); draw(); })),
-        plan.running ? check(close, `Fermer ${plan.name} maintenant`, `${plural(plan.running, 'processus', 'processus')} · ${mo(plan.bytes)}`,
-          on => { close = on; draw(); }) : null,
+          `Pour les appareils pas encore réglables ici, gardez ${plan.name} installé : vous l’ouvrirez à la demande depuis cette page, le temps d’un réglage.`) : null,
         !plan.items.length && !plan.running ? h('p', { class: 'muted' }, 'Rien à faire : ce logiciel ne tourne pas et ne démarre plus avec Windows.') : null,
-        h('p', { class: 'muted small' }, 'Rien n’est supprimé ni désinstallé. Chaque modification est notée : « Annuler l’allègement » remet tout comme avant.')),
+        plan.items.length || plan.running ? h('details', { class: 'more', open: !!wasOpen },
+          h('summary', {}, 'Voir le détail', h('span', { class: 'muted small' }, plural(n, 'changement choisi', 'changements choisis'))),
+          h('div', { class: 'stack tight' },
+            plan.items.map(i => check(picked.has(i.id), ITEM_LABEL[i.kind]?.(i.name) || i.name, i.admin ? 'validation Windows' : '',
+              on => { if (on) picked.add(i.id); else picked.delete(i.id); draw(); })),
+            plan.running ? check(close, `Fermer ${plan.name} maintenant`, `${plural(plan.running, 'processus', 'processus')} · ${mo(plan.bytes)}`,
+              on => { close = on; draw(); }) : null)) : null,
+        h('p', { class: 'muted small' }, 'Rien n’est supprimé ni désinstallé. « Annuler l’allègement » remet tout comme avant.')),
       h('footer', { class: 'dfoot' },
-        admin ? h('span', { class: 'muted small' }, 'Windows vous demandera une validation (droits administrateur).') : h('span'),
+        admin ? h('span', { class: 'muted small' }, 'Windows vous demandera une validation.') : h('span'),
         h('div', { class: 'row-inline' },
           h('button', { class: 'ghost', onclick: m.close }, 'Annuler'),
-          h('button', { disabled: !picked.size && !close, onclick: go }, 'Alléger'))));
+          h('button', { class: 'lg', disabled: !picked.size && !close, onclick: go }, 'Alléger'))));
   };
   draw();
 }
@@ -770,9 +869,10 @@ function renderSlim() {
   const box = $('slimBody');
   if (!report) return box.replaceChildren(h('div', { class: 'empty' }, NATIVE ? 'Analyse en cours…' : 'L’analyse ne fonctionne que dans l’appli PeriphHub.'));
   box.replaceChildren(
+    slimExplain(),
     ramHero(),
     h('section', { class: 'block' },
-      h('div', { class: 'bhead' }, h('h3', {}, 'Logiciels constructeurs trouvés'),
+      h('div', { class: 'bhead' }, h('h3', {}, 'Logiciels de marque trouvés'),
         h('span', { class: 'muted small' }, 'Les réglages enregistrés dans un appareil continuent de fonctionner quand son logiciel est fermé.')),
       report.vendors.length ? h('div', { class: 'vcards' }, report.vendors.map(vendorCard))
         : h('div', { class: 'empty' }, 'Aucun logiciel constructeur connu sur ce PC. Le vôtre manque ? Copiez le rapport et ouvrez un ticket sur GitHub.')));
@@ -936,7 +1036,8 @@ function diagDialog(focus = '') {
       + 'Il arrive dans un dépôt GitHub privé, lu seulement par le développeur.'),
     det,
     h('footer', { class: 'dfoot' },
-      h('button', { class: 'ghost', onclick: () => copyDiag(null, opts()) }, 'Copier plutôt'),
+      h('div', { class: 'row-inline' }, h('button', { class: 'ghost', onclick: () => copyDiag(null, opts()) }, 'Copier plutôt'),
+        h('button', { class: 'ghost', onclick: reportProblem }, 'Ouvrir un ticket GitHub')),
       h('div', { class: 'row-inline' }, h('button', { class: 'ghost', onclick: () => m.close() }, 'Annuler'), send)));
   setTimeout(() => area.focus(), 60);
 }

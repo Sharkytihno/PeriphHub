@@ -14,8 +14,7 @@
   <nav>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-        <defs><linearGradient id="phg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cff"/><stop offset=".48" stop-color="#5b7bff"/><stop offset="1" stop-color="#22c8ee"/></linearGradient></defs>
-        <rect width="64" height="64" rx="17" fill="url(#phg)"/>
+        <rect width="64" height="64" rx="17" fill="currentColor"/>
         <g class="orbit" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
           <path d="M42.7 18.9A17 17 0 0 1 48.7 35.6M44.4 43.7A17 17 0 0 1 19.6 43.7M15.3 35.6A17 17 0 0 1 21.3 18.9" opacity=".55"/>
           <circle cx="32" cy="15" r="4.6" fill="#fff" stroke="none"/><circle cx="46.7" cy="40.5" r="4.6" fill="#fff" stroke="none"/><circle cx="17.3" cy="40.5" r="4.6" fill="#fff" stroke="none"/>
@@ -62,7 +61,7 @@
   <main>
     <section class="page" id="home">
       <header class="phead">
-        <div class="ptitle"><h2 id="homeTitle">Bonjour</h2><div class="muted small" id="homeLead">Tous vos périphériques, d’un coup d’œil.</div></div>
+        <div class="ptitle"><h2 id="homeTitle">Accueil</h2><div class="muted small" id="homeLead">Vos appareils et votre PC, en un coup d’œil.</div></div>
         <div class="pact"><button class="ghost" id="rescan">Actualiser</button></div>
       </header>
       <div id="homeBody"></div>
@@ -70,7 +69,7 @@
 
     <section class="page" id="slim">
       <header class="phead">
-        <div class="ptitle"><h2>Allègement</h2><div class="muted small">Les logiciels constructeurs qui tournent en fond, et ce que vous gagnez à les fermer.</div></div>
+        <div class="ptitle"><h2>Allègement</h2><div class="muted small">Libérez la mémoire prise par les logiciels de marque, sans rien perdre.</div></div>
         <div class="pact"><span class="status" id="slimStatus"></span><button class="ghost" id="copyReport" disabled>Copier le rapport</button></div>
       </header>
       <div id="slimBody"></div>
@@ -113,6 +112,7 @@
       <div id="optBody" class="pbody"></div>
     </section>
   </main>
+  <div id="loadbar" aria-hidden="true"></div>
   <div id="toasts" aria-live="polite"></div>
   <script src="js/hid-descriptor.js" defer></script>
   <script src="js/native-hid.js" defer></script>

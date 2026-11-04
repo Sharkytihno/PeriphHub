@@ -3,6 +3,23 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.1.0
+
+*In English: a simpler, cleaner look. Plain colours instead of gradients, no more greeting on the home
+page, a one-line summary of your PC with a single “Slim down my PC” button, slimming explained in three
+steps, a progress bar while it works and an animated check mark when it is done.*
+
+- **Nouveau look**, plus simple et plus net : couleurs unies (plus de dégradés violet-bleu ni de halos),
+  cartes plus grandes et arrondies, boutons plus lisibles, en clair comme en sombre.
+- **Accueil** : plus de « Bonjour / Bonsoir ». L’état du PC tient en une phrase, avec un seul bouton
+  « Alléger mon PC ». Les appareils pas encore réglables sont regroupés dans une liste repliable, et
+  « Signaler un problème » est rangé en bas.
+- **Allègement expliqué en trois cases** : le problème, ce que fait PeriphHub, et pourquoi c’est sans risque.
+- **Fenêtre d’allègement simplifiée** : une phrase pour dire ce qui va se passer, le détail des
+  changements replié, une barre de progression par étapes pendant l’opération, puis une coche animée et
+  la mémoire libérée qui défile.
+- Barre de chargement en haut de la fenêtre pendant chaque analyse.
+
 ## 1.0.10
 
 *In English: Ranked keyboards (Nova 60 %, including the Supernova, Master 65 %, Guardian 65 %) are now
