@@ -3,6 +3,18 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.0.3
+
+*In English: lighting for the SteelSeries Rival 3 mouse, and SteelSeries headsets are no longer
+retried as mice every few minutes.*
+
+- **SteelSeries Rival 3** (1re génération) : éclairage réglable dans PeriphHub (fixe, par zone — bande
+  haut, milieu, bas et logo —, respiration, cycle de couleurs, éteint) avec la luminosité. Rien n'est
+  enregistré dans la souris : PeriphHub renvoie l'éclairage choisi à chaque branchement. « Celui de la
+  souris » puis débrancher et rebrancher la souris rend son éclairage d'origine. Fermez SteelSeries GG.
+- Les casques SteelSeries (Arctis Nova…) ne sont plus pris pour des souris : ils ne sont plus marqués
+  « muets » ni réessayés toutes les quelques minutes.
+
 ## 1.0.2
 
 *In English: the version number is shown under the PeriphHub name, and switching the interface

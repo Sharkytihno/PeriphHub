@@ -164,6 +164,10 @@ function omMap(inst, st) {
     const opts = omCall(c, 'getSleepOptions');
     if (opts?.length) { s.sleep = st.sleepTimeout; caps.sleep = opts; }
   }
+  if (ui.family === 'steelseries-rival3') {
+    s.light = inst.r3light;
+    caps.light = { effects: R3_FX, labels: R3_LABELS, color: true, brightness: true };
+  }
   // Souris qui ne savent pas dire leurs réglages (Rival 3…) : on ne fait pas semblant de les avoir lus
   inst.note = ui.valuesVerified === false
     ? 'Cette souris ne sait pas indiquer ses réglages actuels : les valeurs affichées sont les dernières envoyées par PeriphHub, ou celles par défaut. '
@@ -171,6 +175,57 @@ function omMap(inst, st) {
     : undefined;
   inst.meta = [st.connectionType === 'Wireless' ? 'Sans fil' : st.connectionType === 'Wired' ? 'Filaire' : null,
     st.firmware?.length ? 'firmware ' + st.firmware.join(' / ') : null].filter(Boolean).join(' · ');
+}
+
+// ---------- Éclairage du SteelSeries Rival 3 (1re génération : 1038:1824, 1038:184C) ----------
+// Protocole de rivalcfg (devices/rival3.py, WTFPL), recoupé par OpenRGB (SteelSeriesRivalController) ;
+// OpenMouse le documente dans vendor/openmouse/steelseries/rival3.js sans l'utiliser.
+//   05 00 <zone 1-4, 0 = toutes> R G B <luminosité 0x00-0x64>   couleur (1-3 : bande haut → bas, 4 : logo)
+//   06 00 <effet>                                               effet calculé par la souris
+// La souris ne sait pas dire son éclairage : PeriphHub ne l'enregistre pas dans sa mémoire (pas de 09 00)
+// et le renvoie à chaque branchement (drvReapply). Un réglage du DPI, lui, enregistre tout ce qui est affiché.
+const R3_FX = ['mouse', 'static', 'zones', 'breathing', 'spectrum', 'off'];
+const R3_LABELS = { mouse: 'Celui de la souris', zones: 'Par zone', breathing: 'Respiration', spectrum: 'Cycle de couleurs' };
+const R3_EFFECT = { static: 0x04, zones: 0x04, off: 0x04, breathing: 0x02, spectrum: 0x00 };
+const R3_ZONES = ['Bande (haut)', 'Bande (milieu)', 'Bande (bas)', 'Logo'];
+const r3Rgb = hex => [1, 3, 5].map(i => parseInt(String(hex || '#ffffff').slice(i, i + 2), 16) || 0);
+
+async function r3SetLight(inst, v) {
+  if (!v || !R3_FX.includes(v.effect)) throw new Error('effet inconnu');
+  const l = inst.r3light;
+  if (v.effect === 'mouse') {
+    if (l.effect !== 'mouse') toast('Débranchez et rebranchez la souris pour retrouver son éclairage.', 'ok');
+    Object.assign(l, v, { brightness: null });
+    return;
+  }
+  const next = { ...l, ...v, brightness: Math.max(0, Math.min(100, Math.round(Number(v.brightness ?? 100)))) };
+  if (!Array.isArray(next.zones) || next.zones.length !== 4) next.zones = Array(4).fill(next.color || '#ffffff');
+  const c = inst.client;
+  const send = bytes => c.write(new Uint8Array(bytes));
+  await c.run(async () => {
+    await c.open();
+    await send([0x06, 0x00, R3_EFFECT[next.effect]]);
+    await c.delay(50);
+    for (let z = 1; z <= 4; z++) {
+      const rgb = next.effect === 'off' ? [0, 0, 0] : r3Rgb(next.effect === 'zones' ? next.zones[z - 1] : next.color);
+      await send([0x05, 0x00, z, ...rgb, next.brightness]);
+      await c.delay(50);
+    }
+  });
+  Object.assign(l, next);
+}
+
+function r3Rows(inst) {
+  const l = inst.state.light;
+  if (l?.effect === 'breathing') return [field('Couleur',
+    h('div', { class: 'row-inline' }, SWATCHES.map(col => h('button', { class: 'swatch' + (col === l.color ? ' on' : ''), style: `background:${col}`, title: col,
+      onclick: () => drvSet(inst, 'Couleur', 'light', { ...l, color: col }) })),
+    h('input', { type: 'color', value: l.color || '#ffffff', onchange: e => drvSet(inst, 'Couleur', 'light', { ...l, color: e.target.value }) })))];
+  if (!l || l.effect !== 'zones') return [];
+  return [field('Zones',
+    h('div', { class: 'row-inline' }, l.zones.map((col, i) => h('input', { type: 'color', value: col, title: R3_ZONES[i],
+      onchange: e => drvSet(inst, R3_ZONES[i], 'light', { ...l, zones: l.zones.map((x, j) => j === i ? e.target.value : x) }) }))),
+    h('div', { class: 'muted small' }, R3_ZONES.join(' · ')))];
 }
 
 function deviceBrandSafe(client) {
@@ -243,13 +298,20 @@ async function omTry(dev, group) {
   };
   inst.refresh = async () => omMap(inst, await client.readStatus());
   inst.refreshBattery = inst.refresh;
+  inst.r3light = { effect: 'mouse', color: '#ffffff', brightness: null, zones: Array(4).fill('#ffffff') };
   inst.set = async (cap, v) => {
+    if (cap === 'light' && inst.caps.light) return r3SetLight(inst, v);
     const f = OM_SETTERS[cap];
     if (!f) throw new Error('réglage inconnu : ' + cap);
     await f(client, v, inst);
   };
-  inst.rows = () => omRows(inst);
+  inst.rows = () => [...r3Rows(inst), ...omRows(inst)];
   try { await inst.refresh(); } catch (e) { await client.close?.().catch(() => {}); throw e; }
+  // Éclairage du Rival 3 : rien n'est gardé par la souris, on renvoie le choix (le reste est dans sa mémoire)
+  const want = inst.caps.light && lsGet(wantKey(inst))?.light;
+  if (want && want.effect !== 'mouse') {
+    try { await r3SetLight(inst, want); omMap(inst, await client.readStatus()); } catch (e) { drvFail(inst, 'light', e, 'réapplication'); }
+  }
   return [inst];
 }
 
@@ -456,7 +518,12 @@ window.omApi = {
   driver: {
     id: 'openmouse',
     priority: 10,
-    match: d => OM_VIDS.has(d.vendorId) && !OM_SKIP.has(omId(d)),
+    // Seulement les modèles qu'OpenMouse connaît : sinon il réclame tout appareil de la marque (casque
+    // Arctis Nova…), échoue, et l'appareil est marqué « muet » puis réessayé toutes les quelques minutes
+    match: d => {
+      if (!OM_VIDS.has(d.vendorId) || OM_SKIP.has(omId(d))) return false;
+      try { return clientSupportScore(window.__TAURI__ ? new OmHIDDevice([d]) : d) > 0; } catch { return false; }
+    },
     connect: (_dev, group) => omConnect(group),
   },
   keyboardDrivers: [
