@@ -2,12 +2,17 @@
 // (open / sendReport / sendFeatureReport / événements inputreport) via hidapi.
 // Chaque interface ouverte a deux handles : un pour écrire, un lu par un thread
 // qui pousse les reports entrants vers la WebView (événement « hid-input »).
+//
+// Règle d'or : un appareil qui ne répond pas ne bloque que lui-même. Chaque échange a un délai
+// (hidapi corrigé, voir vendor/README.md), un verrou propre à l'appareil et un garde-fou au cas où
+// Windows ne rendrait jamais la main ; la fermeture ne se fait jamais sur le fil de la fenêtre.
 use crate::pnp::HidIface;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager};
 
 // Liste blanche : seuls les appareils déclarés dans data/devices.json (VID + PID, ou PID « * »)
 // peuvent être ouverts, plus la collection VIA des claviers QMK / Vial (page 0xFF60, usage 0x61 :
@@ -88,13 +93,26 @@ pub struct HidInfo {
 }
 
 struct Open {
-    writer: Mutex<hidapi::HidDevice>,
+    dev: Mutex<hidapi::HidDevice>,
     stop: Arc<AtomicBool>,
+    path: String,
+    // Début de l'échange en cours : repère un appel resté bloqué dans Windows
+    busy: Mutex<Option<Instant>>,
+    // Un échange n'a jamais rendu la main : plus rien n'est envoyé à cette interface
+    stuck: AtomicBool,
+}
+
+/// Bilan des échanges d'une interface, pour le diagnostic
+#[derive(Default, Clone)]
+struct Tally {
+    ok: u32,
+    failed: u32,
+    last: String,
 }
 
 #[derive(Default)]
 pub struct Hid {
-    open: Mutex<HashMap<u32, Open>>,
+    open: Mutex<HashMap<u32, Arc<Open>>>,
     next: AtomicU32,
     descriptors: Mutex<HashMap<String, Vec<u8>>>,
     // Interfaces qui n'ont pas répondu à temps : écartées tant qu'elles restent branchées,
@@ -102,6 +120,37 @@ pub struct Hid {
     stuck: Mutex<HashSet<String>>,
     // Pourquoi le descripteur n'a pas pu être lu (pour le diagnostic)
     notes: Mutex<HashMap<String, String>>,
+    tally: Mutex<HashMap<String, Tally>>,
+}
+
+// Un verrou « empoisonné » (panique d'un autre fil) reste utilisable : ce ne sont que des listes
+fn lk<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+pub const NO_ANSWER: &str = "le périphérique ne répond pas";
+const WEDGED: &str = "le périphérique ne répond plus à Windows (débranchez-le puis rebranchez-le)";
+
+// Messages de hidapi rendus lisibles (le délai dépassé arrive sous la forme « WinError: WaitTimedOut »)
+fn hid_err(e: hidapi::HidError) -> String {
+    let s = e.to_string();
+    if s.contains("WaitTimedOut") {
+        format!("{NO_ANSWER} (délai dépassé)")
+    } else {
+        s
+    }
+}
+
+fn note(hid: &Hid, path: &str, r: Result<(), &str>) {
+    let mut t = lk(&hid.tally);
+    let e = t.entry(path.to_string()).or_default();
+    match r {
+        Ok(()) => e.ok += 1,
+        Err(m) => {
+            e.failed += 1;
+            e.last = m.chars().take(160).collect();
+        }
+    }
 }
 
 // hidapi sans énumération : la liste vient de pnp.rs, on n'ouvre que l'interface demandée
@@ -115,15 +164,18 @@ fn api() -> Result<hidapi::HidApi, String> {
 fn read_descriptor(path: &str) -> Result<Vec<u8>, String> {
     let cpath = std::ffi::CString::new(path).map_err(|_| "chemin invalide".to_string())?;
     let api = api().map_err(|e| format!("hidapi : {e}"))?;
-    let dev = api.open_path(&cpath).map_err(|e| format!("ouverture refusée : {e}"))?;
+    let dev = api.open_path(&cpath).map_err(|e| format!("ouverture refusée : {}", hid_err(e)))?;
     let mut buf = vec![0u8; 4096];
-    match dev.get_report_descriptor(&mut buf) {
-        Ok(n) => Ok(buf[..n].to_vec()),
-        Err(e) => Err(format!("descripteur illisible : {e}")),
+    // hidapi reconstruit le descripteur à partir de ce que Windows en a gardé : sur un appareil
+    // exotique, cette reconstruction peut paniquer. L'interface est alors écartée, pas PeriphHub.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dev.get_report_descriptor(&mut buf))) {
+        Ok(Ok(n)) => Ok(buf[..n.min(buf.len())].to_vec()),
+        Ok(Err(e)) => Err(format!("descripteur illisible : {}", hid_err(e))),
+        Err(_) => Err("descripteur illisible : erreur interne de hidapi".into()),
     }
 }
 
-const DESCRIPTOR_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+const DESCRIPTOR_LIMIT: Duration = Duration::from_secs(3);
 
 #[derive(Serialize, Clone)]
 struct InputEvent {
@@ -134,7 +186,12 @@ struct InputEvent {
 
 // Toutes les commandes HID tournent hors du fil de la fenêtre : un appareil qui ne répond pas ne doit
 // jamais figer PeriphHub (« Ne répond pas »). L'énumération et l'ouverture ont en plus un délai.
-const HID_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+const HID_LIMIT: Duration = Duration::from_secs(10);
+
+// Un échange (écriture, feature report) : hidapi abandonne au bout de 1 à 2,5 s. Ce garde-fou ne sert
+// que si Windows ne rend jamais la main malgré l'annulation (pilote défaillant).
+const EXCHANGE_LIMIT: Duration = Duration::from_secs(8);
+const WEDGED_AFTER: Duration = Duration::from_secs(6);
 
 async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
@@ -150,15 +207,16 @@ pub async fn hid_devices(app: AppHandle) -> Result<Vec<HidInfo>, String> {
 fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
     let infos: Vec<HidIface> = crate::pnp::hid_interfaces().into_iter().filter(allowed_info).collect();
     let present = |p: &str| infos.iter().any(|d| d.path == p);
-    hid.descriptors.lock().unwrap().retain(|p, _| present(p));
-    hid.stuck.lock().unwrap().retain(|p| present(p));
-    hid.notes.lock().unwrap().retain(|p, _| present(p));
+    lk(&hid.descriptors).retain(|p, _| present(p));
+    lk(&hid.stuck).retain(|p| present(p));
+    lk(&hid.notes).retain(|p, _| present(p));
+    lk(&hid.tally).retain(|p, _| present(p));
     let mut out = Vec::new();
     for d in infos {
-        if hid.stuck.lock().unwrap().contains(&d.path) {
+        if lk(&hid.stuck).contains(&d.path) {
             continue;
         }
-        let cached = hid.descriptors.lock().unwrap().get(&d.path).cloned();
+        let cached = lk(&hid.descriptors).get(&d.path).cloned();
         let descriptor = match cached {
             Some(x) => x,
             None => {
@@ -166,14 +224,14 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
                 match crate::watchdog::timed(DESCRIPTOR_LIMIT, move || read_descriptor(&p)) {
                     Some(r) => {
                         let x = r.unwrap_or_else(|e| {
-                            hid.notes.lock().unwrap().insert(d.path.clone(), e);
+                            lk(&hid.notes).insert(d.path.clone(), e);
                             Vec::new()
                         });
-                        hid.descriptors.lock().unwrap().insert(d.path.clone(), x.clone());
+                        lk(&hid.descriptors).insert(d.path.clone(), x.clone());
                         x
                     }
                     None => {
-                        hid.stuck.lock().unwrap().insert(d.path.clone());
+                        lk(&hid.stuck).insert(d.path.clone());
                         continue;
                     }
                 }
@@ -206,6 +264,8 @@ pub struct HidProbe {
     usage: u16,
     product: String,
     state: String,
+    // Bilan des échanges depuis le lancement (« 12 réussis, 2 échecs (dernier : …) »), vide si aucun
+    exchanges: String,
 }
 
 #[tauri::command]
@@ -219,18 +279,32 @@ pub async fn hid_probe(app: AppHandle) -> Result<Vec<HidProbe>, String> {
                     "jamais ouverte (sécurité ou mise à jour)".to_string()
                 } else if !allowed_info(&d) {
                     "non prise en charge".to_string()
-                } else if hid.stuck.lock().unwrap().contains(&d.path) {
+                } else if lk(&hid.stuck).contains(&d.path) {
                     "bloquée : ne répond pas à Windows".to_string()
-                } else if let Some(n) = hid.notes.lock().unwrap().get(&d.path) {
+                } else if let Some(n) = lk(&hid.notes).get(&d.path) {
                     n.clone()
                 } else {
-                    match hid.descriptors.lock().unwrap().get(&d.path) {
+                    match lk(&hid.descriptors).get(&d.path) {
                         Some(x) if x.is_empty() => "descripteur vide".to_string(),
                         Some(x) => format!("ok, descripteur {} octets", x.len()),
                         None => "pas encore lue".to_string(),
                     }
                 };
-                HidProbe { vid: d.vid, pid: d.pid, interface: d.interface, usage_page: d.usage_page, usage: d.usage, product: d.product.clone(), state }
+                let exchanges = match lk(&hid.tally).get(&d.path) {
+                    Some(t) if t.failed > 0 => format!("{} réussis, {} échecs (dernier : {})", t.ok, t.failed, t.last),
+                    Some(t) => format!("{} réussis", t.ok),
+                    None => String::new(),
+                };
+                HidProbe {
+                    vid: d.vid,
+                    pid: d.pid,
+                    interface: d.interface,
+                    usage_page: d.usage_page,
+                    usage: d.usage,
+                    product: d.product.clone(),
+                    state,
+                    exchanges,
+                }
             })
             .collect();
         out.sort_by_key(|a| (a.vid, a.pid, a.interface, a.usage_page));
@@ -241,7 +315,13 @@ pub async fn hid_probe(app: AppHandle) -> Result<Vec<HidProbe>, String> {
 
 #[tauri::command]
 pub async fn hid_open(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
-    off_main(move || crate::watchdog::hid(HID_LIMIT, move || open_now(app, path, unnumbered))?).await
+    let p = path.clone();
+    let app2 = app.clone();
+    let r = off_main(move || crate::watchdog::hid(HID_LIMIT, move || open_now(app2, path, unnumbered))?).await;
+    if let Err(e) = &r {
+        note(&app.state::<Hid>(), &p, Err(&format!("ouverture : {e}")));
+    }
+    r
 }
 
 fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
@@ -250,44 +330,56 @@ fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, Strin
     if !crate::pnp::hid_interfaces().iter().any(|d| d.path.eq_ignore_ascii_case(&path) && allowed_info(d)) {
         return Err("périphérique non pris en charge".into());
     }
-    let cpath = std::ffi::CString::new(path).map_err(|e| e.to_string())?;
+    if lk(&hid.stuck).contains(&path) {
+        return Err(WEDGED.into());
+    }
+    let cpath = std::ffi::CString::new(path.clone()).map_err(|e| e.to_string())?;
     let api = api()?;
-    let writer = api.open_path(&cpath).map_err(|e| e.to_string())?;
-    let reader = api.open_path(&cpath).map_err(|e| e.to_string())?;
+    let writer = api.open_path(&cpath).map_err(hid_err)?;
+    let reader = api.open_path(&cpath).map_err(hid_err)?;
     let handle = hid.next.fetch_add(1, Ordering::SeqCst) + 1;
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
     let app2 = app.clone();
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 1025];
-        while !stop2.load(Ordering::Relaxed) {
-            match reader.read_timeout(&mut buf, 200) {
-                Ok(0) => {}
-                Ok(n) => {
-                    // hidapi (Windows) retire l'octet 0 des reports non numérotés ;
-                    // sinon le 1er octet est l'ID du report
-                    let ev = if unnumbered {
-                        InputEvent { handle, report_id: 0, data: buf[..n].to_vec() }
-                    } else {
-                        InputEvent { handle, report_id: buf[0], data: buf[1..n].to_vec() }
-                    };
-                    let _ = app2.emit("hid-input", ev);
-                }
-                Err(_) => {
-                    let _ = app2.emit("hid-closed", handle);
-                    break;
+    std::thread::Builder::new()
+        .name("periphhub-hid-read".into())
+        .spawn(move || {
+            let mut buf = [0u8; 1025];
+            while !stop2.load(Ordering::Relaxed) {
+                match reader.read_timeout(&mut buf, 200) {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        let n = n.min(buf.len());
+                        // hidapi (Windows) retire l'octet 0 des reports non numérotés ;
+                        // sinon le 1er octet est l'ID du report
+                        let ev = if unnumbered {
+                            InputEvent { handle, report_id: 0, data: buf[..n].to_vec() }
+                        } else {
+                            InputEvent { handle, report_id: buf[0], data: buf[1..n].to_vec() }
+                        };
+                        let _ = app2.emit("hid-input", ev);
+                    }
+                    Err(_) => {
+                        let _ = app2.emit("hid-closed", handle);
+                        break;
+                    }
                 }
             }
-        }
-    });
-    hid.open.lock().unwrap().insert(handle, Open { writer: Mutex::new(writer), stop });
+            // `reader` est fermé ici, dans ce fil : si Windows tarde à rendre la lecture, rien d'autre n'attend
+        })
+        .map_err(|e| e.to_string())?;
+    let open = Open { dev: Mutex::new(writer), stop, path, busy: Mutex::new(None), stuck: AtomicBool::new(false) };
+    lk(&hid.open).insert(handle, Arc::new(open));
     Ok(handle)
 }
 
+// Asynchrone : la fermeture attend que Windows rende les échanges en cours, jamais sur le fil de la fenêtre
 #[tauri::command]
-pub fn hid_close(hid: State<'_, Hid>, handle: u32) {
-    if let Some(o) = hid.open.lock().unwrap().remove(&handle) {
+pub async fn hid_close(app: AppHandle, handle: u32) {
+    let o = lk(&app.state::<Hid>().open).remove(&handle);
+    if let Some(o) = o {
         o.stop.store(true, Ordering::Relaxed);
+        let _ = std::thread::Builder::new().name("periphhub-hid-close".into()).spawn(move || drop(o));
     }
 }
 
@@ -298,41 +390,68 @@ fn frame(report_id: u8, data: &[u8]) -> Vec<u8> {
     buf
 }
 
+/// Un échange avec une interface ouverte : verrou propre à l'appareil (les autres continuent),
+/// délai de hidapi, et garde-fou si Windows ne rend jamais la main (l'interface est alors écartée).
+fn exchange<T: Send + 'static>(
+    app: &AppHandle,
+    handle: u32,
+    f: impl FnOnce(&hidapi::HidDevice) -> hidapi::HidResult<T> + Send + 'static,
+) -> Result<T, String> {
+    let hid = app.state::<Hid>();
+    let o = lk(&hid.open).get(&handle).cloned().ok_or("périphérique fermé")?;
+    if o.stuck.load(Ordering::Relaxed) {
+        return Err(WEDGED.into());
+    }
+    // L'appelant a abandonné (délai) : un échange encore en file d'attente n'est pas envoyé en retard
+    let gave_up = Arc::new(AtomicBool::new(false));
+    let (o2, g2) = (o.clone(), gave_up.clone());
+    let r = crate::watchdog::timed(EXCHANGE_LIMIT, move || {
+        let dev = lk(&o2.dev);
+        if g2.load(Ordering::Relaxed) {
+            return Err(NO_ANSWER.to_string());
+        }
+        *lk(&o2.busy) = Some(Instant::now());
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&dev)));
+        *lk(&o2.busy) = None;
+        match r {
+            Ok(r) => r.map_err(hid_err),
+            Err(_) => Err("erreur interne de hidapi".into()),
+        }
+    });
+    let r = r.unwrap_or_else(|| {
+        gave_up.store(true, Ordering::Relaxed);
+        if lk(&o.busy).is_some_and(|t| t.elapsed() >= WEDGED_AFTER) {
+            o.stuck.store(true, Ordering::Relaxed);
+            lk(&hid.stuck).insert(o.path.clone());
+            Err(WEDGED.into())
+        } else {
+            Err(format!("{NO_ANSWER} (file d'attente)"))
+        }
+    });
+    note(&hid, &o.path, r.as_ref().map(|_| ()).map_err(|e| e.as_str()));
+    r
+}
+
 #[tauri::command]
 pub async fn hid_send(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    off_main(move || {
-        let hid = app.state::<Hid>();
-        let open = hid.open.lock().unwrap();
-        let o = open.get(&handle).ok_or("périphérique fermé")?;
-        let dev = o.writer.lock().unwrap();
-        dev.write(&frame(report_id, &data)).map(|_| ()).map_err(|e| e.to_string())
-    })
-    .await
+    off_main(move || exchange(&app, handle, move |d| d.write(&frame(report_id, &data)).map(|_| ()))).await
 }
 
 #[tauri::command]
 pub async fn hid_send_feature(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    off_main(move || {
-        let hid = app.state::<Hid>();
-        let open = hid.open.lock().unwrap();
-        let o = open.get(&handle).ok_or("périphérique fermé")?;
-        let dev = o.writer.lock().unwrap();
-        dev.send_feature_report(&frame(report_id, &data)).map_err(|e| e.to_string())
-    })
-    .await
+    off_main(move || exchange(&app, handle, move |d| d.send_feature_report(&frame(report_id, &data)))).await
 }
 
 #[tauri::command]
 pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
     off_main(move || {
-        let hid = app.state::<Hid>();
-        let open = hid.open.lock().unwrap();
-        let o = open.get(&handle).ok_or("périphérique fermé")?;
-        let dev = o.writer.lock().unwrap();
-        let mut buf = vec![0u8; len.min(4096) + 1];
-        buf[0] = report_id;
-        let n = dev.get_feature_report(&mut buf).map_err(|e| e.to_string())?;
-        Ok(buf[1..n].to_vec())
+        exchange(&app, handle, move |d| {
+            let mut buf = vec![0u8; len.min(4096) + 1];
+            buf[0] = report_id;
+            // Rapport 0 : hidapi compte l'octet d'ID en plus ; une réponse vide ne doit pas faire paniquer
+            let n = d.get_feature_report(&mut buf)?.min(buf.len());
+            Ok(buf.get(1..n).unwrap_or_default().to_vec())
+        })
     })
     .await
 }

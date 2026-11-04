@@ -8,7 +8,9 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, DEVPROPKEY, FALSE, HANDLE, INVALID_HANDLE_VALUE, PROPERTYKEY, TRUE,
 };
 use windows_sys::Win32::System::Threading::{CreateEventW, INFINITE};
-use windows_sys::Win32::System::IO::{GetOverlappedResultEx, OVERLAPPED};
+use windows_sys::Win32::System::IO::{
+    CancelIoEx, GetOverlappedResult, GetOverlappedResultEx, OVERLAPPED,
+};
 
 #[allow(clippy::missing_safety_doc)]
 pub unsafe trait DeviceProperty {
@@ -115,6 +117,31 @@ impl Overlapped {
         };
         ensure!(cr == TRUE, Err(WinError::last()));
         Ok(bytes_written as usize)
+    }
+
+    /// PeriphHub : attend au plus `timeout` ms. Au-delà, l'opération est annulée et on attend
+    /// que Windows ait fini de s'en servir (tampon et OVERLAPPED réutilisables sans risque),
+    /// puis on renvoie `WaitTimedOut`. Sans ça, un appareil qui ne répond pas bloquait le fil
+    /// pour toujours (lecture de feature report) ou laissait une écriture en cours sur un
+    /// OVERLAPPED aussitôt réutilisé.
+    pub fn get_result_or_cancel(&mut self, handle: &Handle, timeout: u32) -> WinResult<usize> {
+        match self.get_result(handle, Some(timeout)) {
+            Err(WinError::WaitTimedOut) => {
+                let mut n = 0;
+                // Toujours attendre la fin : si l'opération s'est terminée entre-temps,
+                // GetOverlappedResult rend la main aussitôt (avec son vrai résultat).
+                let done = unsafe {
+                    CancelIoEx(handle.as_raw(), self.as_raw());
+                    GetOverlappedResult(handle.as_raw(), self.as_raw(), &mut n, TRUE)
+                };
+                if done == TRUE {
+                    Ok(n as usize)
+                } else {
+                    Err(WinError::WaitTimedOut)
+                }
+            }
+            r => r,
+        }
     }
 }
 

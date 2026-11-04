@@ -518,3 +518,43 @@ test('Son : points de terminaison regroupés par appareil (USB, carte mère, éc
   assert.equal(by['Realtek(R) Audio'].kind, 'audio');
   eq(by['Son des écrans (AMD)'].eps.map(e => e.id), ['c', 'd']);
 });
+
+test('Son Bluetooth : sortie stéréo et mains libres d’un même casque = un seul appareil', () => {
+  const { ctx } = loadDrivers('media.js');
+  const list = [
+    { id: 'a', flow: 'render', adapter: 'WH-1000XM4 Stereo', form: 3, vid: null, bus: 'bluetooth' },
+    { id: 'b', flow: 'render', adapter: 'WH-1000XM4 Hands-Free AG Audio', form: 3, vid: null, bus: 'bluetooth' },
+    { id: 'c', flow: 'capture', adapter: 'WH-1000XM4 Hands-Free AG Audio', form: 5, vid: null, bus: 'bluetooth' },
+    // Hors Bluetooth, le nom n'est pas retouché
+    { id: 'd', flow: 'render', adapter: 'Enceintes Stereo', form: 1, vid: null, bus: 'carte mère' },
+  ];
+  const g = JSON.parse(JSON.stringify(ctx.audioGroups(list)));
+  assert.equal(g.length, 2);
+  const bt = g.find(x => x.name === 'WH-1000XM4');
+  eq(bt.eps.map(e => e.id), ['a', 'b', 'c']);
+  assert.equal(bt.kind, 'casque');
+  assert.ok(g.some(x => x.name === 'Enceintes Stereo'));
+});
+
+test('Batteries Bluetooth : type deviné par le nom, même appareil reconnu malgré la ponctuation', () => {
+  const { ctx } = loadDrivers('media.js');
+  const kinds = Object.fromEntries(['MX Master 3S', 'MX Keys Mini', 'Xbox Wireless Controller', 'DualSense Wireless Controller', 'WH-1000XM4',
+    'Galaxy Buds2 Pro', 'AirPods Pro', 'JBL Flip 6', 'Bose QC45', 'Capteur 1234'].map(n => [n, ctx.btKind(n)]));
+  eq(kinds, { 'MX Master 3S': 'souris', 'MX Keys Mini': 'clavier', 'Xbox Wireless Controller': 'manette', 'DualSense Wireless Controller': 'manette',
+    'WH-1000XM4': 'casque', 'Galaxy Buds2 Pro': 'casque', 'AirPods Pro': 'casque', 'JBL Flip 6': 'audio', 'Bose QC45': 'casque', 'Capteur 1234': 'autre' });
+  assert.equal(ctx.btSame('WH-1000XM4', 'wh1000xm4 Stereo'), true);
+  assert.equal(ctx.btSame('Galaxy Buds2 Pro', 'Casque (Galaxy Buds2 Pro)'), true);
+  assert.equal(ctx.btSame('MX Master 3S', 'MX Keys'), false);
+  assert.equal(ctx.btSame('JBL', 'JBL Flip 6'), false); // nom trop court : pas de rapprochement hasardeux
+});
+
+test('OpenRGB : vitesse en %, bornes croissantes ou inversées', () => {
+  const { ctx } = loadDrivers('openrgb.js');
+  assert.equal(ctx.orgbPct({ min: 0, max: 4, value: 2 }), 50);
+  assert.equal(ctx.orgbSpeed({ min: 0, max: 4 }, 100), 4);
+  // Inversées : 0x0A = la plus lente, 0x00 = la plus rapide
+  assert.equal(ctx.orgbPct({ min: 10, max: 0, value: 0 }), 100);
+  assert.equal(ctx.orgbSpeed({ min: 10, max: 0 }, 0), 10);
+  assert.equal(ctx.orgbSpeed({ min: 10, max: 0 }, 50), 5);
+  eq(ctx.hexRgb('#ff8000'), [255, 128, 0]);
+});

@@ -49,11 +49,13 @@ registerDriver({
   async connect(dev) {
     await dev.open();
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    // Le clavier traite un rapport à la fois : on attend qu'il se dise prêt (au plus ~1 s)
+    // Le clavier traite un rapport à la fois : on attend qu'il se dise prêt (au plus ~1 s).
+    // Une lecture qui échoue (clavier qui ne répond pas) arrête l'attente : sinon 40 délais d'affilée.
     const ready = async () => {
       for (let i = 0; i < 40; i++) {
-        const r = await dev.receiveFeatureReport(0x04, 2).catch(() => null);
-        if (r && r.byteLength && r.getUint8(0) === 1) return;
+        let r;
+        try { r = await dev.receiveFeatureReport(0x04, 2); } catch { return; }
+        if (r.byteLength && r.getUint8(0) === 1) return;
         await sleep(25);
       }
     };

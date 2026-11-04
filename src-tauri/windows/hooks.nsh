@@ -63,6 +63,16 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; « Démarrer avec Windows » (option de PeriphHub) : rien ne doit survivre à la désinstallation,
+  ; sauf en mise à jour (l'installeur désinstalle l'ancienne version avant d'installer la nouvelle)
+  ${If} $UpdateMode <> 1
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "PeriphHub"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "PeriphHub"
+    ; Journal des erreurs internes : inutile sans PeriphHub. Le journal d'allègement (allegement.json)
+    ; reste, pour pouvoir annuler l'allègement après une réinstallation ; dossier retiré s'il est vide.
+    Delete "$LOCALAPPDATA\PeriphHub\erreurs.log"
+    RMDir "$LOCALAPPDATA\PeriphHub"
+  ${EndIf}
   Delete "$INSTDIR\${MAINBINARYNAME}.exe.old"
   Delete "$INSTDIR\${MAINBINARYNAME}.exe.old2"
   Delete "$INSTDIR\resources\headsetcontrol.exe.old"

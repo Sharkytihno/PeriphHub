@@ -1,27 +1,35 @@
 # Signature de l'installeur
 
-PeriphHub est signé gratuitement par [SignPath Foundation](https://signpath.org), qui fournit des
-certificats de signature de code aux logiciels libres. La clé privée reste chez SignPath (module
-matériel) : personne, pas même les mainteneurs, ne peut signer un fichier qui ne sort pas de la
-compilation publique de GitHub Actions.
+## État actuel
 
-## Politique de signature du code
+- **Installeur GitHub** (`PeriphHub_x.y.z_x64-setup.exe`) : **pas encore signé** par un certificat
+  de signature de code. Windows peut afficher « Windows a protégé votre ordinateur » : cliquez sur
+  **Informations complémentaires**, puis **Exécuter quand même**. Sur un PC où Smart App Control est
+  activé, il est bloqué (voir [SECURITE.md](SECURITE.md)).
+- **Version Microsoft Store** : signée par Microsoft, une fois publiée ([MICROSOFT-STORE.md](MICROSOFT-STORE.md)).
+- **Mises à jour intégrées** : chaque mise à jour est signée par le projet (clé de mise à jour de
+  Tauri) et vérifiée avant installation, signature de code ou pas ([MISES-A-JOUR.md](MISES-A-JOUR.md)).
 
-- *Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-  [SignPath Foundation](https://signpath.org).*
-- Seuls les fichiers compilés par `.github/workflows/release.yml` à partir d'un tag de ce dépôt sont
-  signés : `periphhub.exe`, puis l'installeur `PeriphHub_<version>_x64-setup.exe` qui le contient.
-- Rôles : auteur, relecteur et approbateur des signatures : [@Sharkytihno](https://github.com/Sharkytihno).
-  Chaque demande de signature est approuvée à la main sur SignPath.
-- Confidentialité : PeriphHub n'a ni télémétrie ni compte. Il ne transmet rien sans l'accord de
-  l'utilisateur : seul le diagnostic d'un appareil qui ne se connecte pas peut être envoyé, sur clic ou
-  après acceptation de l'envoi automatique (voir [DIAGNOSTICS.md](DIAGNOSTICS.md)).
-  La version GitHub lit au lancement un fichier public de la dernière release (`latest.json`) pour
-  proposer les mises à jour ; désactivable dans les Options (voir [MISES-A-JOUR.md](MISES-A-JOUR.md)).
+SignPath Foundation, qui signe gratuitement des logiciels libres, a refusé la demande de novembre 2026
+faute de visibilité du projet (étoiles, contributeurs, articles). Une nouvelle demande sera faite
+quand le projet sera plus connu. Autre piste : un certificat payant pour les logiciels libres.
 
-## Mise en place (une seule fois, par le propriétaire du dépôt)
+## Vérifier un téléchargement
 
-1. **Demande** : formulaire sur [signpath.org/apply](https://signpath.org/apply). La demande porte sur
+Dans PowerShell :
+
+```powershell
+Get-FileHash .\PeriphHub_1.0.0_x64-setup.exe -Algorithm SHA256   # à comparer au fichier .sha256 de la Release
+Get-AuthenticodeSignature .\PeriphHub_1.0.0_x64-setup.exe | Format-List Status, SignerCertificate
+```
+
+Tant que l'installeur n'est pas signé, la seconde commande répond `NotSigned` : c'est normal.
+
+## Le jour où un certificat est obtenu (SignPath Foundation)
+
+Le workflow `.github/workflows/release.yml` sait déjà signer : il suffit d'ajouter deux secrets.
+
+1. **Demande** : formulaire sur [signpath.org/apply](https://signpath.org/apply). Elle porte sur
    le dépôt public `Sharkytihno/PeriphHub`, sous licence GPL-3.0, avec une release déjà publiée.
    Le compte GitHub doit avoir la double authentification activée.
 2. **Projet** : une fois la demande acceptée, créer dans SignPath :
@@ -48,13 +56,18 @@ compilation publique de GitHub Actions.
    puis l'installeur. Il faut les approuver sur SignPath. Le workflow vérifie ensuite les deux
    signatures et prépare la Release en brouillon.
 
-Sans ces secrets, le workflow publie un installeur non signé, comme avant. La compilation ne casse pas.
+Sans ces secrets, le workflow publie un installeur non signé. La compilation ne casse pas.
 
-## Vérifier un téléchargement
+### Politique de signature du code (exigée par SignPath)
 
-Dans PowerShell :
-
-```powershell
-Get-AuthenticodeSignature .\PeriphHub_0.9.1_x64-setup.exe | Format-List Status, SignerCertificate
-Get-FileHash .\PeriphHub_0.9.1_x64-setup.exe -Algorithm SHA256   # à comparer au fichier .sha256 de la Release
-```
+- *Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+  [SignPath Foundation](https://signpath.org).*
+- Seuls les fichiers compilés par `.github/workflows/release.yml` à partir d'un tag de ce dépôt sont
+  signés : `periphhub.exe`, puis l'installeur `PeriphHub_<version>_x64-setup.exe` qui le contient.
+- Rôles : auteur, relecteur et approbateur des signatures : [@Sharkytihno](https://github.com/Sharkytihno).
+  Chaque demande de signature est approuvée à la main sur SignPath.
+- Confidentialité : PeriphHub n'a ni télémétrie ni compte. Il ne transmet rien sans l'accord de
+  l'utilisateur : seul le diagnostic peut être envoyé, sur clic ou après acceptation de l'envoi
+  automatique (voir [DIAGNOSTICS.md](DIAGNOSTICS.md)). La version GitHub lit au lancement un fichier
+  public de la dernière release (`latest.json`) pour proposer les mises à jour ; désactivable dans
+  les Options (voir [MISES-A-JOUR.md](MISES-A-JOUR.md)).

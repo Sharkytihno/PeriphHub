@@ -52,26 +52,55 @@ class NativeHIDDevice extends EventTarget {
   async open() {
     const unnumbered = !this.known && this.parsed ? !hidHasReportIds(this.parsed)
       : this.collections[0].inputReports.some(r => r.reportId === 0);
-    if (!this.handle) this.handle = await nativeInvoke('hid_open', { path: this.info.path, unnumbered });
+    if (!this.handle) {
+      try { this.handle = await nativeInvoke('hid_open', { path: this.info.path, unnumbered }); }
+      catch (e) { hidTrace(this, 'open', null, null, e); throw e; }
+      hidTrace(this, 'open', null, null);
+    }
     nativeHid.byHandle.set(this.handle, this);
   }
   async close() {
     if (!this.handle) return;
     nativeHid.byHandle.delete(this.handle);
+    hidTrace(this, 'close', null, null);
     await nativeInvoke('hid_close', { handle: this.handle });
     this.handle = 0;
   }
   async sendReport(reportId, data) {
-    await nativeInvoke('hid_send', { handle: this.handle, reportId, data: Array.from(toBytes(data)) });
+    await hidCall(this, 'out', reportId, toBytes(data), b => nativeInvoke('hid_send', { handle: this.handle, reportId, data: Array.from(b) }));
   }
   async sendFeatureReport(reportId, data) {
-    await nativeInvoke('hid_send_feature', { handle: this.handle, reportId, data: Array.from(toBytes(data)) });
+    await hidCall(this, 'set', reportId, toBytes(data), b => nativeInvoke('hid_send_feature', { handle: this.handle, reportId, data: Array.from(b) }));
   }
   // `len` : extension de PeriphHub (WebHID connaît la taille par le descripteur, hidapi non)
   async receiveFeatureReport(reportId, len = 64) {
-    const bytes = await nativeInvoke('hid_get_feature', { handle: this.handle, reportId, len });
-    return new DataView(Uint8Array.from(bytes).buffer);
+    let bytes;
+    try { bytes = Uint8Array.from(await nativeInvoke('hid_get_feature', { handle: this.handle, reportId, len })); }
+    catch (e) { hidTrace(this, 'get', reportId, null, e); throw e; }
+    hidTrace(this, 'get', reportId, bytes);
+    return new DataView(bytes.buffer);
   }
+}
+
+async function hidCall(dev, what, reportId, bytes, call) {
+  try { await call(bytes); } catch (e) { hidTrace(dev, what, reportId, bytes, e); throw e; }
+  hidTrace(dev, what, reportId, bytes);
+}
+
+// Trace des derniers échanges de chaque interface, pour le diagnostic : ce que PeriphHub envoie et
+// ce que l'appareil répond (de quoi corriger un pilote sans avoir le matériel). Rapports reçus gardés
+// seulement dans la seconde qui suit un envoi, 4 au plus (les réponses) : ni flot continu de manette,
+// ni frappe au clavier. 24 premiers octets de chaque rapport, 40 dernières lignes.
+function hidTrace(dev, what, reportId, bytes, err) {
+  const now = performance.now();
+  if (what === 'in') {
+    if (now - (dev.traceAt ?? -1e9) > 1000 || ++dev.traceIn > 4) return;
+  } else { dev.traceAt = now; dev.traceIn = 0; }
+  const hex = bytes ? ' ' + Array.from(bytes.subarray(0, 24), b => b.toString(16).padStart(2, '0')).join(' ') + (bytes.length > 24 ? ` …(${bytes.length} o)` : '') : '';
+  const id = reportId == null ? '' : ' ' + reportId.toString(16).padStart(2, '0');
+  const t = dev.trace || (dev.trace = []);
+  t.push(`${(now / 1000).toFixed(3)} ${what}${id}${hex}${err ? ' ✗ ' + String(err?.message || err).slice(0, 100) : ''}`);
+  if (t.length > 40) t.shift();
 }
 
 function toBytes(data) {
@@ -87,6 +116,7 @@ const nativeHid = {
   known: new Map(), // chemin → NativeHIDDevice (même objet d'un appel à l'autre)
   events: new EventTarget(),
   blocked: false,    // un périphérique ne répond pas à Windows : la liste ne peut pas être lue
+  listed: false,     // première liste lue (avant : pas d'événement « connect », tout est nouveau)
   log: [],           // derniers avertissements et erreurs (diagnostic)
 };
 
@@ -127,9 +157,10 @@ if (NATIVE) {
     }
     if (nativeHid.blocked) { nativeHid.blocked = false; nativeHid.events.dispatchEvent(new Event('blocked')); }
     const seen = new Set();
+    let added = 0;
     const out = infos.map(info => {
       seen.add(info.path);
-      if (!nativeHid.known.has(info.path)) nativeHid.known.set(info.path, new NativeHIDDevice(info));
+      if (!nativeHid.known.has(info.path)) { nativeHid.known.set(info.path, new NativeHIDDevice(info)); added++; }
       return nativeHid.known.get(info.path);
     });
     // Débranchés depuis le dernier passage → événement « disconnect »
@@ -140,6 +171,9 @@ if (NATIVE) {
       dev.handle = 0;
       nativeHid.events.dispatchEvent(Object.assign(new Event('disconnect'), { device: dev }));
     }
+    // Nouvelle interface (même si une autre a disparu au même moment, ex. récepteur rebranché ailleurs)
+    if (added && nativeHid.listed) nativeHid.events.dispatchEvent(new Event('connect'));
+    nativeHid.listed = true;
     return out;
   };
 
@@ -147,6 +181,7 @@ if (NATIVE) {
     const dev = nativeHid.byHandle.get(payload.handle);
     if (!dev) return;
     const bytes = Uint8Array.from(payload.data);
+    hidTrace(dev, 'in', payload.report_id, bytes);
     dev.dispatchEvent(Object.assign(new Event('inputreport'),
       { device: dev, reportId: payload.report_id, data: new DataView(bytes.buffer) }));
   });
@@ -158,16 +193,22 @@ if (NATIVE) {
     removeEventListener: (t, f) => nativeHid.events.removeEventListener(t, f),
   } });
 
-  // Branchements / débranchements : on relit la liste toutes les 2 s, fenêtre visible seulement
-  // (chaque relecture ouvre tous les périphériques HID : inutile en arrière-plan)
-  // Si un appareil bloque Windows, on ne réessaie que toutes les 30 s
-  let count = -1, tick = 0;
-  setInterval(async () => {
-    if (document.hidden || (nativeHid.blocked && ++tick % 15)) return;
-    try {
-      const n = (await list()).length;
-      if (count !== -1 && n > count) nativeHid.events.dispatchEvent(new Event('connect'));
-      count = n;
-    } catch {}
-  }, 2000);
+  // Branchements / débranchements : Windows prévient PeriphHub (notify.rs, « hid-changed »), même
+  // fenêtre cachée. Relecture de secours toutes les 5 s fenêtre visible, toutes les 60 s cachée
+  // (avis de Windows indisponibles) ; toutes les 30 s si un appareil bloque Windows.
+  let relist = 0, tick = 0;
+  const refreshSoon = (ms = 400) => {
+    clearTimeout(relist);
+    relist = setTimeout(() => list().catch(() => {}), ms); // une rafale d'avis = une seule relecture
+  };
+  window.__TAURI__.event.listen('hid-changed', () => refreshSoon()).catch(() => {});
+  // Sortie de veille : les appareils se réinitialisent souvent ; les pilotes réappliquent les réglages
+  window.__TAURI__.event.listen('power-resume', () => setTimeout(() => {
+    list().catch(() => {}).finally(() => nativeHid.events.dispatchEvent(new Event('resume')));
+  }, 4000)).catch(() => {});
+  setInterval(() => {
+    tick++;
+    if (nativeHid.blocked ? tick % 6 : document.hidden ? tick % 12 : 0) return;
+    list().catch(() => {});
+  }, 5000);
 }

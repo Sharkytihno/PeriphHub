@@ -1,12 +1,8 @@
 // Ce qui se lance tout seul avec Windows : clés Run, dossiers Démarrage, services, tâches planifiées.
 // Lecture seule.
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-use std::process::Command;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, REG_BINARY};
 use winreg::{RegKey, RegValue, HKEY};
-
-const NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct Entry {
     /// "run" | "dossier" | "service" | "tâche"
@@ -185,52 +181,167 @@ fn services() -> Vec<Entry> {
     out
 }
 
-// `schtasks /query /fo csv /v /nh` : colonne 1 = nom de la tâche, colonne 8 = programme lancé,
-// colonne 11 = état (« Activée » / « Désactivée », « Enabled » / « Disabled » selon la langue)
+// Tâches planifiées : nom complet sans le « \ » initial, programme(s) lancé(s), état.
 fn tasks() -> Vec<Entry> {
-    // Délai : le Planificateur de tâches peut rester figé (service bloqué, tâches corrompues)
-    let mut cmd = Command::new(crate::sign::system_exe("schtasks.exe"));
-    cmd.args(["/query", "/fo", "csv", "/v", "/nh"]).creation_flags(NO_WINDOW);
-    let Some(stdout) = crate::watchdog::output(cmd, std::time::Duration::from_secs(20)) else {
-        return Vec::new();
-    };
-    let text = String::from_utf8_lossy(&stdout);
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let cols = csv_line(line);
-        if cols.len() < 9 || !seen.insert(cols[1].clone()) {
-            continue;
-        }
-        let name = cols[1].trim_start_matches('\\').to_string();
-        let state = cols.get(11).map(|s| s.to_lowercase()).unwrap_or_default();
-        out.push(Entry {
+    sched::list()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| Entry {
             kind: "tâche",
-            name,
-            target: cols[8].clone(),
-            mode: on_off(state.contains("sactiv") || state.contains("disabl")),
+            name: t.path.trim_start_matches('\\').to_string(),
+            target: t.target,
+            mode: on_off(!t.enabled),
             scope: "",
-        });
-    }
-    out
+        })
+        .collect()
 }
 
-fn csv_line(line: &str) -> Vec<String> {
-    let mut cols = Vec::new();
-    let mut cur = String::new();
-    let mut quoted = false;
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '"' if quoted && chars.peek() == Some(&'"') => {
-                cur.push('"');
-                chars.next();
-            }
-            '"' => quoted = !quoted,
-            ',' if !quoted => cols.push(std::mem::take(&mut cur)),
-            _ => cur.push(c),
-        }
+/// Active ou désactive une tâche planifiée (nom avec ou sans « \ » initial)
+pub fn set_task_enabled(name: &str, enable: bool) -> Result<(), String> {
+    sched::set_enabled(name, enable)
+}
+
+/// Planificateur de tâches par son API (COM), comme la console de Windows : l'état « désactivée »
+/// ne dépend plus de la langue (schtasks l'écrivait en toutes lettres, « Deaktiviert » en
+/// allemand…), et aucun schtasks.exe n'est lancé en arrière-plan.
+mod sched {
+    use std::time::Duration;
+    use windows::core::{Interface, BSTR};
+    use windows::Win32::Foundation::{VARIANT_FALSE, VARIANT_TRUE};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+    use windows::Win32::System::TaskScheduler::{
+        IExecAction, ITaskDefinition, ITaskService, TaskScheduler, TASK_ACTION_EXEC, TASK_ACTION_TYPE, TASK_ENUM_HIDDEN,
+    };
+    use windows::Win32::System::Variant::VARIANT;
+
+    pub struct Task {
+        pub path: String,
+        pub target: String,
+        pub enabled: bool,
     }
-    cols.push(cur);
-    cols
+
+    /// Dans un fil à part (COM initialisé pour lui seul), avec un délai : le service du
+    /// Planificateur peut rester figé (tâches corrompues, service bloqué).
+    fn with<T: Send + 'static>(
+        f: impl FnOnce(&ITaskService) -> windows::core::Result<T> + Send + 'static,
+    ) -> Result<T, String> {
+        crate::watchdog::timed(Duration::from_secs(20), move || unsafe {
+            let init = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let r = (|| {
+                let svc: ITaskService = CoCreateInstance(&TaskScheduler, None, CLSCTX_INPROC_SERVER)?;
+                let none = VARIANT::default();
+                svc.Connect(&none, &none, &none, &none)?;
+                f(&svc)
+            })();
+            if init.is_ok() {
+                CoUninitialize();
+            }
+            r.map_err(|e| e.message())
+        })
+        .unwrap_or_else(|| Err("le Planificateur de tâches ne répond pas".into()))
+    }
+
+    pub fn list() -> Result<Vec<Task>, String> {
+        with(|svc| unsafe {
+            let mut out = Vec::new();
+            let mut folders = vec![svc.GetFolder(&BSTR::from("\\"))?];
+            while let Some(folder) = folders.pop() {
+                // Dossiers illisibles sans droits administrateur : ignorés, comme par schtasks
+                if let Ok(subs) = folder.GetFolders(0) {
+                    for i in 1..=subs.Count().unwrap_or(0) {
+                        if let Ok(f) = subs.get_Item(&VARIANT::from(i)) {
+                            folders.push(f);
+                        }
+                    }
+                }
+                let Ok(tasks) = folder.GetTasks(TASK_ENUM_HIDDEN.0) else {
+                    continue;
+                };
+                for i in 1..=tasks.Count().unwrap_or(0) {
+                    let Ok(t) = tasks.get_Item(&VARIANT::from(i)) else {
+                        continue;
+                    };
+                    let Ok(path) = t.Path() else {
+                        continue;
+                    };
+                    out.push(Task {
+                        path: path.to_string(),
+                        target: t.Definition().map(|d| exec_target(&d)).unwrap_or_default(),
+                        enabled: t.Enabled().map(|b| b.0 != 0).unwrap_or(true),
+                    });
+                }
+            }
+            Ok(out)
+        })
+    }
+
+    /// Programmes lancés par la tâche (« chemin arguments », séparés par « ; » s'il y en a plusieurs)
+    unsafe fn exec_target(def: &ITaskDefinition) -> String {
+        let Ok(actions) = def.Actions() else {
+            return String::new();
+        };
+        let mut n = 0;
+        if actions.Count(&mut n).is_err() {
+            return String::new();
+        }
+        let mut parts = Vec::new();
+        for i in 1..=n {
+            let Ok(a) = actions.get_Item(i) else {
+                continue;
+            };
+            let mut ty = TASK_ACTION_TYPE(-1);
+            if a.Type(&mut ty).is_err() || ty != TASK_ACTION_EXEC {
+                continue;
+            }
+            let Ok(exec) = a.cast::<IExecAction>() else {
+                continue;
+            };
+            let (mut path, mut args) = (BSTR::new(), BSTR::new());
+            if exec.Path(&mut path).is_err() || path.is_empty() {
+                continue;
+            }
+            let _ = exec.Arguments(&mut args);
+            parts.push(if args.is_empty() { path.to_string() } else { format!("{path} {args}") });
+        }
+        parts.join(" ; ")
+    }
+
+    pub fn set_enabled(name: &str, enable: bool) -> Result<(), String> {
+        let full = format!("\\{}", name.trim_start_matches('\\'));
+        let (dir, leaf) = full.rsplit_once('\\').unwrap_or(("", &full));
+        let (dir, leaf) = (if dir.is_empty() { "\\".to_string() } else { dir.to_string() }, leaf.to_string());
+        with(move |svc| unsafe {
+            let task = svc.GetFolder(&BSTR::from(dir.as_str()))?.GetTask(&BSTR::from(leaf.as_str()))?;
+            task.SetEnabled(if enable { VARIANT_TRUE } else { VARIANT_FALSE })
+        })
+        .map_err(|e| format!("tâche {name} : {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn taches_planifiees_lues_par_com() {
+        let list = sched::list().expect("Planificateur de tâches");
+        // Windows en a toujours dans \Microsoft\Windows\…, et certaines sont désactivées d'origine
+        assert!(list.iter().any(|t| t.path.starts_with(r"\Microsoft\Windows\")));
+        assert!(list.iter().any(|t| t.target.contains(".exe") || t.target.contains(".EXE")));
+        let entries = tasks();
+        assert_eq!(entries.len(), list.len());
+        assert!(entries.iter().all(|e| !e.name.starts_with('\\') && e.mode.is_some()));
+        eprintln!(
+            "{} tâches, {} désactivées, {} avec un programme",
+            list.len(),
+            list.iter().filter(|t| !t.enabled).count(),
+            list.iter().filter(|t| !t.target.is_empty()).count()
+        );
+    }
+
+    #[test]
+    fn tache_inconnue_refusee_sans_blocage() {
+        let e = set_task_enabled(r"\PeriphHub\tâche-qui-n-existe-pas", false).unwrap_err();
+        assert!(e.starts_with("tâche "), "{e}");
+    }
 }

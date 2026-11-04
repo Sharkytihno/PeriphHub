@@ -2,11 +2,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod background;
 mod camera;
 mod devices;
 mod feedback;
 mod headset;
 mod hid;
+mod input;
+mod notify;
 mod openrgb;
 mod pads;
 mod pnp;
@@ -15,7 +18,9 @@ mod scan;
 mod sign;
 mod slim;
 mod startup;
+mod system;
 mod thx;
+mod toast;
 mod update;
 mod vendors;
 mod watchdog;
@@ -138,6 +143,62 @@ async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     blocking(move || openrgb::set_color(index, rgb)).await
 }
 
+#[tauri::command]
+async fn openrgb_mode(
+    index: u32,
+    mode: u32,
+    speed: Option<u32>,
+    direction: Option<u32>,
+    colors: Option<Vec<[u8; 3]>>,
+    save: bool,
+) -> Result<(), String> {
+    blocking(move || openrgb::set_mode(index, mode, speed, direction, colors, save)).await
+}
+
+// Réglages Windows de la souris et du clavier (toutes marques), batterie des appareils Bluetooth
+#[tauri::command]
+async fn input_get() -> Result<Value, String> {
+    blocking(|| Ok(input::get())).await
+}
+
+#[tauri::command]
+async fn input_set(what: String, value: Value) -> Result<(), String> {
+    blocking(move || input::set(&what, &value)).await
+}
+
+// Notification Windows (batterie faible) : textes courts, jamais plus de 5 s
+#[tauri::command]
+async fn notify_show(title: String, body: String) -> Result<(), String> {
+    let title: String = title.chars().take(64).collect();
+    let body: String = body.chars().take(200).collect();
+    blocking(move || {
+        watchdog::timed(std::time::Duration::from_secs(5), move || toast::show(&title, &body))
+            .unwrap_or_else(|| Err("Windows ne répond pas".into()))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn notify_state() -> Result<String, String> {
+    blocking(|| {
+        Ok(watchdog::timed(std::time::Duration::from_secs(5), || toast::state().to_string())
+            .unwrap_or_else(|| "unknown".into()))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn bt_batteries() -> Result<Value, String> {
+    blocking(|| {
+        let list = pnp::bluetooth_batteries();
+        Ok(serde_json::json!(list
+            .iter()
+            .map(|b| serde_json::json!({ "name": b.name, "address": b.address, "level": b.level }))
+            .collect::<Vec<_>>()))
+    })
+    .await
+}
+
 // Effets THX des casques Razer (DLL Razer signée, facultative)
 #[tauri::command]
 async fn thx_state(w: State<'_, ThxWorker>) -> Result<Value, String> {
@@ -199,11 +260,39 @@ fn main() {
         );
         return;
     }
+    // Erreurs internes notées dans %LOCALAPPDATA%\PeriphHub\erreurs.log (jointes au diagnostic)
+    system::install_crash_log();
     std::thread::spawn(update::cleanup_old);
+    let hidden = background::launched_hidden();
     tauri::Builder::default()
+        // En premier : une 2e instance (raccourci, clé Run) ne fait que ramener la fenêtre existante
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| background::show(app)))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(hid::Hid::default())
         .manage(ThxWorker::new())
+        .setup(move |app| {
+            let h = app.handle();
+            if let Err(e) = background::tray(h) {
+                eprintln!("[PeriphHub] zone de notification indisponible : {e}");
+            }
+            for e in notify::start(h) {
+                eprintln!("[PeriphHub] {e}");
+            }
+            background::refresh_run_path();
+            // La fenêtre est créée cachée (tauri.conf.json) : affichée sauf au démarrage de Windows
+            if let Some(w) = background::main_window(h) {
+                background::set_shown(&w, !hidden);
+            }
+            Ok(())
+        })
+        .on_window_event(|w, e| {
+            // Fermer = cacher (si l'icône de notification existe pour la rouvrir) : les réglages restent appliqués
+            if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+                if background::on_close(w) {
+                    api.prevent_close();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             scan,
             hid::hid_devices,
@@ -226,6 +315,12 @@ fn main() {
             pads_list,
             pads_rumble,
             openrgb_color,
+            openrgb_mode,
+            input_get,
+            input_set,
+            bt_batteries,
+            notify_show,
+            notify_state,
             thx_state,
             thx_set,
             ui_theme,
@@ -238,6 +333,12 @@ fn main() {
             slim_journal,
             ui_log,
             report_device,
+            system::sys_info,
+            background::bg_set,
+            background::bg_hide,
+            background::bg_quit,
+            background::bg_state,
+            background::autostart_set,
             update::update_check,
             update::update_install
         ])

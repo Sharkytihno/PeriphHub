@@ -71,19 +71,34 @@ réglages : PeriphHub retient les choix et les renvoie quand le casque se rallum
 - Sinowealth (VID 0x258A) : reconnue, « Bientôt » (configuration par blocs entiers, à faire avec
   un appareil sous la main pour ne rien dérégler).
 
-## Plus loin — en portant les protocoles libres existants
+## 0.7 à 0.22 ✅
 
-| Famille | Source | Couverture attendue |
-|---|---|---|
-| Logitech (HID++ 2.0) | Solaar, libratbag | La quasi-totalité des souris et claviers Logitech récents |
-| Razer | OpenRazer | Des centaines de souris, claviers, casques |
-| SteelSeries, ROCCAT, Glorious… | libratbag | Souris |
-| Casques Logitech, SteelSeries, Corsair, HyperX | HeadsetControl | Retour micro, batterie, égaliseur selon les modèles |
-| RGB toutes marques | OpenRGB (serveur SDK) | Plus de 1 000 appareils |
-| Capteurs, ventilateurs | LibreHardwareMonitor + PawnIO | Cartes mères courantes |
+Détail dans le [README](../README.md) et le [CHANGELOG](../CHANGELOG.md) : passerelle OpenRGB, interface en
+anglais, bibliothèque OpenMouse (souris de ~50 marques ; claviers Wooting, SteelSeries Apex Pro, Keychron HE),
+casques Razer Kraken, paquet Microsoft Store, plus aucun blocage, mises à jour intégrées, diagnostics envoyés
+sans compte GitHub.
 
-## Plus tard
+## 1.0 — Fermer les logiciels constructeurs au quotidien ✅
 
-- Outil de capture intégré pour aider la communauté à décoder de nouveaux appareils.
-- Autres langues : ajouter un fichier `ui/i18n/<langue>.js` sur le modèle de `en.js`.
-- Modules optionnels (« + Ajouter un module ») : ventilateurs, Raspberry Pi / NAS…
+- **Pour tous les appareils, même sans pilote de la marque** : réglages Windows de la souris et du
+  clavier, batteries Bluetooth, effets OpenRGB.
+- **En arrière-plan** : zone de notification, démarrage avec Windows (fenêtre cachée), réglages
+  réappliqués au branchement et à la sortie de veille, alerte de batterie faible.
+- **Plus aucun blocage**, que l'appareil réponde ou non.
+- **Antivirus** : plus aucun programme en ligne de commande lancé en arrière-plan (API de Windows à la
+  place) ; [modèle de sécurité](SECURITE.md) documenté.
+- **Diagnostics complets du premier coup** : système, contexte, erreurs internes ; appareils standards
+  écartés de l'envoi automatique.
+
+## Après la 1.0
+
+| Chantier | Pourquoi |
+|---|---|
+| Confirmer les pilotes expérimentaux | Grâce aux diagnostics et aux tickets « Retour sur un appareil » : 🧪 → ✅ |
+| Souris Sinowealth (VID 0x258A) | Beaucoup de souris d'entrée de gamme ; configuration par blocs entiers, à faire avec un appareil sous la main |
+| Pompes AIO et ventilateurs USB (d'après liquidctl) | NZXT, Corsair, Lian Li… : un logiciel constructeur de moins |
+| Outil de capture intégré | Aider la communauté à décoder de nouveaux appareils |
+| Installeur signé | Nouvelle demande à SignPath Foundation quand le projet sera plus connu ([SIGNATURE.md](SIGNATURE.md)) |
+| Microsoft Store | Version signée par Microsoft, mise à jour par le Store ([MICROSOFT-STORE.md](MICROSOFT-STORE.md)) |
+| Autres langues | Ajouter un fichier `ui/i18n/<langue>.js` sur le modèle de `en.js` |
+| Capteurs de la carte mère | LibreHardwareMonitor + PawnIO demandent un pilote noyau : seulement en module optionnel (« + Ajouter un module »), jamais par défaut |

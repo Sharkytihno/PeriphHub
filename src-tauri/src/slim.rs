@@ -12,11 +12,8 @@
 use crate::{procs, scan, startup, vendors};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
-
-const NO_WINDOW: u32 = 0x0800_0000;
 
 // ---------- Journal ----------
 
@@ -201,16 +198,105 @@ enum Op {
     Kill { pid: u32 },
 }
 
-fn sc(args: &[&str]) -> Result<(), String> {
-    let out = Command::new(crate::sign::system_exe("sc.exe"))
-        .args(args)
-        .creation_flags(NO_WINDOW)
-        .output()
-        .map_err(|e| e.to_string())?;
-    // 1062 : service déjà arrêté ; 1056 : déjà démarré
-    match out.status.code() {
-        Some(0) | Some(1062) | Some(1056) => Ok(()),
-        c => Err(format!("sc {} : code {c:?}", args.join(" "))),
+/// Services, par l'API du Gestionnaire de services de Windows (aucun sc.exe lancé : les
+/// antivirus surveillent les programmes qui en pilotent d'autres en ligne de commande)
+mod svc {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_SERVICE_ALREADY_RUNNING, ERROR_SERVICE_NOT_ACTIVE};
+    use windows_sys::Win32::System::Services::{
+        ChangeServiceConfig2W, ChangeServiceConfigW, CloseServiceHandle, ControlService, OpenSCManagerW, OpenServiceW,
+        StartServiceW, SC_HANDLE, SC_MANAGER_CONNECT, SERVICE_AUTO_START, SERVICE_CHANGE_CONFIG,
+        SERVICE_CONFIG_DELAYED_AUTO_START_INFO, SERVICE_CONTROL_STOP, SERVICE_DELAYED_AUTO_START_INFO,
+        SERVICE_DEMAND_START, SERVICE_NO_CHANGE, SERVICE_START, SERVICE_STATUS, SERVICE_STOP,
+    };
+
+    struct Handle(SC_HANDLE);
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            unsafe { CloseServiceHandle(self.0) };
+        }
+    }
+
+    fn failed(name: &str, code: u32) -> String {
+        match code {
+            5 => format!("service {name} : accès refusé"),
+            1060 => format!("service {name} : introuvable"),
+            c => format!("service {name} : erreur {c}"),
+        }
+    }
+
+    fn open(name: &str, access: u32) -> Result<(Handle, Handle), String> {
+        let wide: Vec<u16> = std::ffi::OsStr::new(name).encode_wide().chain(Some(0)).collect();
+        unsafe {
+            let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
+            if scm.is_null() {
+                return Err(failed(name, GetLastError()));
+            }
+            let scm = Handle(scm);
+            let s = OpenServiceW(scm.0, wide.as_ptr(), access);
+            if s.is_null() {
+                return Err(failed(name, GetLastError()));
+            }
+            Ok((scm, Handle(s)))
+        }
+    }
+
+    /// Démarrage manuel, ou automatique (différé ou non) pour revenir à l'état d'origine
+    pub fn set_start(name: &str, auto: bool, delayed: bool) -> Result<(), String> {
+        let (_scm, s) = open(name, SERVICE_CHANGE_CONFIG)?;
+        let null = std::ptr::null();
+        unsafe {
+            let start = if auto { SERVICE_AUTO_START } else { SERVICE_DEMAND_START };
+            let ok = ChangeServiceConfigW(
+                s.0,
+                SERVICE_NO_CHANGE,
+                start,
+                SERVICE_NO_CHANGE,
+                null,
+                null,
+                std::ptr::null_mut(),
+                null,
+                null,
+                null,
+                null,
+            );
+            if ok == 0 {
+                return Err(failed(name, GetLastError()));
+            }
+            if auto {
+                let info = SERVICE_DELAYED_AUTO_START_INFO { fDelayedAutostart: delayed as i32 };
+                let p = &info as *const SERVICE_DELAYED_AUTO_START_INFO as *const core::ffi::c_void;
+                if ChangeServiceConfig2W(s.0, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, p) == 0 {
+                    return Err(failed(name, GetLastError()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Demande l'arrêt (comme `sc stop`, sans attendre) ; déjà arrêté = réussite
+    pub fn stop(name: &str) -> Result<(), String> {
+        let (_scm, s) = open(name, SERVICE_STOP)?;
+        let mut st: SERVICE_STATUS = unsafe { std::mem::zeroed() };
+        if unsafe { ControlService(s.0, SERVICE_CONTROL_STOP, &mut st) } == 0 {
+            let e = unsafe { GetLastError() };
+            if e != ERROR_SERVICE_NOT_ACTIVE {
+                return Err(failed(name, e));
+            }
+        }
+        Ok(())
+    }
+
+    /// Démarre le service ; déjà démarré = réussite
+    pub fn start(name: &str) -> Result<(), String> {
+        let (_scm, s) = open(name, SERVICE_START)?;
+        if unsafe { StartServiceW(s.0, 0, std::ptr::null()) } == 0 {
+            let e = unsafe { GetLastError() };
+            if e != ERROR_SERVICE_ALREADY_RUNNING {
+                return Err(failed(name, e));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -234,20 +320,11 @@ fn kill(pid: u32) -> Result<(), String> {
 fn run_op(op: &Op) -> Result<(), String> {
     match op {
         Op::Approve { kind, scope, name, enable } => startup::set_approved(kind, scope, name, *enable),
-        Op::SvcManual { name } => sc(&["config", name, "start=", "demand"]),
-        Op::SvcRestore { name, delayed } => {
-            sc(&["config", name, "start=", if *delayed { "delayed-auto" } else { "auto" }])
-        }
-        Op::SvcStop { name } => sc(&["stop", name]),
-        Op::SvcStart { name } => sc(&["start", name]),
-        Op::Task { name, enable } => {
-            let st = Command::new(crate::sign::system_exe("schtasks.exe"))
-                .args(["/change", "/tn", name, if *enable { "/enable" } else { "/disable" }])
-                .creation_flags(NO_WINDOW)
-                .output()
-                .map_err(|e| e.to_string())?;
-            st.status.success().then_some(()).ok_or_else(|| format!("tâche {name} : refusé"))
-        }
+        Op::SvcManual { name } => svc::set_start(name, false, false),
+        Op::SvcRestore { name, delayed } => svc::set_start(name, true, *delayed),
+        Op::SvcStop { name } => svc::stop(name),
+        Op::SvcStart { name } => svc::start(name),
+        Op::Task { name, enable } => startup::set_task_enabled(name, *enable),
         Op::Kill { pid } => kill(*pid),
     }
 }
@@ -527,4 +604,33 @@ pub fn close(id: &str) -> Result<Value, String> {
     }
     std::thread::sleep(std::time::Duration::from_millis(1200));
     Ok(json!({ "before_bytes": before, "after_bytes": measure(vi, &all) }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Uniquement des services qui n'existent pas : la CI tourne en administrateur, un vrai service
+    // serait réellement modifié.
+    #[test]
+    fn service_inconnu_refuse_sans_lancer_de_programme() {
+        let name = "PeriphHub-service-inexistant";
+        for r in [svc::stop(name), svc::start(name), svc::set_start(name, false, false)] {
+            assert!(r.unwrap_err().contains("introuvable"));
+        }
+    }
+
+    #[test]
+    fn instance_admin_refuse_ce_qui_n_est_pas_a_un_constructeur() {
+        let all = vendors::all();
+        let entries = startup::all();
+        for op in [
+            Op::SvcManual { name: "WinDefend".into() },
+            Op::SvcStop { name: "vgc".into() },
+            Op::Task { name: r"Microsoft\Windows\Defrag\ScheduledDefrag".into(), enable: false },
+            Op::Kill { pid: std::process::id() },
+        ] {
+            assert!(!permitted(&op, &all, &entries, &[]));
+        }
+    }
 }

@@ -42,10 +42,49 @@ const drvErrors = new Map(); // « VID:PID » → derniers échecs de pilotes (p
 const drvRetry = new Map();  // « VID:PID » → { n essais ratés, at : prochain essai } (appareils muets)
 
 // ---------- Signalement : diagnostic technique, sans numéro de série ni chemin ----------
-async function deviceDiag(vid, pid, extra = []) {
+// Objectif : un seul diagnostic suffit à corriger (système réel, ce que chaque pilote a tenté, échecs
+// de réglage, état des échanges avec Windows, derniers rapports échangés avec l'appareil en cause).
+
+const diagJson = (v, max) => {
+  let s = '';
+  try { s = JSON.stringify(v, (k, x) => typeof x === 'number' && !Number.isInteger(x) ? Math.round(x * 100) / 100 : x) || ''; } catch { s = '?'; }
+  return s.length > max ? s.slice(0, max) + '…' : s;
+};
+
+// Système réel (Windows 10 ou 11, build), WebView2, version Store ou installeur, droits, Smart App
+// Control, arrière-plan, erreurs internes : la WebView annonce « Windows NT 10.0 » même sous Windows 11
+async function sysDiag() {
+  const lines = [];
+  let s = null;
+  if (NATIVE) try { s = await nativeInvoke('sys_info'); } catch (e) { lines.push('Infos système indisponibles : ' + (e?.message || e)); }
+  const o = s?.os || {};
+  lines.unshift(`PeriphHub ${s?.periphhub || report?.version || '?'}${s ? (s.store ? ' (Microsoft Store)' : ' (installeur)') : ''} · `
+    + (o.name ? `${o.name} ${o.version || ''} build ${o.build}`.replace(/\s+/g, ' ') : navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows ?')
+    + (o.arch ? ' · ' + o.arch : '') + (s?.admin ? ' · lancé en administrateur' : ''));
+  if (s) lines.push(`WebView2 ${s.webview2} · Smart App Control : ${s.smart_app_control} · avis de Windows : ${s.notify}`);
+  const bg = typeof bgInfo !== 'undefined' ? bgInfo : null;
+  const up = Math.round(performance.now() / 60000);
+  lines.push(`Ouvert depuis ${up >= 60 ? Math.floor(up / 60) + ' h ' : ''}${up % 60} min${bg?.hidden_start ? ' (lancé avec Windows)' : ''}`
+    + (bg?.autostart ? ` · démarrage avec Windows : ${bg.autostart}` : '')
+    + (typeof bgKeep === 'function' ? ` · fermeture : ${bgKeep() ? 'zone de notification' : 'quitte'}` : '')
+    + ` · fenêtre ${document.hidden ? 'cachée' : 'visible'} · langue ${navigator.language}${typeof LANG !== 'undefined' && LANG !== 'fr' ? ' (interface ' + LANG + ')' : ''}`);
+  // Réglages Windows de la souris : souvent en cause quand « le curseur accélère » ou « va trop vite »
+  const wi = typeof inputInst !== 'undefined' ? inputInst?.state : null;
+  if (wi?.speed != null) lines.push(`Souris (Windows) : vitesse ${wi.speed}/20 · accélération ${wi.precision ? 'activée' : 'coupée'}`
+    + ` · molette ${wi.lines === 4294967295 ? 'un écran' : wi.lines + ' lignes'} · double-clic ${wi.dblclick} ms${wi.swap ? ' · boutons inversés' : ''}`
+    + ` · clavier : délai ${wi.kbdelay}, vitesse ${wi.kbspeed}`);
+  // Batteries Bluetooth : type et niveau seulement (le nom peut contenir celui du propriétaire)
+  if (typeof btLast !== 'undefined' && btLast.length) lines.push('Batteries Bluetooth : ' + btLast.map(b => `${b.kind} ${b.level} %`).join(', '));
+  if (typeof batAlertOn === 'function') lines.push(`Alerte de batterie faible : ${batAlertOn() ? 'activée' : 'désactivée'} · notifications Windows : ${notifState || 'non lues'}`);
+  if (s?.errors?.length) lines.push('Erreurs internes récentes (erreurs.log) :', ...s.errors.map(l => '  ' + l));
+  return lines;
+}
+
+async function deviceDiag(vid, pid, { trace = false, probe } = {}) {
   const id = (vid + ':' + pid).toUpperCase();
   const hex = n => '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0');
   const ifs = ('hid' in navigator ? await navigator.hid.getDevices().catch(() => []) : []).filter(d => devId(d) === id);
+  if (probe === undefined) probe = NATIVE ? await nativeInvoke('hid_probe').catch(() => null) : null;
   // ID et taille (octets, sans l'ID) de chaque rapport : de quoi écrire un pilote sans le matériel
   const ids = (cs, k) => {
     const m = new Map();
@@ -55,47 +94,70 @@ async function deviceDiag(vid, pid, extra = []) {
     }
     return [...m].map(([id, bits]) => '0x' + id.toString(16).toUpperCase().padStart(2, '0') + (bits ? `(${Math.ceil(bits / 8)}o)` : '')).join(',') || '-';
   };
-  const lines = [`USB ${id}`, `PeriphHub ${report?.version || '?'} · ${navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows'}`];
-  const cat = (await catalog).find(c => (c.vid + ':' + c.pid).toUpperCase() === id);
-  if (cat) lines.push(`Catalogue : ${cat.name} · ${cat.status}${cat.via ? ' (' + cat.via + ')' : ''} · sources ${cat.src.join(', ')}`);
+  const lines = [`USB ${id}`];
+  // `catalog` = data/devices.json (appareils pris en charge, sans sources) ; le catalogue des projets
+  // libres (data/catalog.json : nom, statut, sources) arrive par le rapport d'analyse
+  const sup = (await catalog).find(c => (c.vid + ':' + c.pid).toUpperCase() === id);
+  const rep = (report?.devices || []).find(d => (d.vid + ':' + d.pid).toUpperCase() === id);
+  const via = sup?.plugin || rep?.plugin;
+  const src = Array.isArray(rep?.sources) ? rep.sources : [];
+  if (sup || rep?.catalog_name) lines.push(`Catalogue : ${sup?.name || rep.catalog_name} · ${rep?.status || sup?.status || '?'}`
+    + (via ? ` (${via})` : '') + (src.length ? ' · sources ' + src.join(', ') : ''));
   else lines.push('Absent du catalogue');
-  const live = [...drvLive.values()].find(i => i.dev && devId(i.dev) === id);
-  if (live) lines.push(`Pilote connecté : ${live.driver?.id || '?'} · réglages ${Object.keys(live.caps || {}).join(', ') || 'aucun'}`);
-  for (const e of drvErrors.get(id) || []) lines.push('Échec ' + e);
+  // Un récepteur peut porter plusieurs appareils (Logitech Unifying / Lightspeed…)
+  const lives = [...drvLive.values()].filter(i => i.dev && devId(i.dev) === id);
+  for (const live of lives) {
+    lines.push(`Pilote connecté : ${live.driver?.id || '?'} · ${live.name} · réglages ${Object.keys(live.caps || {}).join(', ') || 'aucun'}${live.off ? ' · éteint' : ''}`);
+    if (live.meta) lines.push('  ' + live.meta);
+    lines.push('  état ' + diagJson(live.state, 600));
+    const want = lsGet(wantKey(live));
+    if (want) lines.push('  choisi dans PeriphHub ' + diagJson(want, 400));
+  }
+  for (const e of drvFails.get(id) || []) lines.push('Échec ' + e);
+  for (const e of drvErrors.get(id) || []) lines.push('Échec de connexion ' + e);
+  const retry = drvRetry.get(id);
+  if (retry) lines.push(`Appareil muet : ${retry.n} essai(s) sans réponse, prochain dans ${Math.max(0, Math.round((retry.at - Date.now()) / 1000))} s`);
   for (const d of ifs) {
     const cs = d.parsed || d.collections;
     const page = d.info?.usage_page ?? cs?.[0]?.usagePage ?? 0;
+    const p = probe?.find(p => p.vid === d.vendorId && p.pid === d.productId && p.interface === d.info?.interface
+      && p.usage_page === d.info?.usage_page && p.usage === d.info?.usage);
     lines.push(`Interface ${d.info?.interface ?? '?'} · page ${hex(page)} usage ${hex(d.info?.usage ?? cs?.[0]?.usage ?? 0)} · rapports entrée ${ids(cs, 'inputReports')} sortie ${ids(cs, 'outputReports')} fonction ${ids(cs, 'featureReports')}`
-      + (d.parsed ? '' : ' (descripteur non lu)'));
+      + (d.parsed ? '' : ' (descripteur non lu)') + (d.opened ? ' · ouverte' : '')
+      + (p && !/^ok/.test(p.state) ? ' · ' + p.state : '') + (p?.exchanges ? ' · échanges : ' + p.exchanges : ''));
     // Interfaces constructeur d'un appareil sans pilote : descripteur brut (pas de donnée personnelle)
     const desc = d.info?.descriptor;
-    if (!live && page >= 0xFF00 && desc?.length && desc.length <= 400)
+    if (!lives.length && page >= 0xFF00 && desc?.length && desc.length <= 400)
       lines.push('  descripteur ' + Array.from(desc, b => b.toString(16).padStart(2, '0')).join(''));
+    if (trace && d.trace?.length) lines.push(...d.trace.slice(-25).map(t => '  ⇄ ' + t));
   }
   if (!ifs.length) lines.push('Aucune interface HID accessible à PeriphHub');
-  return [...lines, ...extra].join('\n');
+  return lines.join('\n');
 }
 
 // Diagnostic de tout le PC, pour « Un appareil manque ou ne marche pas ? » : chaque appareil USB
 // branché (sans numéro de série ni chemin), ce que PeriphHub en sait et pourquoi il ne l'a pas connecté.
-async function globalDiag() {
-  const lines = [`PeriphHub ${report?.version || '?'} · ${navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows'}`];
+async function globalDiag(probe) {
+  const lines = await sysDiag();
   if (!report) lines.push('Analyse non terminée');
   if (report?.hid_blocked || nativeHid.blocked) lines.push('Liste USB bloquée par un appareil qui ne répond pas');
   const ifs = 'hid' in navigator ? await navigator.hid.getDevices().catch(e => (lines.push('Liste HID : ' + e), [])) : [];
   lines.push(`${(report?.devices || []).length} appareils USB/HID à l’analyse, ${ifs.length} interfaces HID accessibles`);
   const devs = (report?.devices || []).slice().sort((a, b) => (a.status === 'unknown') - (b.status === 'unknown'));
-  let hidden = 0;
+  const hidden = [];
   for (const d of devs) {
     const id = d.vid + ':' + d.pid;
-    if (d.status === 'unknown' && !['souris', 'clavier', 'casque', 'manette'].includes(d.kind)) { hidden++; continue; }
+    if (d.status === 'unknown' && !['souris', 'clavier', 'casque', 'manette'].includes(d.kind)) { hidden.push(id); continue; }
     const live = [...drvLive.values()].find(i => i.dev && devId(i.dev) === id);
     const n = ifs.filter(x => devId(x) === id).length;
     lines.push(`- ${id} ${d.product || d.catalog_name || '?'} · ${d.kind} · ${d.status}${d.plugin ? ' (' + d.plugin + ')' : ''} · ${n} interfaces`
+      + (d.vendor_page === false ? ' · aucune page constructeur (standard)' : '')
       + (live ? ` · connecté (${live.driver?.id || '?'})` : ''));
     for (const e of drvErrors.get(id) || []) lines.push('  échec ' + e);
+    for (const e of drvFails.get(id) || []) lines.push('  échec ' + e);
   }
-  if (hidden) lines.push(`(+ ${hidden} autres appareils sans réglages : hubs, puces internes…)`);
+  // Identifiants seulement (pas de nom : un appareil Bluetooth peut porter celui de son propriétaire)
+  if (hidden.length) lines.push(`Autres appareils sans réglages (hubs, puces internes…) : ${hidden.join(', ')}`);
   if (typeof hsStatus !== 'undefined') lines.push('Module casques : ' + hsStatus);
   let orgb = null;
   if (NATIVE) try { orgb = await nativeInvoke('openrgb_info'); } catch {}
@@ -105,18 +167,17 @@ async function globalDiag() {
   if (typeof hsNativeIds !== 'undefined' && hsNativeIds.size) lines.push('Casques en pilote intégré : ' + [...hsNativeIds].join(', '));
   const running = (report?.vendors || []).filter(v => v.bytes > 0).map(v => v.name);
   lines.push('Logiciels constructeurs ouverts : ' + (running.join(', ') || 'aucun'));
-  lines.push('Langue : ' + navigator.language);
   // Interfaces HID vues par Windows et sort de chacune : dit si la liste est vide, refusée, bloquée ou filtrée
   if (NATIVE) {
     const shown = new Set(devs.map(d => d.vid + ':' + d.pid));
     const hx = n => Number(n).toString(16).toUpperCase().padStart(4, '0');
     try {
-      const probe = await nativeInvoke('hid_probe');
+      if (!probe) probe = await nativeInvoke('hid_probe');
       lines.push(`Interfaces HID vues par Windows : ${probe.length}`);
       for (const p of probe.filter(p => shown.has(hx(p.vid) + ':' + hx(p.pid))))
-        lines.push(`  ${hx(p.vid)}:${hx(p.pid)} MI ${p.interface} · page 0x${hx(p.usage_page)} usage 0x${hx(p.usage)} · ${p.state}`);
+        lines.push(`  ${hx(p.vid)}:${hx(p.pid)} MI ${p.interface} · page 0x${hx(p.usage_page)} usage 0x${hx(p.usage)} · ${p.state}${p.exchanges ? ' · échanges : ' + p.exchanges : ''}`);
       // Interfaces figées d'appareils absents de la liste : c'est souvent elles qui bloquent les autres
-      for (const p of probe.filter(p => !shown.has(hx(p.vid) + ':' + hx(p.pid)) && /bloquée|refusée|illisible/.test(p.state)))
+      for (const p of probe.filter(p => !shown.has(hx(p.vid) + ':' + hx(p.pid)) && /bloquée|refusée|illisible|ouverture/.test(p.state)))
         lines.push(`  ${hx(p.vid)}:${hx(p.pid)} ${p.product || '?'} MI ${p.interface} · page 0x${hx(p.usage_page)} · ${p.state}`);
     } catch (e) { lines.push('Interfaces HID : ' + e); }
   }
@@ -125,29 +186,43 @@ async function globalDiag() {
 
 // Diagnostic complet, à coller tel quel dans Discord (ou n'importe quelle messagerie) :
 // pas besoin de compte GitHub. Sans numéro de série ni chemin de périphérique.
-async function fullDiag(onlyId) {
-  const parts = [];
-  if (!onlyId) parts.push(await globalDiag());
-  const ids = onlyId ? [onlyId] : [...new Set((report?.devices || [])
+//   onlyId  : un seul appareil (« VID:PID »), sans la liste du PC
+//   comment : ce que l'utilisateur dit du problème (en tête du diagnostic)
+//   focus   : appareils en cause (« VID:PID ») : en premier, avec leurs derniers échanges
+const DIAG_MAX = 36000; // le relais (server/diag-relay) refuse au-delà de 40 000 caractères
+async function fullDiag(onlyId, { comment = '', focus = [] } = {}) {
+  const head = [];
+  const note = String(comment || '').trim().slice(0, 1500);
+  if (note) head.push('Message de l’utilisateur :\n' + note.split(/\r?\n/).map(l => '> ' + l).join('\n'));
+  const probe = NATIVE ? await nativeInvoke('hid_probe').catch(() => null) : null;
+  head.push(onlyId ? (await sysDiag()).join('\n') : await globalDiag(probe));
+  const want = new Set([...(focus || []), ...(onlyId ? [onlyId] : [])].map(x => String(x).toUpperCase()));
+  const ids = onlyId ? [onlyId.toUpperCase()] : [...new Set([...want, ...(report?.devices || [])
     .filter(d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb'].includes(d.kind))
-    .map(d => d.vid + ':' + d.pid))];
+    .map(d => (d.vid + ':' + d.pid).toUpperCase())])];
+  const devs = [];
   for (const id of ids) {
     const [vid, pid] = id.split(':');
-    parts.push((await deviceDiag(vid, pid)).split('\n').filter((l, i) => !(i === 1 && /^PeriphHub /.test(l))).join('\n'));
+    const hot = want.has(id) || drvErrors.has(id) || drvFails.has(id) || drvRetry.has(id);
+    devs.push({ focus: want.has(id), lines: (await deviceDiag(vid, pid, { trace: hot, probe })).split('\n') });
   }
+  devs.sort((a, b) => b.focus - a.focus);
   const log = (typeof nativeHid !== 'undefined' ? nativeHid.log : [])
     .filter(l => !onlyId || l.includes(onlyId) || /OpenMouse|HID\+\+|Logitech/i.test(l)).slice(-25);
-  if (log.length) parts.push('Journal :\n' + log.join('\n'));
-  if (onlyId) parts.unshift(`PeriphHub ${report?.version || '?'}`);
-  let text = parts.join('\n\n');
-  // Le relais coupe à 40 Ko : les descripteurs bruts partent en premier si ça déborde
-  if (text.length > 36000) text = text.split('\n').filter(l => !l.startsWith('  descripteur ')).join('\n');
+  const tail = log.length ? ['Journal :\n' + log.join('\n')] : [];
+  // Trop long : on retire d'abord les échanges, puis les descripteurs bruts, des appareils hors de cause
+  const build = level => [...head, ...devs.map(d => d.lines.filter(l => d.focus
+    || !((level >= 1 && l.startsWith('  ⇄ ')) || (level >= 2 && l.startsWith('  descripteur ')))).join('\n')), ...tail].join('\n\n');
+  let text = build(0);
+  if (text.length > DIAG_MAX) text = build(1);
+  if (text.length > DIAG_MAX) text = build(2);
+  if (text.length > DIAG_MAX) text = text.slice(0, DIAG_MAX) + '\n… (coupé)';
   return '```\n' + text.replace(/```/g, "'''") + '\n```';
 }
 
-async function copyDiag(onlyId) {
+async function copyDiag(onlyId, opts) {
   try {
-    await navigator.clipboard.writeText(await fullDiag(onlyId));
+    await navigator.clipboard.writeText(await fullDiag(onlyId, opts));
     toast('Diagnostic copié : collez-le dans un message Discord (Ctrl+V) et envoyez-le.', 'ok');
   } catch (e) {
     toast('Copie impossible : ' + (e.message || e), 'err');
@@ -251,10 +326,11 @@ function drvAdd(inst, drv) {
   const tab = KIND_ICON_TAB[inst.kind];
   const icon = tab ? document.querySelector(`nav [data-tab="${tab}"] svg`).cloneNode(true) : kindIcon(inst.kind);
   const nb = h('button', { 'data-tab': inst.key, onclick: () => showTab(inst.key) }, icon,
-    h('span', { class: 'nl' }, KIND_NAME[inst.kind] || 'Appareil', h('small', { title: inst.name }, inst.name)),
-    h('span', { class: 'dot ok' }));
-  document.querySelector('nav .nfoot').before(nb);
-  $('devGroup').hidden = false;
+    h('span', { class: 'nl' }, inst.navLabel || KIND_NAME[inst.kind] || 'Appareil', h('small', { title: inst.name }, inst.navSub || inst.name)),
+    inst.system ? null : h('span', { class: 'dot ok' }));
+  // Page système (réglages de Windows, pas un appareil) : avec Accueil et Allègement
+  if (inst.system) $('devGroup').before(nb);
+  else { document.querySelector('nav .nfoot').before(nb); $('devGroup').hidden = false; }
   document.querySelector('main').append(h('section', { class: 'page', id: inst.key, hidden: true },
     h('header', { class: 'phead' },
       h('div', { class: 'ptitle' }, h('h2', {}, inst.name), h('div', { class: 'muted small drvmeta' })),
@@ -276,15 +352,25 @@ const wantKey = inst => 'want:' + inst.key;
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-// Réglages choisis dans PeriphHub, réappliqués au branchement (appareils sans mémoire intégrée)
+// Réglages choisis dans PeriphHub, réappliqués au branchement (appareils sans mémoire intégrée).
+// Seuls ceux qui diffèrent de l'état relu sont renvoyés (pas d'écriture inutile dans l'appareil).
 async function drvReapply(inst) {
   const want = lsGet(wantKey(inst));
   if (!want) return;
   for (const [cap, v] of Object.entries(want)) {
     if (!inst.caps[cap] || JSON.stringify(inst.state[cap]) === JSON.stringify(v)) continue;
-    try { await inst.set(cap, v); } catch (e) { console.warn('[PeriphHub] réapplication', inst.key, cap, e.message); }
+    try { await inst.set(cap, v); } catch (e) { drvFail(inst, cap, e, 'réapplication'); }
   }
   await inst.refresh().catch(() => {});
+}
+
+// Échecs de réglage, gardés pour le diagnostic (« VID:PID » → derniers échecs)
+const drvFails = new Map();
+function drvFail(inst, cap, e, what = 'réglage') {
+  const id = inst.dev ? devId(inst.dev) : inst.key;
+  const msg = `${new Date().toTimeString().slice(0, 8)} ${what} ${cap} : ${e?.message || e}`;
+  console.warn('[PeriphHub]', inst.key, msg);
+  drvFails.set(id, [...(drvFails.get(id) || []), msg].slice(-6));
 }
 const drvOrigin = inst => lsGet(origKey(inst));
 
@@ -300,7 +386,7 @@ async function drvSet(inst, label, cap, value) {
     await inst.refresh();
     drvStatus(inst, label + ' ✔', 'ok');
   } catch (e) {
-    console.error('[PeriphHub]', e);
+    drvFail(inst, cap, e);
     drvStatus(inst, 'Erreur : ' + e.message, 'err');
   }
   drvRender(inst);
@@ -375,13 +461,20 @@ function drvRender(inst) {
       h('div', { class: 'muted small' }, inst.source || ('Pilote expérimental : réécrit à partir de projets libres (Solaar, OpenRazer…), pas encore confirmé sur ce modèle. ' +
         'Les réglages d’origine sont gardés avant la première modification.')),
       o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString(LOCALE)}`) : null,
-      NATIVE && inst.dev ? h('button', { class: 'ghost', title: 'À coller dans un message (Discord…) pour dire si ça marche ou pas', onclick: () => copyDiag(devId(inst.dev)) }, 'Copier le diagnostic') : null)));
+      // diagId null : pas de VID:PID propre (réglages de Windows, batterie Bluetooth) → diagnostic complet
+      NATIVE && inst.dev ? h('div', { class: 'row-inline' },
+        h('button', { class: 'ghost', title: 'Envoie le diagnostic de cet appareil au développeur, avec ce qui ne marche pas', onclick: () => diagDialog(drvDiagId(inst) || '') }, 'Signaler un problème'),
+        h('button', { class: 'ghost', title: 'À coller dans un message (Discord…) pour dire si ça marche ou pas', onclick: () => copyDiag(drvDiagId(inst) || undefined) }, 'Copier le diagnostic')) : null)));
 }
 
 // ---------- Accueil ----------
 
+const drvDiagId = inst => 'diagId' in inst ? inst.diagId : devId(inst.dev);
+// Appareils (sans les pages de réglages de Windows)
+const drvDevices = () => [...drvLive.values()].filter(i => !i.system);
+
 function driverTiles() {
-  return [...drvLive.values()].map(inst => {
+  return drvDevices().map(inst => {
     const s = inst.state;
     const stats = [];
     if (s.battery) stats.push(['Batterie', s.battery.level + ' %' + (s.battery.charging ? ' ⚡' : '')]);
@@ -393,9 +486,11 @@ function driverTiles() {
 
 const driverHas = (vid, pid) => [...drvLive.values()].some(i => devId(i.dev) === vid + ':' + pid);
 
-// Batterie relue toutes les 2 minutes (fenêtre visible)
+// Batterie relue toutes les 2 minutes, fenêtre visible ; toutes les 10 minutes dans la zone de
+// notification (infobulle de l'icône)
+let batTick = 0;
 setInterval(() => {
-  if (document.hidden) return;
+  if (document.hidden && ++batTick % 5) return;
   for (const inst of drvLive.values()) inst.refreshBattery?.().then(() => drvRender(inst), () => {});
   refreshHome();
 }, 120000);
@@ -403,10 +498,26 @@ setInterval(() => {
 function driversStart() {
   // Nouveau branchement : on retente tout de suite, y compris les appareils restés muets
   navigator.hid?.addEventListener('connect', () => { drvRetry.forEach(r => { r.at = 0; }); driversScan(); });
-  // Appareils muets (sans fil en veille…) : nouvel essai quand leur délai est passé, fenêtre visible
+  // Appareils muets (sans fil en veille…) : nouvel essai quand leur délai est passé, y compris
+  // PeriphHub en arrière-plan (c'est là qu'un appareil rallumé doit retrouver ses réglages)
   setInterval(() => {
-    if (!document.hidden && [...drvRetry.values()].some(r => Date.now() >= r.at)) driversScan();
+    if ([...drvRetry.values()].some(r => Date.now() >= r.at)) driversScan();
   }, 30000);
+  // Sortie de veille : chaque appareil connecté est relu, et ce qui a changé est renvoyé (pas de
+  // réécriture inutile dans la mémoire des appareils). Ceux qui ne savent pas relire leurs réglages
+  // (casques) fournissent `reapply`, qui les renvoie tous. Puis les appareils muets sont réessayés.
+  if (typeof nativeHid !== 'undefined') nativeHid.events.addEventListener('resume', async () => {
+    for (const inst of [...drvLive.values()]) {
+      if (inst.off) continue; // casque éteint : il les recevra en se rallumant
+      try {
+        if (inst.reapply) await inst.reapply();
+        else { await inst.refresh(); await drvReapply(inst); }
+      } catch (e) { drvFail(inst, 'tout', e, 'sortie de veille'); }
+      drvRender(inst);
+    }
+    drvRetry.forEach(r => { r.at = 0; });
+    driversScan();
+  });
   navigator.hid?.addEventListener('disconnect', e => drvRelease(e.device));
   driversScan();
   if (typeof headsetsPoll === 'function') headsetsPoll();

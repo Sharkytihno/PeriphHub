@@ -13,6 +13,8 @@ const REQUEST_CONTROLLER_DATA: u32 = 1;
 const SET_CLIENT_NAME: u32 = 50;
 const UPDATELEDS: u32 = 1050;
 const SETCUSTOMMODE: u32 = 1100;
+const UPDATEMODE: u32 = 1101;
+const SAVEMODE: u32 = 1102;
 
 struct Client(TcpStream);
 
@@ -86,7 +88,39 @@ const TYPES: [&str; 19] = [
     "boîtier", "micro", "accessoire", "pavé",
 ];
 
-fn controller(c: &mut Client, i: u32) -> Result<Value, String> {
+/// Effet matériel d'un appareil (« mode » d'OpenRGB : Fixe, Respiration, Vague…)
+#[derive(Clone)]
+struct Mode {
+    name: String,
+    value: u32,
+    flags: u32,
+    speed_min: u32,
+    speed_max: u32,
+    colors_min: u32,
+    colors_max: u32,
+    speed: u32,
+    direction: u32,
+    color_mode: u32,
+    colors: Vec<[u8; 3]>,
+}
+
+// Options des effets (RGBController.h)
+const HAS_SPEED: u32 = 1 << 0;
+const HAS_DIRECTION: u32 = 0b1110; // gauche-droite, haut-bas, horizontal-vertical
+const MANUAL_SAVE: u32 = 1 << 8;
+/// Couleurs propres à l'effet (et non LED par LED)
+const COLORS_MODE_SPECIFIC: u32 = 2;
+
+struct Controller {
+    index: u32,
+    ty: usize,
+    name: String,
+    active: u32,
+    modes: Vec<Mode>,
+    leds: u16,
+}
+
+fn controller(c: &mut Client, i: u32) -> Result<Controller, String> {
     c.send(i, REQUEST_CONTROLLER_DATA, &0u32.to_le_bytes())?;
     let body = c.recv(REQUEST_CONTROLLER_DATA)?;
     let mut r = Reader(&body, 4); // taille totale
@@ -95,13 +129,27 @@ fn controller(c: &mut Client, i: u32) -> Result<Value, String> {
     for _ in 0..4 {
         r.string()?; // description, version, numéro de série, emplacement
     }
-    let modes = r.u16()?;
-    r.u32()?; // mode actif
-    for _ in 0..modes {
-        r.string()?;
-        r.take(4 * 9)?; // valeur, options, vitesses, couleurs min/max, vitesse, direction, mode couleur
+    let count = r.u16()?;
+    let active = r.u32()?;
+    let mut modes = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let name = r.string()?;
+        let v: Vec<u32> = (0..9).map(|_| r.u32()).collect::<Result<_, _>>()?;
         let n = r.u16()? as usize;
-        r.take(4 * n)?;
+        let colors = (0..n).map(|_| r.take(4).map(|b| [b[0], b[1], b[2]])).collect::<Result<_, _>>()?;
+        modes.push(Mode {
+            name,
+            value: v[0],
+            flags: v[1],
+            speed_min: v[2],
+            speed_max: v[3],
+            colors_min: v[4],
+            colors_max: v[5],
+            speed: v[6],
+            direction: v[7],
+            color_mode: v[8],
+            colors,
+        });
     }
     let zones = r.u16()?;
     for _ in 0..zones {
@@ -111,21 +159,108 @@ fn controller(c: &mut Client, i: u32) -> Result<Value, String> {
         r.take(m)?;
     }
     let leds = r.u16()?;
-    Ok(json!({ "index": i, "name": name, "kind": TYPES.get(ty).copied().unwrap_or("autre"), "leds": leds }))
+    Ok(Controller { index: i, ty, name, active, modes, leds })
+}
+
+fn hex(c: &[u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
+impl Controller {
+    fn json(&self) -> Value {
+        let modes: Vec<Value> = self
+            .modes
+            .iter()
+            .map(|m| {
+                json!({
+                    "name": m.name,
+                    "speed": (m.flags & HAS_SPEED != 0).then(|| json!({ "min": m.speed_min, "max": m.speed_max, "value": m.speed })),
+                    "directions": m.flags & HAS_DIRECTION,
+                    "direction": m.direction,
+                    "colors": (m.color_mode == COLORS_MODE_SPECIFIC && m.colors_max > 0).then(|| json!({
+                        "min": m.colors_min, "max": m.colors_max,
+                        "value": m.colors.iter().map(hex).collect::<Vec<_>>(),
+                    })),
+                    "perLed": m.color_mode == 1,
+                    "save": m.flags & MANUAL_SAVE != 0,
+                })
+            })
+            .collect();
+        json!({
+            "index": self.index, "name": self.name, "kind": TYPES.get(self.ty).copied().unwrap_or("autre"),
+            "leds": self.leds, "active": self.active, "modes": modes,
+        })
+    }
 }
 
 pub fn list() -> Result<Value, String> {
     let mut c = Client::connect()?;
     c.send(0, REQUEST_CONTROLLER_COUNT, &[])?;
     let n = u32::from_le_bytes(c.recv(REQUEST_CONTROLLER_COUNT)?.get(..4).ok_or("réponse vide")?.try_into().unwrap());
-    let list: Vec<Value> = (0..n.min(64)).filter_map(|i| controller(&mut c, i).ok()).collect();
+    let list: Vec<Value> = (0..n.min(64)).filter_map(|i| controller(&mut c, i).ok().map(|d| d.json())).collect();
     Ok(json!(list))
+}
+
+/// Description d'un effet telle que l'attend le serveur (protocole 0) : taille totale, numéro de
+/// l'effet, puis l'effet lui-même dans l'ordre de REQUEST_CONTROLLER_DATA.
+fn mode_packet(idx: u32, m: &Mode) -> Vec<u8> {
+    let mut p = vec![0u8; 4];
+    p.extend_from_slice(&idx.to_le_bytes());
+    p.extend_from_slice(&(m.name.len() as u16 + 1).to_le_bytes());
+    p.extend_from_slice(m.name.as_bytes());
+    p.push(0);
+    for v in [m.value, m.flags, m.speed_min, m.speed_max, m.colors_min, m.colors_max, m.speed, m.direction, m.color_mode] {
+        p.extend_from_slice(&v.to_le_bytes());
+    }
+    p.extend_from_slice(&(m.colors.len() as u16).to_le_bytes());
+    for c in &m.colors {
+        p.extend_from_slice(&[c[0], c[1], c[2], 0]);
+    }
+    let n = p.len() as u32;
+    p[..4].copy_from_slice(&n.to_le_bytes());
+    p
+}
+
+/// Choisit l'effet matériel `mode` de l'appareil `index`, avec sa vitesse, son sens et ses couleurs
+/// (bornés à ce que l'appareil annonce) ; `save` l'enregistre dans l'appareil s'il le permet.
+pub fn set_mode(
+    index: u32,
+    mode: u32,
+    speed: Option<u32>,
+    direction: Option<u32>,
+    colors: Option<Vec<[u8; 3]>>,
+    save: bool,
+) -> Result<(), String> {
+    let mut c = Client::connect()?;
+    let ctl = controller(&mut c, index)?;
+    let mut m = ctl.modes.get(mode as usize).cloned().ok_or("effet inconnu de cet appareil")?;
+    if let Some(s) = speed.filter(|_| m.flags & HAS_SPEED != 0) {
+        m.speed = s.clamp(m.speed_min.min(m.speed_max), m.speed_min.max(m.speed_max));
+    }
+    if let Some(d) = direction.filter(|_| m.flags & HAS_DIRECTION != 0) {
+        m.direction = d.min(5);
+    }
+    if let Some(mut cols) = colors.filter(|_| m.color_mode == COLORS_MODE_SPECIFIC) {
+        let (lo, hi) = (m.colors_min as usize, (m.colors_max as usize).max(m.colors_min as usize));
+        cols.truncate(hi);
+        while cols.len() < lo {
+            cols.push(*cols.last().unwrap_or(&[255, 255, 255]));
+        }
+        m.colors = cols;
+    }
+    let body = mode_packet(mode, &m);
+    c.send(index, UPDATEMODE, &body)?;
+    if save && m.flags & MANUAL_SAVE != 0 {
+        c.send(index, SAVEMODE, &body)?;
+    }
+    // Relecture : le serveur traite les paquets dans l'ordre, l'effet est appliqué au retour
+    controller(&mut c, index).map(|_| ())
 }
 
 /// Une couleur unie sur toutes les LED de l'appareil `index` (mode « personnalisé » d'OpenRGB)
 pub fn set_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     let mut c = Client::connect()?;
-    let leds = controller(&mut c, index)?["leds"].as_u64().unwrap_or(0) as usize;
+    let leds = controller(&mut c, index)?.leds as usize;
     c.send(index, SETCUSTOMMODE, &[])?;
     let mut p = Vec::with_capacity(6 + 4 * leds);
     p.extend_from_slice(&((6 + 4 * leds) as u32).to_le_bytes());
@@ -234,4 +369,36 @@ pub fn launch() -> Result<Value, String> {
         std::thread::sleep(Duration::from_millis(250));
     }
     info()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn description_d_effet_relue_a_l_identique() {
+        let m = Mode {
+            name: "Breathing".into(),
+            value: 2,
+            flags: HAS_SPEED | MANUAL_SAVE,
+            speed_min: 0,
+            speed_max: 4,
+            colors_min: 1,
+            colors_max: 2,
+            speed: 3,
+            direction: 0,
+            color_mode: COLORS_MODE_SPECIFIC,
+            colors: vec![[255, 0, 16], [0, 32, 255]],
+        };
+        let p = mode_packet(5, &m);
+        assert_eq!(u32::from_le_bytes(p[..4].try_into().unwrap()) as usize, p.len());
+        let mut r = Reader(&p, 4);
+        assert_eq!(r.u32().unwrap(), 5);
+        assert_eq!(r.string().unwrap(), "Breathing");
+        let v: Vec<u32> = (0..9).map(|_| r.u32().unwrap()).collect();
+        assert_eq!(v, [2, HAS_SPEED | MANUAL_SAVE, 0, 4, 1, 2, 3, 0, COLORS_MODE_SPECIFIC]);
+        assert_eq!(r.u16().unwrap(), 2);
+        assert_eq!(r.take(8).unwrap(), &[255, 0, 16, 0, 0, 32, 255, 0]);
+        assert_eq!(r.1, p.len());
+    }
 }

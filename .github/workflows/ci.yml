@@ -16,8 +16,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Pilotes contre appareils simulés (Logitech, Razer, SteelSeries…)
-        run: node --test tests/drivers.test.mjs
+      - name: Syntaxe des scripts de l'interface
+        shell: pwsh
+        run: Get-ChildItem ui -Recurse -Filter *.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit 1 } }
+      - name: Tests JS (pilotes contre appareils simulés, relais des diagnostics)
+        run: npm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -29,7 +32,7 @@ jobs:
         run: ./scripts/fetch-headsetcontrol.ps1
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: Tests Rust (Core Audio, DirectShow, garde-fous)
         working-directory: src-tauri
         run: cargo test

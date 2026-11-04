@@ -33,16 +33,23 @@ function audioPeripheral(g) {
   return !AUDIO_BUILTIN.test(g.name);
 }
 
+// Nom de l'adaptateur. Bluetooth : la sortie stéréo et le mode mains libres d'un même casque
+// portent chacun un suffixe (« … Stereo », « … Hands-Free AG Audio ») : c'est un seul appareil.
+function audioAdapter(e) {
+  const n = (e.adapter || e.name).replace(/^\d+-\s*/, '');
+  return e.bus === 'bluetooth' ? n.replace(/\s+(hands-free( ag)?( audio)?|mains libres.*|st[eé]r[eé]o|avrcp transport)$/i, '').trim() || n : n;
+}
+
 // Un appareil physique = les points de terminaison qui partagent le même USB (VID:PID) ou le même adaptateur
 function audioGroups(list) {
   const groups = new Map();
   for (const e of list) {
-    const key = e.vid != null ? `usb-${hex4(e.vid)}${hex4(e.pid)}` : 'ad-' + (e.adapter || e.name).replace(/^\d+-\s*/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const key = e.vid != null ? `usb-${hex4(e.vid)}${hex4(e.pid)}` : 'ad-' + audioAdapter(e).toLowerCase().replace(/[^a-z0-9]+/g, '-');
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(e);
   }
   return [...groups].map(([key, eps]) => {
-    const adapter = (eps[0].adapter || eps[0].name).replace(/^\d+-\s*/, '');
+    const adapter = audioAdapter(eps[0]);
     const hdmi = eps.every(e => e.form === 9);
     const capture = eps.some(e => e.flow === 'capture'), render = eps.some(e => e.flow === 'render');
     // Les micros USB ont souvent une prise casque (sortie de contrôle) : le nom tranche
@@ -69,6 +76,9 @@ function audioInstance(g) {
       await nativeInvoke('audio_set', { id: v.id, what: v.what, value: v.value });
     },
     refresh: () => audioPoll(),
+    // Sortie de veille : Windows a gardé ces réglages, on les relit seulement (renvoyer le dernier
+    // choisi ici écraserait ce qui a été changé depuis dans Windows : volume, sortie par défaut…)
+    reapply: () => audioPoll(),
     rows() {
       return inst.state.eps.map(e => {
         const set = (label, what, value) => drvSet(inst, label, 'audio', { id: e.id, what, value });
@@ -315,6 +325,166 @@ function padPoll() {
   return padPolling;
 }
 
+// ---------- Souris et clavier : réglages de Windows ----------
+
+// Ceux du Panneau de configuration (src-tauri/src/input.rs) : ils valent pour toutes les souris et
+// tous les claviers, de toutes marques, même sans pilote PeriphHub. Windows les garde lui-même :
+// rien ne tourne en fond pour eux, rien n'est renvoyé à la sortie de veille.
+const INPUT_CAPS = ['speed', 'precision', 'lines', 'chars', 'swap', 'dblclick', 'kbdelay', 'kbspeed'];
+const WHEEL_PAGE = 4294967295; // molette : « un écran à la fois »
+const KB_DELAY = [{ v: 0, label: '250 ms' }, { v: 1, label: '500 ms' }, { v: 2, label: '750 ms' }, { v: 3, label: '1 s' }];
+
+function inputInstance() {
+  const inst = {
+    key: 'drv-win-input', name: 'Souris et clavier', kind: 'souris', chip: MEDIA_CHIP, system: true, diagId: null,
+    navLabel: 'Souris et clavier', navSub: 'Réglages de Windows',
+    dev: { vendorId: 0, productId: 0, productName: 'Réglages de Windows' },
+    caps: Object.fromEntries(INPUT_CAPS.map(c => [c, true])), state: {}, restoreCaps: INPUT_CAPS,
+    source: 'Réglages de Windows (Panneau de configuration ▸ Souris et Clavier) : ils valent pour toutes les souris et tous les claviers, ' +
+      'quelle que soit la marque, même sans pilote PeriphHub. Windows les garde lui-même : rien ne tourne en fond pour eux.',
+    async set(cap, v) { await nativeInvoke('input_set', { what: cap, value: v }); },
+    async refresh() {
+      const s = await nativeInvoke('input_get');
+      for (const c of INPUT_CAPS) if (s[c] != null) inst.state[c] = s[c];
+    },
+    // Sortie de veille : Windows a gardé ces réglages, on les relit seulement
+    reapply: () => inst.refresh(),
+    rows() {
+      const s = inst.state, set = (label, cap, v) => drvSet(inst, label, cap, v);
+      if (s.speed == null) return [h('p', { class: 'muted' }, 'Réglages de Windows illisibles pour l’instant.')];
+      const page = s.lines === WHEEL_PAGE;
+      const sub = text => h('div', { class: 'muted small' }, text);
+      return [
+        field('Pointeur',
+          sub('Vitesse du pointeur (10 = la souris seule décide, sans multiplication)'),
+          slider(1, 20, 1, s.speed, ' / 20', v => set(`Vitesse du pointeur ${v}`, 'speed', v)),
+          h('div', { class: 'toggles' },
+            toggle('Améliorer la précision du pointeur (accélération)', !!s.precision, on => set(on ? 'Accélération activée' : 'Accélération coupée', 'precision', on)),
+            toggle('Inverser les boutons gauche et droit', !!s.swap, on => set(on ? 'Boutons inversés' : 'Boutons rétablis', 'swap', on))),
+          sub('Pour viser en jeu : vitesse 10 et accélération coupée. Le curseur parcourt alors toujours la même distance pour un même geste, ' +
+            'et la sensibilité se règle avec les DPI de la souris.')),
+        field('Double-clic',
+          slider(200, 900, 10, s.dblclick ?? 500, ' ms', v => set(`Double-clic ${v} ms`, 'dblclick', v)),
+          sub('Délai maximal entre les deux clics (Windows : 500 ms). Plus il est court, plus il faut cliquer vite.')),
+        field('Molette',
+          h('div', { class: 'toggles' }, toggle('Défiler d’un écran à la fois', page, on => set(on ? 'Un écran à la fois' : '3 lignes par cran', 'lines', on ? WHEEL_PAGE : 3))),
+          page ? null : h('div', {}, sub('Lignes par cran (Windows : 3)'),
+            slider(1, Math.max(30, s.lines), 1, s.lines, '', v => set(`${v} lignes par cran`, 'lines', v))),
+          s.chars != null ? h('div', {}, sub('Défilement horizontal : caractères par cran (Windows : 3)'),
+            slider(1, Math.max(30, s.chars), 1, s.chars, '', v => set(`${v} caractères par cran`, 'chars', v))) : null),
+        field('Clavier',
+          sub('Délai avant la répétition d’une touche maintenue'),
+          segmented(KB_DELAY, s.kbdelay, v => set('Délai de répétition', 'kbdelay', v)),
+          sub('Vitesse de répétition (0 = environ 2 par seconde, 31 = environ 30)'),
+          slider(0, 31, 1, s.kbspeed, '', v => set('Vitesse de répétition', 'kbspeed', v))),
+      ];
+    },
+  };
+  return inst;
+}
+
+let inputInst = null;
+async function inputPoll() {
+  if (!NATIVE) return;
+  try {
+    if (!inputInst) {
+      const inst = inputInstance();
+      await inst.refresh();
+      if (inputInst) return; // relevé parallèle arrivé avant
+      inputInst = inst;
+      drvAdd(inst, { id: 'windows' });
+      return;
+    }
+    // Changé ailleurs (Paramètres de Windows) : page redessinée
+    const before = JSON.stringify(inputInst.state);
+    await inputInst.refresh();
+    if (JSON.stringify(inputInst.state) !== before) drvRender(inputInst);
+  } catch (e) {
+    console.warn('[PeriphHub] souris et clavier (Windows)', e);
+  }
+}
+
+// ---------- Batteries Bluetooth ----------
+
+// Niveau que les appareils Bluetooth annoncent à Windows (celui de Paramètres ▸ Bluetooth et
+// appareils) : écouteurs, casques, enceintes, souris, claviers, manettes, de toutes marques
+// (src-tauri/src/pnp.rs). Rattaché à la page que l'appareil a déjà (son Windows), sinon page à part.
+const BT_KIND = [
+  [/\b(controller|manette|gamepad|dualsense|dualshock|joy-?con|8bitdo)\b/i, 'manette'],
+  [/\b(mouse|souris|trackball|mx (master|anywhere|vertical|ergo)|pebble|lift)\b/i, 'souris'],
+  [/\b(keyboard|clavier|keys|mx mechanical)\b/i, 'clavier'],
+  [/\b(speaker|enceinte|soundlink|flip|charge|xtreme|boom|megaboom|wonderboom|srs-x)/i, 'audio'],
+  [/\b(headset|headphones?|casque|buds|airpods|earbuds|ear|wh-|wf-|quietcomfort|qc ?\d|jabra|beats|freebuds|tune|arctis|tws)/i, 'casque'],
+];
+function btKind(name) { return BT_KIND.find(([re]) => re.test(name))?.[1] || 'autre'; }
+// Même appareil vu par deux chemins (Bluetooth et son) : noms qui se contiennent, ponctuation ignorée
+function btNorm(s) { return (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''); }
+function btSame(a, b) { const x = btNorm(a), y = btNorm(b); return x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x)); }
+
+function btInstance(b) {
+  const inst = {
+    key: 'drv-bt-' + b.address.toLowerCase(), name: b.name, kind: btKind(b.name), chip: MEDIA_CHIP, noOrigin: true, diagId: null,
+    dev: { vendorId: 0, productId: 0, productName: b.name },
+    caps: {}, state: { battery: { level: b.level } }, meta: 'Bluetooth',
+    source: 'Niveau de batterie que l’appareil annonce lui-même à Windows en Bluetooth (le même que dans Paramètres ▸ Bluetooth et appareils), quelle que soit la marque.',
+    note: 'Ses autres réglages passent par le protocole de sa marque : quand PeriphHub le connaît, la page complète de l’appareil s’ouvre d’elle-même.',
+    async set() {},
+    refresh: () => btPoll(true),
+    reapply: () => Promise.resolve(),
+    rows: () => [field('Batterie', h('strong', {}, inst.state.battery.level + ' %'), meter(inst.state.battery.level))],
+  };
+  return inst;
+}
+
+function btBattery(inst, level) {
+  inst.btBattery = true;
+  if (inst.state.battery?.level === level) return;
+  inst.state.battery = { level };
+  drvRender(inst);
+}
+
+const btLive = new Map(); // adresse → page à part
+let btPolling = null, btAt = 0, btLast = []; // btLast : type et niveau, pour le diagnostic
+function btPoll(force = false) {
+  if (!NATIVE || (!force && Date.now() - btAt < 55000)) return btPolling || Promise.resolve();
+  btAt = Date.now();
+  btPolling ||= (async () => {
+    try {
+      const list = await nativeInvoke('bt_batteries');
+      btLast = list.map(b => ({ kind: btKind(b.name), level: b.level }));
+      const others = [...drvLive.values()].filter(i => !i.system && !i.key.startsWith('drv-bt-'));
+      const pads = others.some(i => i.key.startsWith('drv-xinput-'));
+      const fed = new Set(), keep = new Set();
+      for (const b of list) {
+        if (pads && /xbox/i.test(b.name)) continue; // XInput donne déjà sa batterie
+        const same = others.filter(i => btSame(i.name, b.name));
+        if (same.some(i => !i.chip)) continue; // pilote de la marque : il lit la batterie lui-même
+        if (same.length) { same.forEach(i => { fed.add(i); btBattery(i, b.level); }); continue; }
+        keep.add(b.address);
+        const inst = btLive.get(b.address);
+        if (inst) btBattery(inst, b.level);
+        else { const n = btInstance(b); btLive.set(b.address, n); drvAdd(n, { id: 'windows' }); }
+      }
+      // Appareil éteint ou parti : sa batterie quitte les pages qui l'affichaient
+      for (const i of drvLive.values()) {
+        if (i.btBattery && !fed.has(i) && !i.key.startsWith('drv-bt-')) { i.btBattery = false; delete i.state.battery; drvRender(i); }
+      }
+      for (const [addr, inst] of btLive) {
+        if (keep.has(addr)) continue;
+        btLive.delete(addr);
+        // Rattaché entre-temps à une autre page : ce n'est pas un débranchement
+        drvRelease(inst.dev, list.some(b => b.address === addr));
+      }
+      if (typeof refreshHome === 'function') refreshHome();
+    } catch (e) {
+      console.warn('[PeriphHub] batteries Bluetooth', e);
+    } finally {
+      btPolling = null;
+    }
+  })();
+  return btPolling;
+}
+
 // ---------- Commun ----------
 
 // Ajoute les nouvelles instances d'une famille (préfixe de clé), retire celles qui ont disparu
@@ -333,10 +503,13 @@ function mediaSync(prefix, insts) {
 }
 
 function mediaPoll() {
-  audioPoll();
+  inputPoll();
   camPoll();
-  padPoll();
+  // Batteries Bluetooth après le son et les manettes : elles rejoignent leur page s'ils en ont une
+  Promise.all([audioPoll(), padPoll()]).then(() => btPoll());
 }
 // Branchements : pas d'événement Windows côté interface, on relit régulièrement (fenêtre visible)
 setInterval(() => { if (!document.hidden) mediaPoll(); }, 10000);
+// Fenêtre cachée (zone de notification) : batteries Bluetooth relues quand même, pour l'infobulle
+setInterval(() => { if (document.hidden) btPoll(); }, 300000);
 if (typeof window !== 'undefined') window.addEventListener('focus', () => mediaPoll());

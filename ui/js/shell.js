@@ -64,7 +64,7 @@ function showTab(name) {
   for (const sec of document.querySelectorAll('main > section')) sec.hidden = sec.id !== name;
   try { localStorage.setItem('tab', name); } catch {}
   if (typeof kbRecord === 'function') { kbRecord(false); msRecord(false); }
-  if (name === 'options') renderOptions();
+  if (name === 'options') { renderOptions(); bgLoad(); }
   if (name === 'slim') renderSlim();
   refreshHome();
 }
@@ -226,7 +226,14 @@ function orgbTool() {
   return box;
 }
 
+// Appareil standard : inconnu des catalogues et sans page HID constructeur (≥ 0xFF00, où passent
+// presque tous les protocoles de réglage) → Windows le gère seul, rien à corriger côté PeriphHub
+function diagStandard(d) { return d.status === 'unknown' && d.vendor_page === false; }
+
 function deviceHintText(d) {
+  if (diagStandard(d)) return d.kind === 'souris' || d.kind === 'clavier'
+    ? 'Appareil standard, sans protocole du fabricant : Windows le gère seul. Pointeur, molette et répétition des touches se règlent dans « Souris et clavier ».'
+    : 'Appareil standard, sans protocole du fabricant : Windows le gère seul, PeriphHub n’y trouve aucun réglage à piloter.';
   if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Copier le diagnostic », puis envoyez-le pour qu’on corrige.';
   if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB (lancé avec le serveur SDK). Ses autres réglages restent dans son logiciel d’origine.';
   if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
@@ -248,9 +255,9 @@ function otherDevices() {
         ...deviceHint(d),
         drvReason(d)),
       h('div', { class: 'dside' },
-        h('span', { class: 'chip ' + d.status }, STATUS[d.status] || d.status),
-        NATIVE ? h('button', { class: 'mini ghost', title: 'Copie le diagnostic de cet appareil, à coller dans un message (Discord…)',
-          onclick: () => copyDiag((d.vid + ':' + d.pid).toUpperCase()) }, 'Copier le diagnostic') : null)))));
+        h('span', { class: 'chip ' + d.status }, diagStandard(d) ? 'Appareil standard' : STATUS[d.status] || d.status),
+        NATIVE ? h('button', { class: 'mini ghost', title: 'Envoie (ou copie) le diagnostic de cet appareil, avec ce qui ne marche pas',
+          onclick: () => diagDialog((d.vid + ':' + d.pid).toUpperCase()) }, 'Signaler') : null)))));
 }
 
 // Pourquoi aucun pilote ne l'a pris : affiché tel quel, pour qu'on puisse le recopier même sans le diagnostic
@@ -269,7 +276,9 @@ function refreshHome() {
   const hb = hs?.state?.battery;
   sub('hsSub', hs ? (hb != null ? hb + ' %' + (hs.state.charging ? ' · en charge' : '') : 'Connecté') : 'Non connecté');
   sub('rgbSub', rgb ? 'Connecté' : 'Carte mère');
-  $('devGroup').hidden = !drvLive.size && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
+  $('devGroup').hidden = !drvDevices().length && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
+  bgTipSync();
+  batAlerts();
   if (report) {
     sub('slimSub', report.vendor_bytes ? mo(report.vendor_bytes) + ' en fond' : 'Rien à alléger');
     const n = report.vendors.filter(v => v.bytes > 0).length;
@@ -281,7 +290,7 @@ function refreshHome() {
   const hour = new Date().getHours();
   $('homeTitle').textContent = hour < 6 || hour >= 18 ? 'Bonsoir' : 'Bonjour';
   const tiles = deviceTiles();
-  const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvLive.size;
+  const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
   $('homeLead').textContent = live ? `${plural(live, 'appareil connecté', 'appareils connectés')} · réglages enregistrés dans les appareils eux-mêmes`
     : 'Tous vos périphériques, d’un coup d’œil.';
   $('homeBody').replaceChildren(...[
@@ -301,7 +310,7 @@ function refreshHome() {
         + 'il contient la liste des appareils USB et ce que PeriphHub a essayé, sans numéro de série ni information personnelle. '
         + 'Vous pouvez aussi le copier pour l’envoyer vous-même (Discord, mail…).'),
       h('div', { class: 'row-inline' },
-        h('button', { disabled: diagBusy, onclick: () => sendDiag(false) }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic'),
+        h('button', { disabled: diagBusy, onclick: () => diagDialog() }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic'),
         h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier le diagnostic'),
         h('button', { class: 'ghost', onclick: reportProblem }, 'Ouvrir un ticket GitHub'))) : null].filter(Boolean));
 }
@@ -330,6 +339,15 @@ async function checkUpdate(manual = false) {
   if (manual) renderOptions();
   try {
     upd = await nativeInvoke('update_check');
+    // Fenêtre fermée (PeriphHub près de l'horloge, démarré avec Windows) : une notification par
+    // nouvelle version, sinon personne ne la verrait
+    let told = null;
+    try { told = localStorage.getItem('updTold'); } catch {}
+    if (upd.available && document.hidden && told !== upd.version) {
+      try { localStorage.setItem('updTold', upd.version); } catch {}
+      nativeInvoke('notify_show', { title: tx(`PeriphHub ${upd.version} est disponible`),
+        body: tx('Ouvrez PeriphHub pour l’installer en un clic, vos réglages sont conservés.') }).catch(() => {});
+    }
     if (manual) toast(upd.store ? 'Mises à jour assurées par le Microsoft Store'
       : upd.available ? `PeriphHub ${upd.version} est disponible` : 'PeriphHub est à jour');
   } catch (e) {
@@ -338,6 +356,7 @@ async function checkUpdate(manual = false) {
     updBusy = false;
   }
   refreshHome();
+  bgSync(); // infobulle de l'icône : mise à jour disponible
   if (!$('options').hidden) renderOptions();
 }
 
@@ -378,6 +397,171 @@ if (NATIVE && autoUpdate()) {
   setTimeout(checkUpdate, 5000);
   setInterval(() => autoUpdate() && checkUpdate(), 6 * 3600 * 1000);
 }
+
+// ---------- Arrière-plan : zone de notification, démarrage avec Windows (background.rs) ----------
+// Fenêtre fermée, PeriphHub reste près de l'horloge et renvoie leurs réglages aux appareils qui les
+// oublient (casque rallumé, appareil rebranché, sortie de veille) : c'est ce qui permet de fermer
+// pour de bon les logiciels constructeurs.
+
+const bgKeep = () => { try { return localStorage.getItem('bgKeep') !== 'off'; } catch { return true; } };
+const bgAnswered = () => { try { return localStorage.getItem('bgKeep') != null; } catch { return true; } };
+let bgInfo = null; // { hidden_start, autostart : 'on' | 'off' | 'bloqué', store }
+let bgBusy = false;
+
+// Infobulle de l'icône : mise à jour disponible, puis batterie de chaque appareil (une ligne chacun)
+// Batteries connues : souris et casque historiques, puis les pages des pilotes (Bluetooth compris)
+function batteryList() {
+  const out = [];
+  const add = (key, name, b) => { if (b?.level != null) out.push({ key, name, level: b.level, charging: !!b.charging, label: b.label }); };
+  if (mouse) add('mouse', $('mouseTitle')?.textContent || tx('Souris'), mouse.info?.battery);
+  if (hs?.state?.battery != null) add('headset', $('headsetTitle')?.textContent || tx('Casque'), { level: hs.state.battery, charging: hs.state.charging });
+  for (const i of drvDevices()) add(i.key, tx(i.name), i.state.battery);
+  return out;
+}
+
+function bgTip() {
+  const lines = [upd?.available ? tx(`PeriphHub ${upd.version} est disponible`) : 'PeriphHub'];
+  for (const b of batteryList()) {
+    const n = b.name.length > 26 ? b.name.slice(0, 25) + '…' : b.name;
+    lines.push(b.label ? `${n} : ${tx(b.label).toLowerCase()}` : `${n} : ${b.level} %${b.charging ? ' ⚡' : ''}`);
+  }
+  // Limite de Windows : 127 caractères
+  let tip = '';
+  for (const l of lines) if ((tip ? tip.length + 1 : 0) + l.length <= 120) tip += (tip ? '\n' : '') + l;
+  return tip;
+}
+
+let bgTipLast = '';
+function bgSync() {
+  if (!NATIVE) return;
+  bgTipLast = bgTip();
+  nativeInvoke('bg_set', {
+    keep: bgKeep(), ask: !bgAnswered(),
+    open: tx('Ouvrir PeriphHub'), quit: tx('Quitter PeriphHub'),
+    tooltip: bgTipLast,
+  }).catch(e => console.warn('[PeriphHub] arrière-plan', e));
+}
+// Appelé à chaque actualisation de l'accueil : l'infobulle suit les batteries
+const bgTipSync = () => { if (NATIVE && bgTip() !== bgTipLast) bgSync(); };
+
+// ---------- Batterie faible ----------
+// Notification de Windows à 15 % ou moins (hors charge), une fois par appareil jusqu'à ce que la
+// batterie remonte à 30 % ou se recharge : l'alerte qui faisait garder les logiciels constructeurs.
+// Batteries relues toutes les 2 min (10 min fenêtre fermée) : core.js, puis refreshHome → batAlerts.
+var batWarned = new Set();
+var notifState = null; // 'on' | 'off-app' | 'off-user' | 'off-policy' | 'off' | 'unknown' (notify_state)
+var notifAt = 0;
+function batAlertOn() { try { return localStorage.getItem('batAlert') !== 'off'; } catch { return true; } }
+function batAlertText(b) {
+  return b.name + (LANG === 'fr' ? ' : ' : ': ') + (b.label ? tx(b.label).toLowerCase() : tx(`plus que ${b.level} %`));
+}
+function batAlerts() {
+  if (!NATIVE) return;
+  for (const b of batteryList()) {
+    if (b.charging || b.level >= 30) { batWarned.delete(b.key); continue; }
+    if (b.level < 1 || b.level > 15 || batWarned.has(b.key)) continue; // 0 % : souvent « inconnu »
+    batWarned.add(b.key);
+    if (batAlertOn()) nativeInvoke('notify_show', { title: tx('Batterie faible'), body: batAlertText(b) })
+      .catch(e => console.warn('[PeriphHub] notification', e));
+  }
+}
+// Windows peut ignorer les notifications sans erreur (coupées dans ses Paramètres) : on le dit
+function notifCheck() {
+  if (!NATIVE || Date.now() - notifAt < 5000) return;
+  notifAt = Date.now();
+  nativeInvoke('notify_state').then(st => {
+    if (st === notifState) return;
+    notifState = st;
+    if (!$('options').hidden) renderOptions();
+  }, () => {});
+}
+window.addEventListener('focus', () => { if (!$('options').hidden) notifCheck(); });
+
+function batAlertField() {
+  notifCheck();
+  const why = {
+    'off-user': 'Les notifications sont désactivées dans Windows : Paramètres > Système > Notifications.',
+    'off-app': 'Les notifications de PeriphHub sont désactivées : Paramètres > Système > Notifications, puis PeriphHub.',
+    'off-policy': 'Les notifications sont bloquées par une stratégie de cet ordinateur (entreprise, école).',
+    off: 'Windows n’affiche pas les notifications de PeriphHub.',
+    unknown: 'Notifications indisponibles sans installation (version portable) : installez PeriphHub pour les recevoir.',
+  }[notifState];
+  const on = batAlertOn();
+  return field('Batterie faible',
+    h('div', { class: 'muted small' }, 'Notification de Windows quand une batterie descend à 15 %, une fois jusqu’à la prochaine recharge'),
+    segmented([{ v: 'on', label: 'Prévenir' }, { v: 'off', label: 'Ne pas prévenir' }], on ? 'on' : 'off', v => {
+      try { localStorage.setItem('batAlert', v); } catch {}
+      renderOptions();
+    }),
+    on && why ? h('p', { class: 'warnline' }, why) : null,
+    on && notifState === 'on' ? h('div', { class: 'row-inline' }, h('button', { class: 'mini ghost',
+      onclick: () => nativeInvoke('notify_show', { title: tx('Batterie faible'), body: tx('Essai : voici à quoi ressemble l’alerte') })
+        .catch(e => toast(String(e?.message || e), 'err')) }, 'Essayer')) : null);
+}
+
+function bgSetKeep(on) {
+  try { localStorage.setItem('bgKeep', on ? 'on' : 'off'); } catch {}
+  bgSync();
+}
+
+async function bgLoad() {
+  if (!NATIVE) return;
+  try { bgInfo = await nativeInvoke('bg_state'); } catch (e) { bgInfo = { error: String(e?.message || e) }; }
+  if (!$('options').hidden) renderOptions();
+}
+
+async function bgAutostart(on) {
+  if (bgBusy) return;
+  bgBusy = true;
+  renderOptions();
+  try {
+    const r = await nativeInvoke('autostart_set', { on });
+    bgInfo = { ...bgInfo, autostart: r };
+    if (on && r === 'on') toast('PeriphHub démarrera avec Windows, fenêtre fermée');
+  } catch (e) {
+    toast('Réglage impossible : ' + (e?.message || e), 'err');
+    await bgLoad();
+  } finally {
+    bgBusy = false;
+    if (!$('options').hidden) renderOptions();
+  }
+}
+
+function bgField() {
+  const st = bgInfo?.autostart;
+  return field('Arrière-plan',
+    h('div', { class: 'muted small' }, 'Quand on ferme la fenêtre'),
+    segmented([{ v: 'on', label: 'Rester près de l’horloge' }, { v: 'off', label: 'Quitter PeriphHub' }], bgKeep() ? 'on' : 'off',
+      v => { bgSetKeep(v === 'on'); renderOptions(); }),
+    h('div', { class: 'muted small' }, 'Démarrer avec Windows'),
+    bgInfo && !bgInfo.error
+      ? segmented([{ v: 'on', label: 'Oui, fenêtre fermée' }, { v: 'off', label: 'Non' }], st === 'on' ? 'on' : 'off', v => bgAutostart(v === 'on'))
+      : h('div', { class: 'muted small' }, bgInfo?.error ? 'Indisponible : ' + bgInfo.error : 'Lecture…'),
+    st === 'bloqué' ? h('p', { class: 'warnline' }, bgInfo.store
+      ? 'Windows empêche PeriphHub de démarrer avec lui : réactivez-le dans Paramètres > Applications > Démarrage.'
+      : 'Désactivé dans le Gestionnaire des tâches (Applications de démarrage) : choisissez « Oui » pour le réactiver.') : null,
+    h('div', { class: 'muted small' }, 'En arrière-plan, PeriphHub renvoie vos réglages aux appareils qui les oublient : casque rallumé, appareil rebranché, sortie de veille. '
+      + 'Sa fenêtre fermée, il se met en veille et consomme peu de mémoire. « Quitter PeriphHub » dans le menu de son icône (clic droit) le ferme vraiment.'));
+}
+
+// Première fermeture de la fenêtre : on demande, sinon PeriphHub semble refuser de se fermer
+if (NATIVE) window.__TAURI__.event.listen('close-ask', () => {
+  const pick = keep => {
+    bgSetKeep(keep);
+    m.close();
+    nativeInvoke(keep ? 'bg_hide' : 'bg_quit').catch(() => {});
+  };
+  const m = modal(
+    h('header', { class: 'dhead' }, h('h3', {}, 'Garder PeriphHub en arrière-plan ?'),
+      h('button', { class: 'x', title: 'Fermer', onclick: () => m.close() }, '×')),
+    h('p', {}, 'Fenêtre fermée, PeriphHub peut rester dans la zone de notification, près de l’horloge (sous la flèche ^ si son icône n’y est pas).'),
+    h('p', { class: 'muted small' }, 'Il renvoie alors vos réglages aux appareils qui les oublient : casque rallumé, appareil rebranché, sortie de veille. '
+      + 'Il se met en veille et consomme peu de mémoire. Modifiable à tout moment dans les Options.'),
+    h('footer', { class: 'dfoot' }, h('span'),
+      h('div', { class: 'row-inline' },
+        h('button', { class: 'ghost', onclick: () => pick(false) }, 'Quitter complètement'),
+        h('button', { onclick: () => pick(true) }, 'Garder en arrière-plan'))));
+}).catch(() => {});
 
 // ---------- Allègement ----------
 
@@ -580,6 +764,8 @@ function renderOptions() {
           h('button', { class: 'ghost', disabled: updBusy, onclick: () => checkUpdate(true) }, updBusy ? 'Vérification…' : 'Vérifier maintenant')),
         h('div', { class: 'muted small' }, 'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. '
           + 'Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.')])) : null,
+    NATIVE ? bgField() : null,
+    NATIVE ? batAlertField() : null,
     NATIVE ? field('Son',
       segmented([{ v: 'off', label: 'Périphériques seulement' }, { v: 'on', label: 'Tout afficher' }], audioAll() ? 'on' : 'off', v => {
         try { localStorage.setItem('audioAll', v); } catch {}
@@ -594,9 +780,10 @@ function renderOptions() {
         renderOptions();
         if (v === 'on') diagMaybeAuto();
       }),
-      h('div', { class: 'muted small' }, 'Quand un appareil détecté ne se connecte pas, PeriphHub peut envoyer tout seul son diagnostic au développeur pour qu’il corrige : '
-        + 'liste des appareils USB et essais des pilotes, sans numéro de série, nom d’utilisateur ni fichier. Une seule fois par problème. '
-        + 'Il arrive dans un dépôt GitHub privé.')) : null,
+      h('div', { class: 'muted small' }, 'Quand un appareil détecté ne se connecte pas, ou si PeriphHub rencontre une erreur interne, il peut envoyer tout seul son diagnostic au développeur pour qu’il corrige : '
+        + 'version de Windows, liste des appareils USB et essais des pilotes, sans numéro de série, nom d’utilisateur ni fichier. Une seule fois par problème. '
+        + 'Il arrive dans un dépôt GitHub privé.'),
+      h('div', { class: 'row-inline' }, h('button', { class: 'ghost', onclick: () => diagDialog() }, 'Envoyer un diagnostic maintenant'))) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),
@@ -615,30 +802,52 @@ var DIAG_URL = 'https://sharkywedding.fr/periphhub/diag';
 var diagBusy = false; // var : refreshHome peut tourner avant cette ligne
 function diagAuto() { try { return localStorage.getItem('diagAuto'); } catch { return null; } }
 var diagKinds = d => ['souris', 'clavier', 'casque', 'manette'].includes(d.kind);
-var diagMissing = () => undetected().filter(diagKinds);
+// Appareils standards exclus de la question et de l'envoi automatique (le bouton « Signaler » reste)
+var diagMissing = () => undetected().filter(d => diagKinds(d) && !diagStandard(d));
 var diagName = d => d.product || d.catalog_name || d.vid + ':' + d.pid;
+var diagIdOf = d => (d.vid + ':' + d.pid).toUpperCase();
 // Empreinte du problème : même version et mêmes appareils en échec → pas de second envoi automatique
-var diagSignature = list => (report?.version || '') + '|' + list.map(d => d.vid + ':' + d.pid).sort().join(',');
+var diagSignature = list => (report?.version || '') + '|' + list.map(diagIdOf).sort().join(',');
+// Problèmes déjà envoyés automatiquement (les 30 derniers)
+function diagSentList() { try { return JSON.parse(localStorage.getItem('diagSentList')) || []; } catch { return []; } }
+function diagMarkSent(sig) {
+  try { localStorage.setItem('diagSentList', JSON.stringify([...diagSentList().filter(s => s !== sig), sig].slice(-30))); } catch {}
+}
 
-async function sendDiag(auto) {
+// Appareils proposés dans « Appareil concerné » : connectés, puis détectés
+function diagDevices() {
+  const out = new Map();
+  for (const i of drvLive.values()) if (i.dev && drvDiagId(i)) out.set(drvDiagId(i), i.name);
+  for (const d of report?.devices || []) if (interesting(d) && !out.has(diagIdOf(d))) out.set(diagIdOf(d), diagName(d));
+  return [...out].map(([id, name]) => ({ id, name }));
+}
+
+//   auto    : envoi automatique (accepté dans les Options) ; sinon clic sur « Envoyer »
+//   comment : ce que l'utilisateur dit du problème ; focus : appareils en cause (« VID:PID »)
+//   sig     : empreinte du problème, retenue une fois envoyé ; title : objet du ticket
+var diagRetryAt = 0; // envoi automatique raté (réseau, relais) : pas de nouvel essai avant 10 min
+async function sendDiag(auto, { comment = '', focus = null, sig = null, title = '' } = {}) {
   if (!NATIVE || diagBusy) return false;
   diagBusy = true;
   if (!auto) refreshHome();
   try {
     const missing = diagMissing();
+    const ids = focus || missing.map(diagIdOf);
+    const names = focus ? focus.map(id => diagDevices().find(d => d.id === id)?.name || id) : missing.map(diagName);
+    const summary = [title || names.slice(0, 3).join(', '), String(comment).trim()].filter(Boolean).join(' : ').replace(/\s+/g, ' ').slice(0, 110);
     const r = await fetch(DIAG_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' }, // requête « simple » : pas de vérification CORS préalable
-      body: JSON.stringify({ version: report?.version || '', text: await fullDiag(), summary: missing.map(diagName).slice(0, 4).join(', '), auto }),
+      body: JSON.stringify({ version: report?.version || '', text: await fullDiag(null, { comment, focus: ids }), summary, auto }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-    try { localStorage.setItem('diagSent', diagSignature(missing)); } catch {}
+    if (sig) diagMarkSent(sig);
     toast(auto ? 'Diagnostic envoyé automatiquement au développeur de PeriphHub' : 'Diagnostic envoyé, merci ! Le développeur va s’en servir pour corriger.', 'ok');
     return true;
   } catch (e) {
     if (!auto) toast('Envoi impossible (' + (e.message || e) + ') : utilisez « Copier le diagnostic » et envoyez-le vous-même.', 'err');
-    else console.warn('[PeriphHub] envoi automatique du diagnostic', e.message || e);
+    else { console.warn('[PeriphHub] envoi automatique du diagnostic', e.message || e); diagRetryAt = Date.now() + 600000; }
     return false;
   } finally {
     diagBusy = false;
@@ -646,17 +855,57 @@ async function sendDiag(auto) {
   }
 }
 
+// Envoi manuel : l'utilisateur dit sur quel appareil et ce qui ne marche pas (le diagnostic suffit
+// alors à corriger du premier coup) et peut lire exactement ce qui part
+function diagDialog(focus = '') {
+  if (!NATIVE) return;
+  const devs = diagDevices();
+  if (focus && !devs.some(d => d.id === focus)) devs.unshift({ id: focus, name: 'Appareil' });
+  const sel = h('select', { onchange: () => det.open && preview() },
+    h('option', { value: '' }, 'Plusieurs, ou je ne sais pas'),
+    devs.map(d => h('option', { value: d.id, selected: d.id === focus }, `${d.name} (${d.id})`)));
+  const area = h('textarea', { rows: 4, maxlength: 1500,
+    placeholder: 'Exemple : ma souris n’apparaît pas ; le DPI revient à 800 après la mise en veille ; le casque ne garde pas le retour micro…' });
+  const opts = () => ({ comment: area.value, focus: sel.value ? [sel.value] : null });
+  // <code> : le texte envoyé reste en français (le développeur le lit tel quel), pas traduit à l'écran
+  const code = h('code');
+  const preview = async () => { code.textContent = '…'; try { code.textContent = await fullDiag(null, opts()); } catch (e) { code.textContent = String(e); } };
+  const det = h('details', { ontoggle: () => det.open && preview() }, h('summary', {}, 'Voir exactement ce qui sera envoyé'), h('pre', { class: 'diagprev' }, code));
+  const send = h('button', { onclick: async () => {
+    send.disabled = true;
+    send.textContent = 'Envoi…';
+    if (await sendDiag(false, opts())) m.close();
+    else { send.disabled = false; send.textContent = 'Envoyer'; }
+  } }, 'Envoyer');
+  const m = modal(
+    h('header', { class: 'dhead' }, h('h3', {}, 'Envoyer le diagnostic'),
+      h('button', { class: 'x', title: 'Fermer', onclick: () => m.close() }, '×')),
+    h('label', { class: 'stack tight' }, h('span', { class: 'muted small' }, 'Appareil concerné'), sel),
+    h('label', { class: 'stack tight' }, h('span', { class: 'muted small' }, 'Ce qui ne marche pas (facultatif, mais ça aide beaucoup)'), area),
+    h('p', { class: 'muted small' }, 'Le diagnostic contient la version de Windows, la liste des appareils USB, ce que PeriphHub a essayé '
+      + 'et ses derniers échanges avec l’appareil concerné. Ni numéro de série, ni nom d’utilisateur, ni fichier. '
+      + 'Il arrive dans un dépôt GitHub privé, lu seulement par le développeur.'),
+    det,
+    h('footer', { class: 'dfoot' },
+      h('button', { class: 'ghost', onclick: () => copyDiag(null, opts()) }, 'Copier plutôt'),
+      h('div', { class: 'row-inline' }, h('button', { class: 'ghost', onclick: () => m.close() }, 'Annuler'), send)));
+  setTimeout(() => area.focus(), 60);
+}
+
 // Envoi automatique accepté : une fois par problème, quand les pilotes ont eu le temps d'essayer
-// (souris sans fil en veille…) — au plus tôt 2 minutes après le lancement
+// (souris sans fil en veille…) — au plus tôt 2 minutes après le lancement. Aussi une fois par erreur
+// interne de cette version (erreurs.log), pour qu'elle soit corrigée sans attendre un signalement.
 var diagStart = Date.now();
-function diagMaybeAuto() {
-  if (diagAuto() !== 'on' || !report || Date.now() - diagStart < 120000) return;
+async function diagMaybeAuto() {
+  if (diagAuto() !== 'on' || !report || diagBusy || Date.now() - diagStart < 120000 || Date.now() < diagRetryAt) return;
+  const sent = diagSentList();
   const missing = diagMissing();
-  if (!missing.length) return;
-  let sent = null;
-  try { sent = localStorage.getItem('diagSent'); } catch {}
-  if (sent === diagSignature(missing)) return;
-  sendDiag(true);
+  if (missing.length && !sent.includes(diagSignature(missing))) return sendDiag(true, { sig: diagSignature(missing) });
+  let errs = [];
+  try { errs = (await nativeInvoke('sys_info')).errors || []; } catch {}
+  // « date · version · fil · emplacement · message » : même emplacement et même message = même erreur
+  const err = errs.map(l => l.split(' · ')).filter(p => p[1] === report.version).map(p => [p[1], p[3], p[4]].join(' · ')).pop();
+  if (err && !sent.includes('erreur|' + err)) sendDiag(true, { focus: [], title: 'Erreur interne ' + err.split(' · ')[1], sig: 'erreur|' + err });
 }
 if (NATIVE) setInterval(() => { if (!document.hidden) diagMaybeAuto(); }, 30000);
 
@@ -668,7 +917,7 @@ function diagAsk() {
   if (!missing.length) return null;
   const choose = v => {
     try { localStorage.setItem('diagAuto', v); } catch {}
-    if (v === 'on') sendDiag(true);
+    if (v === 'on') sendDiag(true, { sig: diagSignature(missing) });
     else refreshHome();
   };
   return h('div', { class: 'notice' },
@@ -683,6 +932,8 @@ function diagAsk() {
 
 // ---------- Démarrage ----------
 
+bgSync();
+bgLoad();
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
 rescan();
 if (window.omApi) [window.omApi.driver, ...(window.omApi.keyboardDrivers || [])].forEach(registerDriver);

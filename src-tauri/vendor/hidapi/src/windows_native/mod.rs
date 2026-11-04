@@ -35,7 +35,7 @@ use crate::windows_native::types::{Handle, Overlapped};
 use crate::{DeviceInfo, HidDeviceBackendBase, HidDeviceBackendWindows, HidError, HidResult};
 use windows_sys::core::GUID;
 use windows_sys::Win32::Devices::HumanInterfaceDevice::{
-    HidD_GetIndexedString, HidD_SetFeature, HidD_SetNumInputBuffers, HidD_SetOutputReport,
+    HidD_GetIndexedString, HidD_SetNumInputBuffers, HidD_SetOutputReport,
 };
 use windows_sys::Win32::Devices::Properties::{
     DEVPKEY_Device_ContainerId, DEVPKEY_Device_InstanceId,
@@ -128,6 +128,11 @@ impl Debug for HidDevice {
     }
 }
 
+/// PeriphHub : délais des échanges (ms). Une écriture HID prend quelques ms ; un feature report
+/// passe par un transfert de contrôle USB (souvent < 50 ms, jusqu'à ~1 s sur des appareils lents).
+const WRITE_TIMEOUT_MS: u32 = 1000;
+const FEATURE_TIMEOUT_MS: u32 = 2500;
+
 impl HidDeviceBackendBase for HidDevice {
     fn write(&self, data: &[u8]) -> HidResult<usize> {
         ensure!(!data.is_empty(), Err(HidError::InvalidZeroSizeData));
@@ -147,9 +152,10 @@ impl HidDeviceBackendBase for HidDevice {
         if res != TRUE {
             let err = Win32Error::last();
             ensure!(err == Win32Error::IoPending, Err(err.into()));
+            // PeriphHub : annulée au-delà d'1 s (l'OVERLAPPED est réutilisé à l'envoi suivant)
             Ok(state
                 .overlapped
-                .get_result(&self.device_handle, Some(1000))?)
+                .get_result_or_cancel(&self.device_handle, WRITE_TIMEOUT_MS)?)
         } else {
             Ok(0)
         }
@@ -227,16 +233,35 @@ impl HidDeviceBackendBase for HidDevice {
 
     fn send_feature_report(&self, data: &[u8]) -> HidResult<()> {
         ensure!(!data.is_empty(), Err(HidError::InvalidZeroSizeData));
+        // PeriphHub : IOCTL asynchrone avec délai (comme le hidapi C) au lieu de HidD_SetFeature,
+        // qui attendait sans limite un appareil qui ne répond pas.
+        #[allow(clippy::identity_op, clippy::double_parens)]
+        const IOCTL_HID_SET_FEATURE: u32 = ((0x0000000b) << 16) | ((0) << 14) | ((100) << 2) | (1);
         let mut state = self.feature_state.borrow_mut();
+        ensure!(state.buffer_len() > 0, Err(HidError::InvalidZeroSizeData));
         state.fill_buffer(data);
+        let mut bytes_returned = 0;
 
-        check_boolean(unsafe {
-            HidD_SetFeature(
+        let res = unsafe {
+            ResetEvent(state.overlapped.event_handle());
+            DeviceIoControl(
                 self.device_handle.as_raw(),
+                IOCTL_HID_SET_FEATURE,
                 state.buffer_ptr() as _,
                 state.buffer_len() as u32,
+                null_mut(),
+                0,
+                &mut bytes_returned,
+                state.overlapped.as_raw(),
             )
-        })?;
+        };
+        if res != TRUE {
+            let err = Win32Error::last();
+            ensure!(err == Win32Error::IoPending, Err(err.into()));
+        }
+        state
+            .overlapped
+            .get_result_or_cancel(&self.device_handle, FEATURE_TIMEOUT_MS)?;
 
         Ok(())
     }
@@ -269,7 +294,11 @@ impl HidDeviceBackendBase for HidDevice {
             ensure!(err == Win32Error::IoPending, Err(err.into()))
         }
 
-        bytes_returned = state.overlapped.get_result(&self.device_handle, None)? as u32;
+        // PeriphHub : annulée au-delà du délai (attendait sans limite) ; l'annulation attend que
+        // Windows ait lâché `buf` avant de rendre la main.
+        bytes_returned = state
+            .overlapped
+            .get_result_or_cancel(&self.device_handle, FEATURE_TIMEOUT_MS)? as u32;
 
         if buf[0] == 0x0 {
             bytes_returned += 1;

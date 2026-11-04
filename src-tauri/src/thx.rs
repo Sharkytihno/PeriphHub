@@ -241,3 +241,16 @@ impl Thx {
         Ok(ok)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn dll_thx_installee_reconnue_comme_razer() {
+        // Seulement sur un PC où Razer Synapse a installé le module THX
+        let Some(p) = super::find_dll() else {
+            return;
+        };
+        let signer = crate::sign::check_signature(&p, "razer").expect("signature Razer");
+        eprintln!("{} : signée par {signer}", p.display());
+    }
+}

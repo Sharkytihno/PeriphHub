@@ -113,14 +113,20 @@ mod tests {
         assert_eq!(hid(Duration::from_secs(5), || 4), Ok(4));
     }
 
+    /// Outil de Windows par son chemin absolu (jamais résolu par nom depuis le dossier courant)
+    fn system_exe(rel: &str) -> std::path::PathBuf {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        std::path::Path::new(&root).join("System32").join(rel)
+    }
+
     #[test]
     fn output_tue_le_programme_trop_long() {
-        let mut c = Command::new(crate::sign::system_exe("ping.exe"));
+        let mut c = Command::new(system_exe("ping.exe"));
         c.args(["-n", "30", "127.0.0.1"]);
         let t = Instant::now();
         assert!(output(c, Duration::from_millis(500)).is_none());
         assert!(t.elapsed() < Duration::from_secs(5));
-        let mut c = Command::new(crate::sign::system_exe("cmd.exe"));
+        let mut c = Command::new(system_exe("cmd.exe"));
         c.args(["/c", "echo", "ok"]);
         assert!(String::from_utf8_lossy(&output(c, Duration::from_secs(10)).unwrap()).contains("ok"));
     }

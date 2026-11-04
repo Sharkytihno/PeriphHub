@@ -176,9 +176,116 @@ pub fn parse_ids(ids: &[String]) -> Option<HidIface> {
     Some(HidIface { path: String::new(), vid, pid, usage_page, usage, interface, product: String::new() })
 }
 
+// ---------- Batterie des appareils Bluetooth ----------
+
+pub struct BtBattery {
+    pub name: String,
+    /// Adresse Bluetooth (12 chiffres hexadécimaux), pour regrouper les nœuds d'un même appareil
+    pub address: String,
+    pub level: u8,
+}
+
+/// Instances présentes d'un énumérateur (« BTHLE », « BTHENUM »…)
+fn device_ids(enumerator: &str) -> Vec<String> {
+    use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+        CM_Get_Device_ID_ListW, CM_Get_Device_ID_List_SizeW, CM_GETIDLIST_FILTER_ENUMERATOR, CM_GETIDLIST_FILTER_PRESENT,
+    };
+    let filter = wide(enumerator);
+    let flags = CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT;
+    // Un appareil peut arriver entre la taille et la liste : on recommence
+    for _ in 0..3 {
+        let mut len = 0u32;
+        if unsafe { CM_Get_Device_ID_List_SizeW(&mut len, filter.as_ptr(), flags) } != CR_SUCCESS || len < 2 {
+            return Vec::new();
+        }
+        let mut buf = vec![0u16; len as usize];
+        match unsafe { CM_Get_Device_ID_ListW(filter.as_ptr(), buf.as_mut_ptr(), len, flags) } {
+            CR_SUCCESS => return multi_sz(&buf),
+            CR_BUFFER_SMALL => continue,
+            _ => return Vec::new(),
+        }
+    }
+    Vec::new()
+}
+
+/// Adresse Bluetooth dans un identifiant d'instance : dernière suite de 12 chiffres hexadécimaux,
+/// hors fin de l'UUID de base Bluetooth (…-00805F9B34FB) que portent tous les services.
+///   BTHLE\DEV_C0FBF9A1B2C3\7&…   BTHENUM\{0000111E-…-00805F9B34FB}_…\7&2C4D1D4&0&A0C9A0123456_C00000000
+fn bt_address(id: &str) -> String {
+    let up = id.to_ascii_uppercase();
+    up.rsplit(|c: char| !c.is_ascii_hexdigit())
+        .find(|run| run.len() == 12 && *run != "00805F9B34FB")
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Nom de l'appareil sans le nom du service Bluetooth que Windows y ajoute
+fn bt_name(name: &str) -> String {
+    const SERVICES: &[&str] = &[
+        "hands-free ag audio", "hands-free ag", "hands-free", "mains libres ag audio", "mains libres ag", "mains libres",
+        "avrcp transport", "stereo", "stéréo",
+    ];
+    let mut n = name.trim().to_string();
+    for s in SERVICES {
+        let cut = n.len().wrapping_sub(s.len());
+        if n.len() > s.len() && n.is_char_boundary(cut) && n[cut..].to_lowercase() == *s {
+            n.truncate(cut);
+            return n.trim_end().to_string();
+        }
+    }
+    n
+}
+
+/// Batterie des appareils Bluetooth telle que l'affiche Paramètres ▸ Bluetooth (propriété
+/// {104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2 posée par la pile Bluetooth de Windows : service
+/// Batterie des appareils BLE, indicateur des casques en mains libres). Lecture seule, sans jamais
+/// ouvrir l'appareil.
+pub fn bluetooth_batteries() -> Vec<BtBattery> {
+    use windows_sys::Win32::Devices::Properties::DEVPROP_TYPE_BYTE;
+    const BATTERY: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5), pid: 2 };
+    let mut out: Vec<BtBattery> = Vec::new();
+    for enumerator in ["BTHLE", "BTHLEDEVICE", "BTHENUM", "BTHHFENUM"] {
+        for id in device_ids(enumerator) {
+            let mut node = 0u32;
+            let wid = wide(&id);
+            if unsafe { CM_Locate_DevNodeW(&mut node, wid.as_ptr(), CM_LOCATE_DEVNODE_NORMAL) } != CR_SUCCESS {
+                continue;
+            }
+            let (mut ty, mut level, mut size) = (0u32, 0u8, 1u32);
+            let r = unsafe { CM_Get_DevNode_PropertyW(node, &BATTERY, &mut ty, &mut level, &mut size, 0) };
+            if r != CR_SUCCESS || ty != DEVPROP_TYPE_BYTE || level > 100 {
+                continue;
+            }
+            let address = bt_address(&id);
+            let name = bt_name(&first(node_prop(node, &DEVPKEY_Device_FriendlyName)));
+            match out.iter_mut().find(|b| !address.is_empty() && b.address == address) {
+                Some(b) if b.name.is_empty() => b.name = name,
+                Some(_) => {}
+                None => out.push(BtBattery { name, address, level }),
+            }
+        }
+    }
+    out.retain(|b| !b.name.is_empty());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bluetooth_adresse_et_nom() {
+        assert_eq!(bt_address(r"BTHLE\DEV_C0FBF9A1B2C3\7&1A2B3C4D&0&C0FBF9A1B2C3"), "C0FBF9A1B2C3");
+        assert_eq!(
+            bt_address(r"BTHENUM\{0000111E-0000-1000-8000-00805F9B34FB}_VID&0002054C_PID&0D58\7&2C4D1D4&0&A0C9A0123456_C00000000"),
+            "A0C9A0123456"
+        );
+        assert_eq!(bt_address(r"BTHENUM\{0000111E-0000-1000-8000-00805F9B34FB}_LOCALMFG&0000"), "");
+        assert_eq!(bt_name("WH-1000XM4 Hands-Free AG"), "WH-1000XM4");
+        assert_eq!(bt_name("MX Master 3S"), "MX Master 3S");
+        // Lecture réelle : ne doit ni bloquer ni planter, avec ou sans Bluetooth
+        let _ = bluetooth_batteries();
+    }
 
     fn ids(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

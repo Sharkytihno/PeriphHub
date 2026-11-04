@@ -85,10 +85,13 @@ registerDriver({
       release() { clearInterval(timer); hsNativeIds.delete(id); },
     });
     inst.refreshBattery = inst.refresh;
+    inst.reapply = () => hsReapply(inst); // sortie de veille (drivers/core.js)
     inst.off = false;
     await inst.refresh();
     await hsReapply(inst);
-    timer = setInterval(() => { if (!document.hidden) inst.refresh(); }, 30000);
+    // Toutes les 30 s (60 s PeriphHub en arrière-plan) : un casque rallumé retrouve ses réglages
+    let tick = 0;
+    timer = setInterval(() => { if (!document.hidden || ++tick % 2) inst.refresh(); }, 30000);
     return [inst];
   },
 });

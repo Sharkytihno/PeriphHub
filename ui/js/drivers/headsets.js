@@ -36,6 +36,7 @@ function hsInstance(d) {
     // pendant une relecture (réapplication au branchement), pas de relecture imbriquée
     refresh: () => hsPolling ? Promise.resolve() : headsetsPoll(),
     refreshBattery: () => headsetsPoll(),
+    reapply: () => hsReapply(inst), // sortie de veille (drivers/core.js)
     rows() {
       const s = inst.state, c = inst.caps;
       const set = (label, cap) => v => drvSet(inst, label, cap, v);
@@ -124,4 +125,6 @@ function headsetsPoll() {
 }
 
 // Branchement d'un récepteur : relu toutes les 20 s (fenêtre visible), plus à chaque « Actualiser »
-setInterval(() => { if (!document.hidden) headsetsPoll(); }, 20000);
+// Toutes les 20 s fenêtre visible, toutes les 60 s en arrière-plan (casque rallumé : réglages renvoyés)
+let hsTick = 0;
+setInterval(() => { if (!document.hidden || ++hsTick % 3 === 0) headsetsPoll(); }, 20000);

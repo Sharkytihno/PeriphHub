@@ -1,9 +1,10 @@
 name: Release
 
 # Pousser un tag « v0.9.0 » compile l'installeur Windows et prépare une Release (brouillon à publier).
+# Notes de la Release : section de la version dans CHANGELOG.md (scripts/release-notes.ps1).
 # Signature : si les secrets SignPath sont présents (voir docs/SIGNATURE.md), periphhub.exe puis
 # l'installeur sont signés par SignPath Foundation (certificat gratuit pour les logiciels libres).
-# Sans ces secrets, l'installeur est publié non signé, comme avant.
+# Sans ces secrets, l'installeur est publié non signé.
 on:
   push:
     tags: ['v*']
@@ -168,16 +169,20 @@ jobs:
           Windows may show "Windows protected your PC" (not signed yet): click "More info", then "Run anyway".
           '@
           }
+          # Nouveautés : section de cette version dans CHANGELOG.md
+          $changes = ./scripts/release-notes.ps1 '${{ github.ref_name }}'
           $body = @'
           Téléchargez / Download **{NAME}**.
 
           {WARN}
 
+          {CHANGES}
+
           SHA-256 : `{HASH}`
 
           Le fichier .msix sert uniquement à la publication sur le Microsoft Store. / The .msix file is only for the Microsoft Store submission.
           '@
-          $body = $body.Replace('{NAME}', '${{ steps.setup.outputs.name }}').Replace('{WARN}', $warn).Replace('{HASH}', $hash)
+          $body = $body.Replace('{NAME}', '${{ steps.setup.outputs.name }}').Replace('{WARN}', $warn).Replace('{HASH}', $hash).Replace('{CHANGES}', $changes)
           $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           Set-Content -Path $notes -Value $body -Encoding utf8
           $files = @($setup, "$setup.sha256", '${{ steps.msix.outputs.path }}')

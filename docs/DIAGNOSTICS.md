@@ -1,21 +1,47 @@
 # Diagnostics : savoir pourquoi un appareil n'est pas pris en charge, sans compte GitHub
 
-Quand un appareil est détecté mais n'a pas de page, PeriphHub peut le dire au développeur de trois façons :
+Quand un appareil est détecté mais ne se connecte pas, PeriphHub peut le dire au développeur de trois façons :
 
 | Moyen | Quand | Ce qu'il faut |
 |---|---|---|
-| **Envoyer le diagnostic** (accueil) | sur clic | rien : l'appli l'envoie au relais |
-| **Envoi automatique** | si l'utilisateur l'a accepté (question sur l'accueil, ou Options → Diagnostics) ; une seule fois par problème (même version, mêmes appareils), au plus tôt 2 minutes après le lancement | rien |
-| **Copier le diagnostic** | sur clic | coller le texte dans Discord, un mail… |
+| **Envoyer le diagnostic** (accueil, Options ▸ Diagnostics) ou **Signaler** (sur un appareil) | sur clic | rien : une fenêtre demande l'appareil concerné et ce qui ne marche pas (facultatif), et montre exactement le texte envoyé (« Voir exactement ce qui sera envoyé ») |
+| **Envoi automatique** | si l'utilisateur l'a accepté (question posée une fois sur l'accueil, ou Options ▸ Diagnostics) | rien |
+| **Copier le diagnostic** | sur clic (accueil, page d'un appareil, « Copier plutôt » dans la fenêtre d'envoi) | coller le texte dans Discord, un mail… |
 
-Rien ne part sans l'accord de l'utilisateur. Le diagnostic contient :
+L'envoi automatique part :
 
-- la liste des appareils USB et HID (VID:PID, nom, type, statut) ;
-- les interfaces HID de chacun (page et usage, numéros de rapports) ;
-- les échecs des pilotes et leur durée ;
-- les derniers avertissements de l'appli.
+- une fois par problème (même version, mêmes appareils non connectés), au plus tôt 2 minutes après le
+  lancement et fenêtre visible : le temps qu'une souris sans fil sorte de veille et que chaque pilote essaie ;
+- une fois par erreur interne de la version (même emplacement, même message dans `erreurs.log`) : elle est
+  corrigée sans attendre un signalement.
 
-Il ne contient **ni numéro de série, ni chemin de périphérique, ni nom d'utilisateur, ni fichier**. Les chemins sont retirés dans l'appli (`native-hid.js`) puis une seconde fois par le relais (`scrub`).
+Seuls les appareils que PeriphHub devrait savoir régler déclenchent la question et l'envoi automatique :
+souris, claviers, casques et manettes connus d'un catalogue, ou dotés d'une interface HID « constructeur »
+(page ≥ 0xFF00, où passent presque tous les protocoles de réglage). Un appareil **standard** (inconnu et sans
+page constructeur : souris de bureau, clavier de PC portable…) est géré par Windows seul : il est marqué
+« Appareil standard » et reste signalable à la main.
+
+Rien ne part sans l'accord de l'utilisateur. Le texte reste en français quelle que soit la langue de
+l'interface (le développeur le lit tel quel). Le diagnostic contient :
+
+- **le système** : versions de PeriphHub (installeur ou Microsoft Store), de Windows (nom, build,
+  architecture) et de WebView2 ; état du Contrôle intelligent des applications (Smart App Control) ;
+  lancement en administrateur ; avis de Windows (branchements, sortie de veille) actifs ou non ;
+- **le contexte** : durée d'ouverture, lancé avec Windows ou non, fermeture vers la zone de notification,
+  fenêtre visible ou cachée, langue ;
+- **les réglages Windows** de la souris et du clavier (vitesse, accélération, molette, double-clic,
+  répétition des touches) : souvent en cause quand « le curseur accélère » ;
+- **les batteries Bluetooth** : type et niveau seulement, jamais le nom de l'appareil (il contient souvent
+  celui du propriétaire) ; l'alerte de batterie faible et l'état des notifications Windows ;
+- **les erreurs internes récentes** (`erreurs.log`, 20 dernières lignes) ;
+- **les appareils USB et HID** (VID:PID, nom, type, statut), leurs interfaces HID et ce que chaque pilote a
+  essayé (détail plus bas) ;
+- **les logiciels constructeurs ouverts** ;
+- le commentaire de l'utilisateur, s'il en écrit un (1 500 caractères au plus).
+
+Il ne contient **ni numéro de série, ni chemin de périphérique, ni nom d'utilisateur, ni nom d'appareil
+Bluetooth, ni fichier**. Les chemins sont retirés dans l'appli (`native-hid.js`) puis une seconde fois par
+le relais (`scrub`).
 
 ## Le relais (`server/diag-relay/relay.mjs`)
 
@@ -71,11 +97,15 @@ Un appareil peut être piloté par plusieurs voies, essayées en parallèle ; le
 | OpenRGB (serveur SDK) | éclairage des appareils sans pilote intégré | `OpenRGB : non installé / installé, fermé / ouvert SANS serveur SDK / N appareils` |
 | Windows (audio, caméras) | réglages exposés par Windows | onglets Son et Caméra |
 
+- Par appareil : `Catalogue` (nom, statut et sources de la base), `Pilote connecté` et ses réglages, ou
+  l'échec de chaque pilote avec sa durée ; `Appareil muet` quand il ne répond pas (réessayé après 1, 2, 4…
+  jusqu'à 10 minutes, sans rien bloquer) ; `aucune page constructeur (standard)` quand il n'a rien à régler.
+- Rapports d'entrée / sortie / feature avec **leur taille** (`0x11(283o)`), et pour un appareil sans
+  pilote, le **descripteur brut** de ses interfaces constructeur (page ≥ 0xFF00) : de quoi écrire un pilote
+  sans le matériel, en recoupant avec OpenRGB / HeadsetControl / libratbag.
 - `Interfaces HID vues par Windows` : chaque interface et son sort (`bloquée`, `refusée`, `descripteur N octets`).
   Les interfaces **bloquées d'autres appareils** sont listées aussi, avec leur nom : c'est souvent elles qui figent
   HeadsetControl ou OpenRGB.
-- Par appareil : rapports d'entrée / sortie / feature avec **leur taille** (`0x11(283o)`), et pour un appareil sans
-  pilote, le **descripteur brut** de ses interfaces constructeur (page ≥ 0xFF00) : de quoi écrire un pilote sans le
-  matériel, en recoupant avec OpenRGB / HeadsetControl / libratbag.
+- `Autres appareils sans réglages (hubs, puces internes…)` : la liste complète, pour ne rien manquer.
 - `Logiciels constructeurs ouverts` : un logiciel d'origine ouvert peut réimposer ses réglages ou garder l'appareil.
-- `Langue` du système.
+- `Erreurs internes récentes` : erreur de PeriphHub lui-même (date, version, fil, emplacement dans le code, message).

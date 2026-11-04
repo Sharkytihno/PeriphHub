@@ -108,6 +108,12 @@ input[type=number] { width: 90px; }
 input[type=text], input[type=search] { width: 240px; }
 input[type=number]:focus, input[type=text]:focus, input[type=search]:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentbg); }
 select { max-width: 100%; cursor: pointer; }
+textarea { width: 100%; min-height: 84px; resize: vertical; background: var(--inset); color: var(--fg); border: 1px solid var(--line2); border-radius: 9px;
+  padding: 8px 10px; font: inherit; transition: border-color .12s, box-shadow .12s; }
+textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentbg); }
+pre.diagprev { margin: 8px 0 0; max-height: 260px; overflow: auto; padding: 10px 12px; background: var(--inset); border: 1px solid var(--line); border-radius: 10px;
+  font: 11.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+details > summary { cursor: pointer; user-select: none; }
 input[type=color] { width: 44px; height: 32px; padding: 2px; background: var(--inset); border: 1px solid var(--line2); border-radius: 8px; cursor: pointer; }
 input[type=checkbox] { accent-color: var(--accent); }
 .val { min-width: 44px; font-variant-numeric: tabular-nums; color: var(--fg); }
@@ -515,6 +521,7 @@ nav button[hidden], .ngroup[hidden] { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .overlay, .dialog, .htrack > i { animation: none; transition: none; } }
 .stack { display: grid; gap: 14px; width: 100%; }
+.stack.tight { gap: 6px; }
 
 /* =================================================================================================
    Identité « Orbit » — dégradé iris → cyan, logo moyeu + satellites, mouvements courts et nets.

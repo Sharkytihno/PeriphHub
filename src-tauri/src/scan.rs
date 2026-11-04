@@ -21,7 +21,10 @@ pub fn attribute(list: &[procs::Proc], vendors: &[vendors::Vendor]) -> Vec<Optio
     let direct: Vec<Option<usize>> = list
         .iter()
         .map(|p| {
-            if vendors::protected(&p.name) {
+            if vendors::protected(&p.name)
+                || vendors::system_process(&p.name)
+                || p.path.as_deref().is_some_and(vendors::protected)
+            {
                 return None;
             }
             vendors
@@ -164,7 +167,7 @@ pub fn run() -> Value {
             json!({
                 "vid": format!("{:04X}", d.vid), "pid": format!("{:04X}", d.pid),
                 "product": name, "catalog_name": k.map(|k| k.name.clone()),
-                "manufacturer": d.manufacturer, "interfaces": d.interfaces,
+                "manufacturer": d.manufacturer, "interfaces": d.interfaces, "vendor_page": d.vendor_page,
                 "kind": kind,
                 "brand": maker.map(|m| m.name.clone()),
                 "brand_note": maker.map(|m| m.note.clone()).filter(|n| !n.is_empty()),

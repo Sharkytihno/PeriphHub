@@ -1,6 +1,6 @@
 [package]
 name = "periphhub"
-version = "0.22.0"
+version = "1.0.0"
 description = "Un seul logiciel léger pour tous vos périphériques"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Sharkytihno/PeriphHub"
@@ -10,8 +10,12 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-updater = "2"
+# Relancer PeriphHub ramène la fenêtre déjà ouverte (zone de notification) au lieu d'en ouvrir une 2e
+tauri-plugin-single-instance = "2"
+# WebView cachée : invisible et mémoire réduite (déjà embarqué par Tauri, même version)
+webview2-com = "0.39"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hidapi = { version = "2", default-features = false, features = ["windows-native"] }
@@ -20,6 +24,10 @@ sha2 = "0.10"
 winreg = "0.56"
 # Son, webcams et manettes : API Windows (COM). Même version que celle qu'embarque déjà Tauri.
 windows = { version = "0.62", features = [
+  "ApplicationModel",
+  "ApplicationModel_Activation",
+  "Data_Xml_Dom",
+  "Foundation",
   "Win32_Devices_FunctionDiscovery",
   "Win32_Foundation",
   "Win32_Media_Audio",
@@ -29,18 +37,28 @@ windows = { version = "0.62", features = [
   "Win32_Media_MediaFoundation",
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
+  "Win32_System_Ole",
+  "Win32_System_TaskScheduler",
   "Win32_System_Variant",
   "Win32_UI_Input_XboxController",
   "Win32_UI_Shell_PropertiesSystem",
+  "UI_Notifications",
 ] }
 windows-sys = { version = "0.61", features = [
   "Win32_Devices_DeviceAndDriverInstallation",
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Devices_Properties",
   "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_Security_WinTrust",
   "Win32_System_Console",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Power",
   "Win32_System_ProcessStatus",
+  "Win32_System_Services",
   "Win32_System_SystemInformation",
   "Win32_Storage_Packaging_Appx",
   "Win32_System_Threading",
@@ -53,7 +71,9 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+# « unwind » : une erreur interne dans un fil (lecture d'un appareil exotique…) est rattrapée et notée
+# dans erreurs.log au lieu de fermer PeriphHub d'un coup
+panic = "unwind"
 
 # hidapi 2.6.7 corrigé : HidApi::new() énumérait tout même sans découverte (voir vendor/README.md)
 [patch.crates-io]

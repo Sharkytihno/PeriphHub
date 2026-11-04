@@ -13,6 +13,14 @@ La version installée avec `PeriphHub_x.y.z_x64-setup.exe` se met à jour toute 
 
 La version du Microsoft Store (paquet MSIX) ne fait jamais cette vérification : le Store la met à jour.
 
+## PeriphHub en arrière-plan (depuis la 1.0)
+
+- Fenêtre cachée (zone de notification, démarrage avec Windows), PeriphHub vérifie aussi les mises à
+  jour. S'il en trouve une, une notification Windows l'annonce, une seule fois par version
+  (« Ouvrez PeriphHub pour l'installer en un clic »). Rien ne s'installe sans clic.
+- Une mise à jour conserve les réglages, le journal de l'Allègement et « Démarrer avec Windows » :
+  en mode mise à jour, l'installeur ne retire ni la clé Run ni les données (`src-tauri/windows/hooks.nsh`).
+
 ## Pourquoi ça marche du premier coup (depuis la 0.18)
 
 PeriphHub lance l'installeur (`/P /UPDATE /R`) puis se ferme aussitôt. L'installeur de Tauri demande
@@ -33,11 +41,19 @@ Le code : `src-tauri/src/update.rs`, `ui/js/shell.js` (section « Mises à jour 
 
 ## Publier une mise à jour
 
-1. Changer la version (`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`), commit, tag `vX.Y.Z`, push.
-2. La CI (`.github/workflows/release.yml`) signe l'installeur avec le secret
+1. Écrire la section `## X.Y.Z` de `CHANGELOG.md` : elle devient les notes de la Release
+   (`scripts/release-notes.ps1`, appelé par la CI).
+2. Changer la version (`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`), commit, tag `vX.Y.Z`, push.
+3. La CI (`.github/workflows/release.yml`) compile, signe l'installeur avec le secret
    `TAURI_SIGNING_PRIVATE_KEY` et ajoute `latest.json` au brouillon de release
    (`scripts/updater-manifest.js`).
-3. Publier le brouillon : `gh release edit vX.Y.Z --repo Sharkytihno/PeriphHub --draft=false --latest`.
+4. Analyser l'installeur du brouillon avec Microsoft Defender, avant de publier :
+   ```powershell
+   gh release download vX.Y.Z --repo Sharkytihno/PeriphHub --pattern '*-setup.exe' --dir $env:TEMP\ph
+   & "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" -Scan -ScanType 3 -File "$env:TEMP\ph" -DisableRemediation
+   ```
+   Résultat attendu : « found no threats ». Sinon, ne pas publier : voir [SECURITE.md](SECURITE.md).
+5. Publier le brouillon : `gh release edit vX.Y.Z --repo Sharkytihno/PeriphHub --draft=false --latest`.
    Dès cet instant, toutes les installations la proposent.
 
 ## La clé de signature

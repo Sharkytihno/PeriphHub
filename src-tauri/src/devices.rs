@@ -11,6 +11,9 @@ pub struct Device {
     pub manufacturer: String,
     pub kind: &'static str,
     pub interfaces: usize,
+    /// Au moins une interface sur une page HID « constructeur » (≥ 0xFF00) : c'est là que passent
+    /// presque tous les protocoles de réglage. Sans elle, l'appareil est standard (Windows le gère seul).
+    pub vendor_page: bool,
 }
 
 // Lu dans le gestionnaire Plug and Play (pnp.rs) : aucun appareil n'est ouvert, donc un appareil
@@ -40,11 +43,13 @@ pub fn list() -> Vec<Device> {
                     manufacturer: String::new(),
                     kind: "autre",
                     interfaces: 0,
+                    vendor_page: false,
                 },
                 0,
             )
         });
         e.0.interfaces += 1;
+        e.0.vendor_page |= d.usage_page >= 0xFF00;
         if e.0.product.is_empty() {
             e.0.product = d.product.trim().to_string();
         }
