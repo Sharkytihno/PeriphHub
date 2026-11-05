@@ -285,8 +285,11 @@ async function driversScan() {
       if (retry && Date.now() < retry.at) continue;
       const candidates = order.filter(x => { try { return group.some(x.match); } catch { return false; } });
       if (!candidates.length) {
-        // Rien ne correspond : on le note quand même, sinon le diagnostic reste muet
-        if (!drvErrors.has(id)) drvErrors.set(id, ['aucun pilote ne correspond à ses interfaces']);
+        // Rien ne correspond : on le note quand même, sinon le diagnostic reste muet. Sauf si son éclairage
+        // est confié à OpenRGB (carte mère ASUS Aura…) : aucun pilote maison n'est attendu, ce n'est pas un
+        // échec (l'accueil affichait « Dernier essai : aucun pilote… » sous « réglable avec OpenRGB »)
+        const viaOpenrgb = (report?.devices || []).some(r => (r.vid + ':' + r.pid).toUpperCase() === id && r.status === 'rgb');
+        if (!viaOpenrgb && !drvErrors.has(id)) drvErrors.set(id, ['aucun pilote ne correspond à ses interfaces']);
         continue;
       }
       group.forEach(d => drvBusy.add(d.info?.path));
