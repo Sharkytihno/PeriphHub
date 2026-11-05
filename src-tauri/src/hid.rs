@@ -77,6 +77,9 @@ fn allowed(vid: u16, pid: u16) -> bool {
     .any(|&(v, p)| v == vid && p.is_none_or(|p| p == pid))
 }
 
+// Résultat d'une lecture de descripteur partagé avec le fil qui la fait (None tant qu'elle n'a pas abouti)
+type DescSlot = Arc<Mutex<Option<Result<Vec<u8>, String>>>>;
+
 #[derive(Serialize, Clone)]
 pub struct HidInfo {
     pub path: String,
@@ -121,7 +124,7 @@ pub struct Hid {
     // Lecture de descripteur qui a dépassé son délai mais continue dans son fil : si Windows finit par
     // répondre (appareil occupé un moment par un autre logiciel, OpenRGB qui démarre…), l'interface
     // revient au passage suivant au lieu de rester écartée jusqu'au débranchement
-    late: Mutex<HashMap<String, Arc<Mutex<Option<Result<Vec<u8>, String>>>>>>,
+    late: Mutex<HashMap<String, DescSlot>>,
     // Pourquoi le descripteur n'a pas pu être lu (pour le diagnostic)
     notes: Mutex<HashMap<String, String>>,
     tally: Mutex<HashMap<String, Tally>>,
@@ -239,7 +242,7 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
             Some(x) => x,
             None => {
                 let p = d.path.clone();
-                let slot: Arc<Mutex<Option<Result<Vec<u8>, String>>>> = Arc::new(Mutex::new(None));
+                let slot: DescSlot = Arc::new(Mutex::new(None));
                 let s2 = slot.clone();
                 let r = crate::watchdog::timed(DESCRIPTOR_LIMIT, move || {
                     let r = read_descriptor(&p);

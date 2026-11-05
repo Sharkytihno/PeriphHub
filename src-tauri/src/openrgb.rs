@@ -76,7 +76,7 @@ impl Client {
                         break Err("OpenRGB ne répond pas (appareil occupé ?)".to_string());
                     }
                     // Réveil à 300 ms puis toutes les 1,2 s (un appareil lent n'est pas noyé de demandes)
-                    if waits % 4 == 0 && dev != u32::MAX {
+                    if waits.is_multiple_of(4) && dev != u32::MAX {
                         let v = self.1;
                         if let Err(e) = self.send(dev, REQUEST_CONTROLLER_DATA, &v.to_le_bytes()) {
                             break Err(e);
