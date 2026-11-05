@@ -1,0 +1,38 @@
+name: Ménage des releases
+
+# Une seule Release visible : la dernière version stable. Dès qu'une Release est publiée, toutes les
+# autres sont supprimées (les brouillons plus anciens aussi ; un brouillon plus récent, en préparation,
+# est gardé). Les tags git restent : l'historique et CHANGELOG.md gardent la trace de chaque version.
+# Sans risque pour les mises à jour intégrées : elles lisent releases/latest/download/latest.json.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cleanup-releases
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supprimer les anciennes releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          latest=$(gh release view --json tagName,createdAt --jq '.tagName + " " + .createdAt')
+          keep=${latest%% *}
+          since=${latest#* }
+          echo "Release gardée : $keep ($since)"
+          gh release list --limit 200 --json tagName,isDraft,createdAt \
+            --jq ".[] | select(.tagName != \"$keep\") | select((.isDraft | not) or .createdAt < \"$since\") | .tagName" |
+          while read -r tag; do
+            echo "Suppression de la release $tag (tag gardé)"
+            gh release delete "$tag" --yes
+          done
