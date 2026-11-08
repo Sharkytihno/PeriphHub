@@ -41,6 +41,9 @@ jobs:
       - name: Éclairage (OpenRGB portable, empreinte vérifiée)
         shell: pwsh
         run: ./scripts/fetch-openrgb.ps1
+      - name: Températures (LibreHardwareMonitor, empreintes vérifiées, compilé avec le csc de Windows)
+        shell: pwsh
+        run: ./scripts/fetch-sensors.ps1
       - run: npm ci
 
       # 1. Programme seul

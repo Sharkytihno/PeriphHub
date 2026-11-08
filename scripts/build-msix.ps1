@@ -28,6 +28,8 @@ Copy-Item (Join-Path $release 'periphhub.exe') $stage
 Copy-Item (Join-Path $root 'src-tauri/resources/headsetcontrol.exe') (Join-Path $stage 'resources')
 Copy-Item (Join-Path $root 'src-tauri/resources/openrgb') (Join-Path $stage 'resources') -Recurse
 Copy-Item (Join-Path $root 'src-tauri/resources/PawnIO_setup.exe') (Join-Path $stage 'resources')
+New-Item -ItemType Directory -Force (Join-Path $stage 'resources/sensors') | Out-Null
+Copy-Item (Join-Path $root 'src-tauri/resources/sensors/*') (Join-Path $stage 'resources/sensors') -Include *.dll,*.exe
 
 # Logos demandés par Windows, tirés de l'icône de l'appli
 $src = [System.Drawing.Image]::FromFile((Join-Path $root 'src-tauri/icons/icon.png'))
