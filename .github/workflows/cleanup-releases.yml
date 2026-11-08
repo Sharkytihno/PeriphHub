@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   cleanup:
+    # Seulement sur le dépôt public : pas sur les copies et dérivés privés
+    if: github.repository == 'Sharkytihno/PeriphHub'
     runs-on: ubuntu-latest
     steps:
       - name: Supprimer les anciennes releases

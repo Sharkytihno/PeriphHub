@@ -24,6 +24,8 @@ env:
 
 jobs:
   windows:
+    # Seulement sur le dépôt public : pas sur les copies et dérivés privés
+    if: github.repository == 'Sharkytihno/PeriphHub'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
