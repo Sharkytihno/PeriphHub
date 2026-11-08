@@ -55,7 +55,24 @@ function sensMain(hw) {
   return null;
 }
 
+// Consommation (W) du composant entier, pas d'un cœur ou d'une partie de la puce.
+// Processeur : « Package » (AMD) ou « CPU Package » (Intel). Carte graphique : « GPU Package » (AMD, NVIDIA),
+// « GPU Power »… ; à défaut la plus grande valeur publiée (jamais pour le processeur : ce serait un seul cœur).
+function sensPower(hw) {
+  const ps = hw.s.filter(s => s.k === 'Power' && s.v != null && s.v >= 0 && s.v < 2000);
+  const res = hw.k === 'Cpu' ? [/^(CPU )?Package$/i]
+    : [/^GPU (Package|Power|PPT|Total|Board Power)$/i, /^GPU Core$/i];
+  for (const re of res) { const s = ps.find(x => re.test(x.n)); if (s) return s; }
+  return /^Gpu/.test(hw.k) ? [...ps].sort((a, b) => b.v - a.v)[0] || null : null;
+}
+// Partie graphique du processeur (Ryzen, Intel UHD/Iris, Core Ultra) : sa consommation est déjà comptée
+// dans celle du processeur. Les Intel Arc A/B (cartes) portent un numéro de modèle.
+const sensIgpu = hw => (hw.k === 'GpuIntel' && !/Arc\(TM\) [AB]\d/i.test(hw.n))
+  || (hw.k === 'GpuAmd' && /Radeon\(TM\) Graphics$|^AMD Radeon Graphics$/i.test(hw.n));
+
 const fmtT = v => `${Math.round(v)} °C`;
+const fmtW = v => `${Math.round(v)} W`;
+let sensPeak = 0; // total le plus haut vu depuis l'ouverture de l'appli
 const fmtV = s => s.k === 'Temperature' ? fmtT(s.v)
   : s.k === 'Fan' ? `${Math.round(s.v)} tr/min`
   : s.k === 'Control' || s.k === 'Load' ? `${Math.round(s.v)} %`
@@ -66,8 +83,7 @@ const fmtV = s => s.k === 'Temperature' ? fmtT(s.v)
 function sensRows(hw) {
   const main = sensMain(hw);
   const rows = hw.s.filter(s => s !== main && (sensTempOk(s) || sensFanOk(s)
-    || (s.k === 'Load' && /^(CPU Total|GPU Core)$/i.test(s.n))
-    || (s.k === 'Power' && /^(CPU Package|Package|GPU Package|GPU Power|GPU Core)$/i.test(s.n) && s.v > 0)));
+    || (s.k === 'Load' && /^(CPU Total|GPU Core)$/i.test(s.n))));
   // Processeur : une ligne par cœur, c'est trop ; on garde le maximum et la moyenne
   return hw.k === 'Cpu' ? rows.filter(s => !(s.k === 'Temperature' && /^(CPU )?Core #\d+|^CCD\d+ \(|^Core #\d+/i.test(s.n) && !/Max|Average/i.test(s.n))) : rows;
 }
@@ -83,15 +99,41 @@ function sensRow(hw, s) {
 function sensCard(hw, parent) {
   const main = sensMain(hw);
   const rows = sensRows(hw);
-  if (!main && !rows.length) return null;
-  // Partie graphique du processeur (Ryzen, Intel UHD…) : à distinguer de la carte graphique
-  const igpu = hw.k === 'GpuIntel' || (hw.k === 'GpuAmd' && /Radeon\(TM\) Graphics$|^AMD Radeon Graphics$/i.test(hw.n));
+  // Partie graphique du processeur : sa consommation est déjà dans celle du processeur (et souvent fantaisiste)
+  const igpu = sensIgpu(hw);
+  const pw = igpu ? null : sensPower(hw);
+  if (!main && !rows.length && !pw) return null;
   const kind = igpu ? 'Graphique intégré au processeur' : SENS_KIND[hw.k] || hw.k;
   return h('div', { class: 'card scard' },
     h('div', { class: 'shead' },
       h('div', {}, h('div', { class: 'muted small' }, parent ? `${kind} · ${parent}` : kind), h('strong', {}, hw.n)),
-      main ? h('div', { class: 'sbig ' + sensLevel(hw, main.v, main.n), title: sensName(main) }, fmtT(main.v)) : null),
+      main || pw ? h('div', { class: 'sside' },
+        main ? h('div', { class: 'sbig ' + sensLevel(hw, main.v, main.n), title: sensName(main) }, fmtT(main.v)) : null,
+        pw ? h('div', { class: 'spow', title: 'Consommation électrique en direct' }, fmtW(pw.v)) : null) : null),
     rows.length ? h('div', { class: 'srows' }, rows.map(s => sensRow(hw, s))) : null);
+}
+
+// Consommation en direct : processeur + cartes graphiques (la partie graphique du processeur est déjà
+// dans le processeur). Le reste du PC n'a pas de capteur : estimation à la prise, annoncée comme telle.
+function sensPowerCard(hw) {
+  const items = hw.filter(x => !sensIgpu(x)).map(x => ({ hw: x, s: sensPower(x) })).filter(x => x.s);
+  if (!items.length) return null;
+  const total = items.reduce((a, x) => a + x.s.v, 0);
+  sensPeak = Math.max(sensPeak, total);
+  // Carte mère, mémoire, disques, ventilateurs ≈ 50 W ; alimentation ≈ 88 % de rendement
+  const wall = Math.round((total + 50) / 0.88 / 10) * 10;
+  return h('div', { class: 'card scard spower' },
+    h('div', { class: 'shead' },
+      h('div', {}, h('div', { class: 'muted small' }, 'Consommation en direct'), h('strong', {}, 'Processeur et carte graphique')),
+      h('div', { class: 'sside' }, h('div', { class: 'sbig' }, fmtW(total)),
+        h('div', { class: 'muted small', title: 'Total le plus haut vu depuis l’ouverture de PeriphHub' }, 'pic ' + fmtW(sensPeak)))),
+    h('div', { class: 'srows' }, items.map(({ hw: x, s }) => h('div', { class: 'pwrow' },
+      h('div', { class: 'srow' },
+        h('span', { class: 'sname', title: x.n }, SENS_KIND[x.k] || x.k),
+        h('span', { class: 'sval' }, fmtW(s.v)),
+        s.max ? h('span', { class: 'smax muted small', title: 'Maximum relevé depuis que le service tourne' }, 'max ' + fmtW(s.max)) : h('span')),
+      h('div', { class: 'pwbar' }, h('i', { style: `width:${total ? Math.max(2, s.v / total * 100) : 0}%` }))))),
+    h('div', { class: 'muted small' }, `Le PC entier tire environ ${wall} W à la prise (estimation : carte mère, mémoire, disques, ventilateurs et pertes de l’alimentation ne sont pas mesurés).`));
 }
 
 function sensIntro() {
@@ -100,7 +142,7 @@ function sensIntro() {
   if (i.module === false) return h('div', { class: 'card' }, 'Le module capteurs manque dans cette version de PeriphHub. Réinstallez la dernière version.');
   return h('div', { class: 'card sintro' },
     h('strong', {}, 'Voir les températures de votre PC'),
-    h('p', { class: 'muted' }, 'Processeur, carte mère (sondes et ventilateurs), carte graphique et disques. Windows réserve ces capteurs aux administrateurs : '
+    h('p', { class: 'muted' }, 'Processeur, carte mère (sondes et ventilateurs), carte graphique et disques, avec la consommation électrique en direct. Windows réserve ces capteurs aux administrateurs : '
       + 'PeriphHub installe une fois pour toutes un petit service en lecture seule (LibreHardwareMonitor et le pilote signé PawnIO). '
       + 'Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne touche à aucun réglage.'),
     h('button', { class: 'lg', disabled: sensBusy, onclick: () => sensAdmin('install') }, sensBusy ? 'Installation…' : 'Activer (une validation Windows)'));
@@ -123,6 +165,8 @@ function renderSensors() {
       const hw = [...(v.hw || [])].sort((a, b) => SENS_ORDER.indexOf(a.k) - SENS_ORDER.indexOf(b.k));
       const byId = new Map(hw.map(x => [x.id, x]));
       const cards = hw.map(x => sensCard(x, x.p ? byId.get(x.p)?.n : '')).filter(Boolean);
+      const power = sensPowerCard(hw);
+      if (power) parts.push(power);
       if (cards.length) parts.push(h('div', { class: 'sgrid' }, cards));
       else parts.push(h('div', { class: 'card' }, 'Aucun capteur lisible sur ce PC. Envoyez un diagnostic (Options) : il dit quelles puces ont été trouvées.'));
       if (v.info && !v.info.pawnio) parts.push(h('div', { class: 'card warn' }, 'Le pilote PawnIO n’est pas installé : le processeur et la carte mère restent illisibles. ',
@@ -135,7 +179,8 @@ function renderSensors() {
   const sub = $('tempsSub');
   const cpu = v?.hw?.find(x => x.k === 'Cpu');
   const t = cpu && sensMain(cpu);
-  if (sub) sub.textContent = t ? 'Processeur ' + fmtT(t.v) : (v?.installed ? 'Activé' : 'Désactivé');
+  const w = (v?.hw || []).filter(x => !sensIgpu(x)).reduce((a, x) => a + (sensPower(x)?.v || 0), 0);
+  if (sub) sub.textContent = t ? 'Processeur ' + fmtT(t.v) + (w ? ' · ' + fmtW(w) : '') : (v?.installed ? 'Activé' : 'Désactivé');
 }
 
 async function sensorsPoll() {
@@ -184,8 +229,11 @@ async function sensorsDiag() {
     const n = k => hw.s.filter(s => s.k === k).length;
     const temps = hw.s.filter(sensTempOk).map(s => `${s.n} ${Math.round(s.v)}`).slice(0, 12).join(', ');
     const fans = hw.s.filter(s => s.k === 'Fan').map(s => `${s.n} ${Math.round(s.v ?? -1)}`).slice(0, 10).join(', ');
-    lines.push(`  ${hw.k} « ${hw.n} »${hw.p ? ' (sous ' + hw.p + ')' : ''} : ${n('Temperature')} temp., ${n('Fan')} ventil., ${n('Control')} commandes`
-      + (temps ? ` · ${temps}` : '') + (fans ? ` · ventilateurs ${fans}` : ''));
+    const pw = sensPower(hw);
+    const pws = hw.s.filter(s => s.k === 'Power' && !/^Core #\d/i.test(s.n)).map(s => `${s.n} ${Math.round(s.v ?? -1)}`).slice(0, 6).join(', ');
+    lines.push(`  ${hw.k} « ${hw.n} »${hw.p ? ' (sous ' + hw.p + ')' : ''} : ${n('Temperature')} temp., ${n('Fan')} ventil., ${n('Control')} commandes, ${n('Power')} conso.`
+      + (temps ? ` · ${temps}` : '') + (fans ? ` · ventilateurs ${fans}` : '')
+      + (pws ? ` · watts ${pws}${pw ? ' (retenu : ' + pw.n + ')' : ' (aucun retenu)'}` : ''));
   }
   return lines;
 }

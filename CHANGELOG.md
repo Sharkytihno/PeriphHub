@@ -3,6 +3,18 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.2.1
+
+*In English: live power draw on the Temperatures page. CPU and graphics card wattage, their total and
+peak, plus an estimate of the whole PC at the wall. No new Windows prompt needed.*
+
+- **Consommation en direct** sur la page Températures : watts du processeur et de la carte graphique,
+  leur total, le pic depuis l’ouverture de l’appli, et une estimation du PC entier à la prise (carte mère,
+  mémoire, disques et ventilateurs n’ont pas de capteur de consommation). Chaque composant affiche aussi
+  ses watts sous sa température, et le total apparaît dans le menu à gauche.
+- Rien à réinstaller : le service des capteurs mesurait déjà ces valeurs.
+- Diagnostic : capteurs de consommation trouvés et celui retenu pour chaque composant.
+
 ## 1.2.0
 
 *In English: a new Temperatures page. CPU, motherboard sensors and fans, graphics cards and drives, live.

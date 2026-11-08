@@ -693,6 +693,12 @@ main > section { animation: pagein .26s var(--ease); }
 .scard { display: flex; flex-direction: column; gap: 10px; }
 .shead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .sbig { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; }
+.sside { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.spow { font-size: 14px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spower { margin-bottom: 14px; }
+.pwrow { display: flex; flex-direction: column; gap: 5px; }
+.pwbar { height: 6px; border-radius: 3px; background: var(--line2); overflow: hidden; }
+.pwbar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
 .srows { display: grid; gap: 4px; }
 .srow { display: grid; grid-template-columns: 1fr auto 72px; gap: 10px; align-items: baseline; font-size: 13px; }
 .srow .sname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -975,7 +975,7 @@ const I18N_EN = {
   "Consommation": "Power",
   "Températures": "Temperatures",
   "Processeur, carte mère": "CPU, motherboard",
-  "Processeur, carte mère, carte graphique et disques, en direct.": "CPU, motherboard, graphics card and drives, live.",
+  "Processeur, carte mère, carte graphique et disques : températures et consommation en direct.": "CPU, motherboard, graphics card and drives: live temperatures and power draw.",
   "Processeur": "CPU",
   "Carte graphique": "Graphics card",
   "Carte mère": "Motherboard",
@@ -1003,6 +1003,11 @@ const I18N_EN = {
   "Validation Windows refusée : rien n’a été changé.": "Windows prompt declined: nothing was changed.",
   "Capteurs activés": "Sensors turned on",
   "Accès aux capteurs retiré": "Sensor access removed",
+  "Consommation en direct": "Live power draw",
+  "Processeur et carte graphique": "CPU and graphics card",
+  "Total le plus haut vu depuis l’ouverture de PeriphHub": "Highest total since PeriphHub was opened",
+  "Consommation électrique en direct": "Live power draw",
+  "Processeur, carte mère (sondes et ventilateurs), carte graphique et disques, avec la consommation électrique en direct. Windows réserve ces capteurs aux administrateurs : PeriphHub installe une fois pour toutes un petit service en lecture seule (LibreHardwareMonitor et le pilote signé PawnIO). Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne touche à aucun réglage.": "CPU, motherboard (sensors and fans), graphics card and drives, with live power draw. Windows only lets administrators read these sensors: PeriphHub installs, once and for all, a small read-only service (LibreHardwareMonitor and the signed PawnIO driver). It only runs while this page is open and stops on its own afterwards. It changes no setting.",
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -1134,6 +1139,8 @@ const I18N_EN_T = {
   // Températures
   'max {}': 'max {}',
   'Processeur {}': 'CPU {}',
+  'pic {}': 'peak {}',
+  'Le PC entier tire environ {} W à la prise (estimation : carte mère, mémoire, disques, ventilateurs et pertes de l’alimentation ne sont pas mesurés).': 'The whole PC draws about {} W at the wall (estimate: motherboard, memory, drives, fans and power supply losses are not measured).',
   'Le service des capteurs a rencontré une erreur : {}': 'The sensor service hit an error: {}',
 };
 
