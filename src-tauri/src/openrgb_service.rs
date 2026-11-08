@@ -23,7 +23,7 @@ pub const SERVICE: &str = "PeriphHubOpenRGB";
 // PawnIO 2.2.0 (à changer avec scripts/fetch-openrgb.ps1)
 const PAWNIO_SHA256: &str = "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032";
 
-fn wide(s: &str) -> Vec<u16> {
+pub(crate) fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
@@ -34,7 +34,7 @@ pub fn service_dir() -> Option<PathBuf> {
     Some(PathBuf::from(base).join("PeriphHub-OpenRGB"))
 }
 
-struct Handle(SC_HANDLE);
+pub(crate) struct Handle(pub(crate) SC_HANDLE);
 impl Drop for Handle {
     fn drop(&mut self) {
         if !self.0.is_null() {
@@ -43,12 +43,12 @@ impl Drop for Handle {
     }
 }
 
-fn manager(access: u32) -> Option<Handle> {
+pub(crate) fn manager(access: u32) -> Option<Handle> {
     let h = unsafe { OpenSCManagerW(std::ptr::null(), std::ptr::null(), access) };
     (!h.is_null()).then_some(Handle(h))
 }
 
-fn open(scm: &Handle, name: &str, access: u32) -> Option<Handle> {
+pub(crate) fn open(scm: &Handle, name: &str, access: u32) -> Option<Handle> {
     let n = wide(name);
     let h = unsafe { OpenServiceW(scm.0, n.as_ptr(), access) };
     (!h.is_null()).then_some(Handle(h))
@@ -88,7 +88,7 @@ pub fn info() -> Value {
     json!({ "service": label, "serviceStale": stale, "pawnio": state("PawnIO").is_some() })
 }
 
-fn stop_and_wait(svc: &Handle) {
+pub(crate) fn stop_and_wait(svc: &Handle) {
     let mut st: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut st) };
     for _ in 0..40 {
@@ -97,6 +97,27 @@ fn stop_and_wait(svc: &Handle) {
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
+}
+
+/// PawnIO installé (ou déjà là) : son installeur officiel est copié dans `protected` (dossier de Program
+/// Files) puis vérifié avant d'être lancé sans fenêtre. Partagé avec le module capteurs (sensors.rs).
+pub(crate) fn ensure_pawnio(res: &std::path::Path, protected: &std::path::Path) -> bool {
+    if state("PawnIO").is_some() {
+        return true;
+    }
+    let setup = protected.join("PawnIO_setup.exe");
+    if std::fs::copy(res.join("PawnIO_setup.exe"), &setup).is_err() {
+        return false;
+    }
+    let ok = crate::openrgb::sha256_file(&setup).as_deref() == Some(PAWNIO_SHA256)
+        && std::process::Command::new(&setup)
+            .args(["-install", "-silent"])
+            .status()
+            .ok()
+            .and_then(|s| s.code())
+            .is_some_and(|c| c == 0 || c == 3010); // 3010 : redémarrage conseillé
+    let _ = std::fs::remove_file(&setup);
+    ok
 }
 
 /// Instance administrateur : `periphhub.exe --openrgb-service install|uninstall`.
@@ -109,7 +130,7 @@ pub fn elevated_main(action: &str) -> i32 {
     }
 }
 
-fn exe_dir() -> Option<PathBuf> {
+pub(crate) fn exe_dir() -> Option<PathBuf> {
     std::env::current_exe().ok()?.parent().map(PathBuf::from)
 }
 
@@ -148,22 +169,8 @@ fn install() -> i32 {
     }
 
     // PawnIO : installeur officiel, copié lui aussi dans le dossier protégé avant vérification et lancement
-    if state("PawnIO").is_none() {
-        let setup = dst.join("PawnIO_setup.exe");
-        if std::fs::copy(res.join("PawnIO_setup.exe"), &setup).is_err() {
-            return 3;
-        }
-        let ok = crate::openrgb::sha256_file(&setup).as_deref() == Some(PAWNIO_SHA256)
-            && std::process::Command::new(&setup)
-                .args(["-install", "-silent"])
-                .status()
-                .ok()
-                .and_then(|s| s.code())
-                .is_some_and(|c| c == 0 || c == 3010); // 3010 : redémarrage conseillé
-        let _ = std::fs::remove_file(&setup);
-        if !ok {
-            return 3;
-        }
+    if !ensure_pawnio(&res, &dst) {
+        return 3;
     }
 
     let path = wide(&format!("\"{}\"", dst.join("OpenRGB.exe").display()));
@@ -223,6 +230,11 @@ fn uninstall() -> i32 {
 /// Relance PeriphHub en administrateur pour `action` (une fenêtre de validation Windows) et attend.
 /// Ok(None) : l'utilisateur a refusé ; Ok(Some(code)) : code de sortie de l'instance administrateur.
 pub fn elevate(action: &str) -> Result<Option<u32>, String> {
+    elevate_with("--openrgb-service", action)
+}
+
+/// Même chose pour un autre module administrateur (`flag` : --openrgb-service, --sensors-service)
+pub(crate) fn elevate_with(flag: &str, action: &str) -> Result<Option<u32>, String> {
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
     use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
@@ -231,7 +243,7 @@ pub fn elevate(action: &str) -> Result<Option<u32>, String> {
         return Err("action inconnue".into());
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let (verb, file, params) = (wide("runas"), wide(&exe.to_string_lossy()), wide(&format!("--openrgb-service {action}")));
+    let (verb, file, params) = (wide("runas"), wide(&exe.to_string_lossy()), wide(&format!("{flag} {action}")));
     unsafe {
         let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;

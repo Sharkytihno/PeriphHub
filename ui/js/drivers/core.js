@@ -62,6 +62,11 @@ async function sysDiag() {
     + (o.name ? `${o.name} ${o.version || ''} build ${o.build}`.replace(/\s+/g, ' ') : navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows ?')
     + (o.arch ? ' · ' + o.arch : '') + (s?.admin ? ' · lancé en administrateur' : ''));
   if (s) lines.push(`WebView2 ${s.webview2} · Smart App Control : ${s.smart_app_control} · avis de Windows : ${s.notify}`);
+  // Matériel (modèles, sans numéro de série) : dit quelles puces de capteurs attendre
+  const hw = s?.hardware;
+  if (hw) lines.push(`Carte mère : ${hw.board || '?'}${hw.system && hw.system !== hw.board ? ' · système ' + hw.system : ''}${hw.bios ? ' · BIOS ' + hw.bios : ''}`
+    + ` · processeur : ${hw.cpu || '?'} · graphique : ${(hw.gpus || []).join(', ') || '?'}`);
+  if (typeof sensorsDiag === 'function') try { lines.push(...await sensorsDiag()); } catch (e) { lines.push('Capteurs : ' + (e?.message || e)); }
   const bg = typeof bgInfo !== 'undefined' ? bgInfo : null;
   const up = Math.round(performance.now() / 60000);
   lines.push(`Ouvert depuis ${up >= 60 ? Math.floor(up / 60) + ' h ' : ''}${up % 60} min${bg?.hidden_start ? ' (lancé avec Windows)' : ''}`
@@ -289,7 +294,10 @@ async function driversScan() {
         // est confié à OpenRGB (carte mère ASUS Aura…) : aucun pilote maison n'est attendu, ce n'est pas un
         // échec (l'accueil affichait « Dernier essai : aucun pilote… » sous « réglable avec OpenRGB »)
         const viaOpenrgb = (report?.devices || []).some(r => (r.vid + ':' + r.pid).toUpperCase() === id && r.status === 'rgb');
-        if (!viaOpenrgb && !drvErrors.has(id)) drvErrors.set(id, ['aucun pilote ne correspond à ses interfaces']);
+        // Pareil s'il est déjà piloté autrement (casque par HeadsetControl : Arctis Nova 5, ticket #13)
+        const liveOther = [...drvLive.values()].some(i => i.dev && devId(i.dev) === id);
+        if (liveOther && drvErrors.get(id)?.[0] === 'aucun pilote ne correspond à ses interfaces') drvErrors.delete(id);
+        if (!viaOpenrgb && !liveOther && !drvErrors.has(id)) drvErrors.set(id, ['aucun pilote ne correspond à ses interfaces']);
         continue;
       }
       group.forEach(d => drvBusy.add(d.info?.path));

@@ -136,6 +136,37 @@ fn smart_app_control() -> &'static str {
     }
 }
 
+// Carte mère, processeur et cartes graphiques (registre, sans droits) : le diagnostic dit d'emblée quelles
+// puces de capteurs attendre. Modèles seulement, aucun numéro de série.
+fn hardware() -> Value {
+    let hk = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let bios = hk.open_subkey("HARDWARE\\DESCRIPTION\\System\\BIOS");
+    let b = |name: &str| -> String { bios.as_ref().ok().and_then(|k| k.get_value::<String, _>(name).ok()).unwrap_or_default().trim().to_string() };
+    let cpu = hk
+        .open_subkey("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0")
+        .and_then(|k| k.get_value::<String, _>("ProcessorNameString"))
+        .unwrap_or_default();
+    let mut gpus: Vec<String> = Vec::new();
+    if let Ok(class) = hk.open_subkey("SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}") {
+        for sub in class.enum_keys().flatten().filter(|k| k.chars().all(|c| c.is_ascii_digit())) {
+            if let Ok(k) = class.open_subkey(&sub) {
+                if let Ok(d) = k.get_value::<String, _>("DriverDesc") {
+                    if !gpus.contains(&d) && !d.contains("Basic Display") && !d.contains("Remote Display") {
+                        gpus.push(d);
+                    }
+                }
+            }
+        }
+    }
+    json!({
+        "board": format!("{} {}", b("BaseBoardManufacturer"), b("BaseBoardProduct")).trim(),
+        "system": format!("{} {}", b("SystemManufacturer"), b("SystemProductName")).trim(),
+        "bios": b("BIOSVersion"),
+        "cpu": cpu.trim(),
+        "gpus": gpus,
+    })
+}
+
 fn is_admin() -> bool {
     unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
 }
@@ -145,6 +176,8 @@ pub fn sys_info() -> Value {
     json!({
         "periphhub": env!("CARGO_PKG_VERSION"),
         "os": os(),
+        "hardware": hardware(),
+        "sensors": crate::sensors::info(),
         "webview2": tauri::webview_version().unwrap_or_else(|e| format!("introuvable ({e})")),
         "store": crate::update::from_store(),
         "admin": is_admin(),

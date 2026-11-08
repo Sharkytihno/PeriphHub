@@ -17,6 +17,7 @@ mod pads;
 mod pnp;
 mod procs;
 mod scan;
+mod sensors;
 mod sign;
 mod slim;
 mod startup;
@@ -163,6 +164,41 @@ async fn openrgb_admin(action: String) -> Result<bool, String> {
     .await
 }
 
+/// Températures et ventilateurs (service des capteurs démarré s'il le faut)
+#[tauri::command]
+async fn sensors_read() -> Result<Value, String> {
+    blocking(sensors::read).await
+}
+
+#[tauri::command]
+async fn sensors_info() -> Result<Value, String> {
+    blocking(|| Ok(sensors::info())).await
+}
+
+/// Installe (« install ») ou retire (« uninstall ») le service des capteurs : une validation Windows.
+/// false : l'utilisateur l'a refusée.
+#[tauri::command]
+async fn sensors_admin(action: String) -> Result<bool, String> {
+    blocking(move || {
+        if !matches!(action.as_str(), "install" | "uninstall") {
+            return Err("action inconnue".into());
+        }
+        let code = match openrgb_service::elevate_with("--sensors-service", &action)? {
+            None => return Ok(false),
+            Some(c) => c,
+        };
+        match code {
+            0 => Ok(true),
+            1 => Err("module capteurs livré avec PeriphHub incomplet ou modifié : réinstallez PeriphHub".into()),
+            2 => Err("copie du module capteurs dans Program Files impossible".into()),
+            3 => Err("installation du pilote PawnIO impossible (antivirus ?)".into()),
+            4 => Err("création du service des capteurs impossible".into()),
+            c => Err(format!("échec (code {c})")),
+        }
+    })
+    .await
+}
+
 #[tauri::command]
 async fn openrgb_color(index: u32, rgb: [u8; 3]) -> Result<(), String> {
     blocking(move || openrgb::set_color(index, rgb)).await
@@ -289,6 +325,10 @@ fn main() {
     if args.len() == 3 && args[1] == "--openrgb-service" {
         std::process::exit(openrgb_service::elevated_main(&args[2]));
     }
+    // Instance administrateur : service des capteurs (températures, sensors.rs)
+    if args.len() == 3 && args[1] == "--sensors-service" {
+        std::process::exit(sensors::elevated_main(&args[2]));
+    }
     // `--scan` : affiche l'analyse en JSON dans la console (tests, rapports de bug)
     if std::env::args().any(|a| a == "--scan") {
         // l'exe de version finale n'a pas de console : on se rattache à celle qui l'a lancé
@@ -355,6 +395,9 @@ fn main() {
             pads_list,
             pads_rumble,
             openrgb_color,
+            sensors_read,
+            sensors_info,
+            sensors_admin,
             openrgb_color_all,
             openrgb_resize,
             openrgb_mode,

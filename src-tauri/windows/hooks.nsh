@@ -70,6 +70,11 @@
   ${AndIf} ${FileExists} "$PROGRAMFILES64\PeriphHub-OpenRGB\OpenRGB.exe"
     ExecShellWait "runas" "$INSTDIR\${MAINBINARYNAME}.exe" "--openrgb-service uninstall" SW_HIDE
   ${EndIf}
+  ; Températures activées (service des capteurs, src-tauri/src/sensors.rs) : même traitement
+  ${If} $UpdateMode <> 1
+  ${AndIf} ${FileExists} "$PROGRAMFILES64\PeriphHub-Sensors\PeriphHubSensors.exe"
+    ExecShellWait "runas" "$INSTDIR\${MAINBINARYNAME}.exe" "--sensors-service uninstall" SW_HIDE
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

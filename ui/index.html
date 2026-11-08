@@ -31,6 +31,10 @@
       <svg class="ic" viewBox="0 0 24 24"><path d="M5 19c9 0 14-6 14-15-9 0-14 5-14 14z"/><path d="M5 19 13 11"/></svg>
       <span class="nl">Allègement<small id="slimSub">Analyse…</small></span><span class="badge" id="slimBadge" hidden></span>
     </button>
+    <button data-tab="temps">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v7"/></svg>
+      <span class="nl">Températures<small id="tempsSub">Processeur, carte mère</small></span>
+    </button>
 
     <div class="ngroup" id="devGroup" hidden>Mes appareils</div>
     <button data-tab="mouse" hidden>
@@ -73,6 +77,13 @@
         <div class="pact"><span class="status" id="slimStatus"></span><button class="ghost" id="copyReport" disabled>Copier le rapport</button></div>
       </header>
       <div id="slimBody"></div>
+    </section>
+
+    <section class="page" id="temps">
+      <header class="phead">
+        <div class="ptitle"><h2>Températures</h2><div class="muted small">Processeur, carte mère, carte graphique et disques, en direct.</div></div>
+      </header>
+      <div id="tempsBody"></div>
     </section>
 
     <section class="page" id="mouse">
@@ -138,6 +149,7 @@
   <script src="js/drivers/media.js" defer></script>
   <script src="js/drivers/via.js" defer></script>
   <script src="js/drivers/openrgb.js" defer></script>
+  <script src="js/sensors.js" defer></script>
   <script src="js/shell.js" defer></script>
 </body>
 </html>
