@@ -71,6 +71,8 @@ function showTab(name) {
     if (typeof openrgbPoll === 'function') openrgbPoll().then(() => { if (!$('options').hidden) renderOptions(); });
   }
   if (name === 'slim') renderSlim();
+  // Températures : lecture immédiate puis toutes les 2 s tant que la page reste ouverte (js/sensors.js)
+  if (name === 'temps' && typeof sensorsPoll === 'function') sensorsPoll();
   refreshHome();
 }
 for (const b of document.querySelectorAll('nav [data-tab]')) b.onclick = () => showTab(b.dataset.tab);

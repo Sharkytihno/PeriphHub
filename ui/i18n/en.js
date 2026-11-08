@@ -961,6 +961,8 @@ const I18N_EN = {
   'Rien n’est supprimé ni désinstallé. « Annuler l’allègement » remet tout comme avant.': 'Nothing is deleted or uninstalled. “Undo slimming” puts everything back.',
   'Windows vous demandera une validation.': 'Windows will ask you for confirmation.',
   // ---------- Températures ----------
+  "Socket du processeur": "CPU socket",
+  "Graphique intégré au processeur": "Integrated graphics",
   "Point chaud": "Hot spot",
   "Mémoire": "Memory",
   "Puce": "Core",
@@ -980,7 +982,7 @@ const I18N_EN = {
   "Sondes de la carte mère": "Motherboard sensors",
   "Contrôleur de la carte mère": "Motherboard controller",
   "Disque": "Drive",
-  "Maximum depuis l’ouverture de la page": "Highest value since the page was opened",
+  "Maximum relevé depuis que le service tourne": "Highest value since the service started",
   "Les températures ne s’affichent que dans l’appli PeriphHub.": "Temperatures are only shown in the PeriphHub app.",
   "Le module capteurs manque dans cette version de PeriphHub. Réinstallez la dernière version.": "The sensor module is missing from this PeriphHub build. Reinstall the latest version.",
   "Voir les températures de votre PC": "See your PC temperatures",
@@ -1170,4 +1172,5 @@ const I18N_EN_RE = [
   [/^Ventilateur processeur ?(\d*)$/, (m, n) => `CPU fan ${n}`.trim()],
   [/^Ventilateur boîtier ?(\d*)$/, (m, n) => `Case fan ${n}`.trim()],
   [/^Ventilateur ?(\d*)$/, (m, n) => `Fan ${n}`.trim()],
+  [/^Emplacement PCIe (x\d+)$/, (m, x) => `PCIe ${x} slot`],
 ];

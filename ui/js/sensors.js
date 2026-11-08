@@ -15,7 +15,8 @@ const SENS_KIND = {
 const SENS_ORDER = ['Cpu', 'GpuNvidia', 'GpuAmd', 'GpuIntel', 'Motherboard', 'SuperIO', 'EmbeddedController', 'Storage'];
 
 // Valeur affichable : une sonde débranchée renvoie souvent 0, -55, 127 ou 255 °C
-const sensTempOk = s => s.k === 'Temperature' && s.v != null && s.v > 0 && s.v < 120;
+// Les SSD publient aussi leurs seuils d'alerte comme des « températures » : ce ne sont pas des mesures
+const sensTempOk = s => s.k === 'Temperature' && s.v != null && s.v > 0 && s.v < 120 && !/warning|critical|limit|threshold/i.test(s.n);
 const sensFanOk = s => s.k === 'Fan' && s.v != null && (s.v > 0 || (s.max || 0) > 0) && s.v < 20000;
 
 // Seuils (°C) « chaud » et « trop chaud » : un point chaud de carte graphique à 90 °C est normal, un SSD à 70 non
@@ -32,7 +33,7 @@ function sensLevel(hw, t, name = '') {
 const SENS_NAMES = [
   [/^GPU Hot ?Spot$/i, 'Point chaud'], [/^GPU Memory( Junction)?$/i, 'Mémoire'], [/^GPU Core$/i, 'Puce'],
   [/^Core \(Tctl\/Tdie\)$|^CPU Package$/i, 'Processeur'], [/^Core Max$/i, 'Cœur le plus chaud'], [/^Core Average$/i, 'Moyenne des cœurs'],
-  [/^CCD ?(\d+) \(Tdie\)$/i, 'Bloc de cœurs $1'], [/^System #?(\d*)$/i, 'Carte mère $1'], [/^Chipset$|^PCH$/i, 'Chipset'],
+  [/^CCD ?(\d+) \(Tdie\)$/i, 'Bloc de cœurs $1'], [/^System ?#?(\d*)$/i, 'Carte mère $1'], [/^CPU$/i, 'Socket du processeur'], [/^PCIe (x\d+)$/i, 'Emplacement PCIe $1'], [/^Chipset$|^PCH$/i, 'Chipset'],
   [/^Temperature$/i, 'Température'], [/^Temperature #?(\d+)$/i, 'Capteur $1'], [/^Composite Temperature$/i, 'Température'],
   [/^CPU (Optional )?Fan( #?(\d+))?$/i, 'Ventilateur processeur $3'], [/^(System|Chassis) Fan #?(\d*)$/i, 'Ventilateur boîtier $2'],
   [/pump/i, 'Pompe'], [/^GPU Fan( #?(\d+))?$/i, 'Ventilateur $2'], [/^Fan #?(\d+)$/i, 'Ventilateur $1'],
@@ -76,14 +77,16 @@ function sensRow(hw, s) {
   return h('div', { class: 'srow' },
     h('span', { class: 'sname', title: s.n }, sensName(s)),
     h('span', { class: 'sval ' + lvl }, fmtV(s)),
-    s.k === 'Temperature' && s.max ? h('span', { class: 'smax muted small', title: 'Maximum depuis l’ouverture de la page' }, 'max ' + fmtT(s.max)) : h('span'));
+    s.k === 'Temperature' && s.max ? h('span', { class: 'smax muted small', title: 'Maximum relevé depuis que le service tourne' }, 'max ' + fmtT(s.max)) : h('span'));
 }
 
 function sensCard(hw, parent) {
   const main = sensMain(hw);
   const rows = sensRows(hw);
   if (!main && !rows.length) return null;
-  const kind = SENS_KIND[hw.k] || hw.k;
+  // Partie graphique du processeur (Ryzen, Intel UHD…) : à distinguer de la carte graphique
+  const igpu = hw.k === 'GpuIntel' || (hw.k === 'GpuAmd' && /Radeon\(TM\) Graphics$|^AMD Radeon Graphics$/i.test(hw.n));
+  const kind = igpu ? 'Graphique intégré au processeur' : SENS_KIND[hw.k] || hw.k;
   return h('div', { class: 'card scard' },
     h('div', { class: 'shead' },
       h('div', {}, h('div', { class: 'muted small' }, parent ? `${kind} · ${parent}` : kind), h('strong', {}, hw.n)),
@@ -188,8 +191,8 @@ async function sensorsDiag() {
 }
 
 $('temps') && (() => {
-  // Page ouverte : lecture immédiate puis toutes les 2 s ; quittée : plus rien
-  new MutationObserver(() => { if (!$('temps').hidden) sensorsPoll(); else clearTimeout(sensTimer); })
+  // Page quittée : plus aucune lecture (l'ouverture est gérée par showTab, js/shell.js)
+  new MutationObserver(() => { if ($('temps').hidden) clearTimeout(sensTimer); })
     .observe($('temps'), { attributes: true, attributeFilter: ['hidden'] });
   // Sous-titre de la barre latérale, sans démarrer le service
   if (NATIVE) nativeInvoke('sensors_info').then(i => {

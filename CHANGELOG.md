@@ -3,6 +3,26 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.2.0
+
+*In English: a new Temperatures page. CPU, motherboard sensors and fans, graphics cards and drives, live.
+Windows only lets administrators read these sensors, so PeriphHub installs, after one Windows prompt, a
+small read-only service (LibreHardwareMonitor and the signed PawnIO driver). It only runs while the page
+is open and stops on its own afterwards. The diagnostic now also names the motherboard, CPU, graphics cards
+and the sensor chips that were found.*
+
+- **Nouvelle page Températures** : processeur, sondes et ventilateurs de la carte mère, carte graphique
+  (puce, point chaud, mémoire, ventilateur, consommation), partie graphique du processeur et disques,
+  relus toutes les 2 secondes, en couleur selon le niveau.
+- **Une seule validation Windows**, une fois pour toutes : Windows réserve ces capteurs aux
+  administrateurs. PeriphHub installe un petit service en lecture seule (LibreHardwareMonitor, des
+  centaines de cartes mères reconnues, et le pilote signé PawnIO, déjà utilisé pour l’éclairage). Il ne
+  démarre que quand la page est ouverte et s’arrête tout seul 3 minutes après : aucune mémoire prise le
+  reste du temps. Il ne touche à aucun réglage. « Retirer l’accès aux capteurs » le supprime.
+- **Diagnostic** : modèle de carte mère, BIOS, processeur, cartes graphiques et puces de capteurs trouvées.
+- Casque piloté par HeadsetControl (Arctis Nova 5…) : plus de faux « aucun pilote ne correspond » dans
+  le diagnostic.
+
 ## 1.1.0
 
 *In English: a simpler, cleaner look. Plain colours instead of gradients, no more greeting on the home
