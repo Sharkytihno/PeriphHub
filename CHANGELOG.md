@@ -3,7 +3,7 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
-## À venir
+## 1.3.0
 
 *In English: keyboard and screen-reader access (switches, dialogs, current page), better contrast,
 F5 rescans instead of reloading, temperature readings stop while the window is hidden, and several
