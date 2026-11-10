@@ -491,6 +491,26 @@ pub(crate) fn sha256_file(p: &std::path::Path) -> Option<String> {
     Some(Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Empreinte d'un fichier, recalculée seulement s'il a changé (taille ou date). Pour l'AFFICHAGE
+/// (« le service date d'une version précédente ») : l'état des services est relu toutes les 30 s et
+/// à chaque diagnostic, et relire à chaque fois des dizaines de Mo n'apporte rien. Les vérifications
+/// de sécurité (avant de lancer ou d'installer un module) passent toujours par `sha256_file`.
+pub(crate) fn sha256_cached(p: &std::path::Path) -> Option<String> {
+    type Seen = std::collections::HashMap<PathBuf, (u64, Option<std::time::SystemTime>, String)>;
+    static SEEN: OnceLock<Mutex<Seen>> = OnceLock::new();
+    let meta = std::fs::metadata(p).ok()?;
+    let stamp = (meta.len(), meta.modified().ok());
+    let seen = SEEN.get_or_init(Default::default);
+    if let Some((len, at, hash)) = seen.lock().unwrap_or_else(|e| e.into_inner()).get(p) {
+        if (*len, *at) == stamp {
+            return Some(hash.clone());
+        }
+    }
+    let hash = sha256_file(p)?;
+    seen.lock().unwrap_or_else(|e| e.into_inner()).insert(p.to_path_buf(), (stamp.0, stamp.1, hash.clone()));
+    Some(hash)
+}
+
 /// Chaque fichier de `dir` est celui de la version publiée (table FILES)
 pub(crate) fn verify_dir(dir: &std::path::Path) -> Result<(), String> {
     for (name, want) in FILES {

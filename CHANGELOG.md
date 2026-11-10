@@ -3,6 +3,34 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## À venir
+
+*In English: keyboard and screen-reader access (switches, dialogs, current page), better contrast,
+F5 rescans instead of reloading, temperature readings stop while the window is hidden, and several
+reliability and privacy fixes.*
+
+- **Utilisable au clavier** : les interrupteurs se règlent avec Tab et Espace (ils étaient hors d’atteinte),
+  les fenêtres gardent le focus, annoncent leur titre et le rendent à la fermeture, la page en cours et
+  le choix en cours sont annoncés aux lecteurs d’écran.
+- **Plus lisible** : texte des boutons, sous-titres du menu et pastille de l’allègement mieux contrastés ;
+  une température élevée est écrite (« Chaud », « Très chaud »), plus seulement colorée ; contours visibles
+  avec les thèmes de contraste de Windows.
+- **Une appli, pas une page web** : F5 et Ctrl+R relancent l’analyse au lieu de recharger toute
+  l’interface ; plus d’impression, de recherche ni de menu « Enregistrer sous » du navigateur. Le clic
+  droit reste sur les champs de saisie et le texte sélectionné.
+- **Températures** : plus aucune lecture quand la fenêtre est fermée (PeriphHub près de l’horloge) avec
+  cette page restée ouverte. Le service des capteurs ne s’arrêtait alors jamais.
+- **Annuler l’allègement** ne reste plus bloqué sur « remis en partie » quand le logiciel a retiré de
+  lui-même un de ses lancements automatiques (désinstallation, mise à jour).
+- Menu réduit aux icônes (fenêtre étroite) : chaque bouton dit son nom au survol. Notifications : un clic
+  les ferme. Type d’appareil écrit en clair (« éclairage », plus « rgb »).
+- Plus léger : l’état d’OpenRGB n’est plus relu à chaque affichage de l’accueil, et l’empreinte des
+  services n’est recalculée que si leur fichier a changé.
+- Diagnostics envoyés : un nom de session Windows en deux mots (« Jean Dupont ») est retiré en entier
+  par le relais ; la limite d’envois ne peut plus être contournée avec une fausse adresse.
+- Sécurité de la fabrication : actions GitHub épinglées à une empreinte, jeton de la CI en lecture seule,
+  règles de contenu de l’interface resserrées.
+
 ## 1.2.1
 
 *In English: live power draw on the Temperatures page. CPU and graphics card wattage, their total and

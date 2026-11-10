@@ -60,9 +60,19 @@ setInterval(() => {
 export function scrub(text) {
   return text
     .replace(/\\\\\?\\[^\s'"`]+/gi, '<chemin>')
-    .replace(/[A-Z]:\\Users\\[^\\\s'"`]+/gi, 'C:\\Users\\<utilisateur>')
+    // Nom de session avec des espaces (« Jean Dupont ») : tout le dossier quand un « \ » le suit,
+    // sinon le premier mot seulement (fin de chemin : on ne sait pas où le nom s'arrête)
+    .replace(/[A-Z]:\\Users\\(?:[^\\/:*?"<>|\r\n'`]+(?=\\)|[^\\\s'"`]+)/gi, 'C:\\Users\\<utilisateur>')
     .replace(/[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,190}/g, '<adresse>')
     .replace(/@(\w)/g, '@\u200b$1'); // pas de mention GitHub involontaire
+}
+
+// Adresse du client pour la limite de débit : la DERNIÈRE de X-Forwarded-For, celle qu'ajoute le proxy
+// (Caddy). Les précédentes viennent du client lui-même : s'y fier laisserait contourner la limite en
+// envoyant une fausse adresse à chaque requête.
+export function clientIp(req) {
+  const hops = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean);
+  return hops.pop() || req.socket?.remoteAddress || '';
 }
 
 export function parse(body) {
@@ -123,14 +133,15 @@ const server = http.createServer((req, res) => {
     if (!d) return send(res, 400, { error: 'diagnostic invalide' });
     const h = sha(d.text);
     if (seen.has(h)) return send(res, 200, { ok: true, duplicate: true });
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-    if (limited(ip)) return send(res, 429, { error: 'trop d’envois, réessayez plus tard' });
+    if (limited(clientIp(req))) return send(res, 429, { error: 'trop d’envois, réessayez plus tard' });
+    // Noté avant l'envoi à GitHub : deux requêtes identiques arrivées en même temps ne font qu'un ticket
+    seen.set(h, Date.now());
     try {
       const n = await createIssue(d);
-      seen.set(h, Date.now());
       console.log(new Date().toISOString(), 'ticket', n, d.version, d.auto ? 'auto' : 'manuel');
       send(res, 200, { ok: true, id: n });
     } catch (e) {
+      seen.delete(h); // pas de ticket : le même diagnostic pourra être renvoyé
       console.error(new Date().toISOString(), 'échec GitHub', e.message);
       send(res, 502, { error: 'envoi impossible pour le moment' });
     }

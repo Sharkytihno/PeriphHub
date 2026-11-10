@@ -46,10 +46,12 @@ function toast(text, kind = 'ok') {
   if (text === lastToast.text && Date.now() - lastToast.at < 8000) return;
   lastToast = { text, at: Date.now() };
   const box = $('toasts');
-  const t = h('div', { class: 'toast ' + kind }, text);
+  const out = () => { t.classList.add('out'); setTimeout(() => t.remove(), 300); };
+  // Un clic la ferme tout de suite ; une erreur est annoncée sans attendre par les lecteurs d'écran
+  const t = h('div', { class: 'toast ' + kind, role: kind === 'err' ? 'alert' : null, onclick: out }, text);
   box.append(t);
   while (box.children.length > 3) box.firstChild.remove();
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, kind === 'err' ? 6000 : 2600);
+  setTimeout(out, kind === 'err' ? 6000 : 2600);
 }
 
 // ---------- Navigation ----------
@@ -61,7 +63,10 @@ function showTab(name) {
   document.body.classList.remove('settled');
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => document.body.classList.add('settled'), 900);
-  for (const b of document.querySelectorAll('nav [data-tab]')) b.classList.toggle('on', b.dataset.tab === name);
+  for (const b of document.querySelectorAll('nav [data-tab]')) {
+    b.classList.toggle('on', b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
   for (const sec of document.querySelectorAll('main > section')) sec.hidden = sec.id !== name;
   try { localStorage.setItem('tab', name); } catch {}
   if (typeof kbRecord === 'function') { kbRecord(false); msRecord(false); }
@@ -76,6 +81,20 @@ function showTab(name) {
   refreshHome();
 }
 for (const b of document.querySelectorAll('nav [data-tab]')) b.onclick = () => showTab(b.dataset.tab);
+
+// Fenêtre étroite : la barre latérale ne garde que les icônes. Chaque bouton reçoit alors son nom en
+// infobulle (et pour les lecteurs d'écran), sinon deux souris ne se distinguent plus.
+const navNarrow = matchMedia('(max-width: 760px)');
+function navTitles() {
+  for (const b of document.querySelectorAll('nav button:not(.pending)')) {
+    const nl = b.querySelector('.nl');
+    if (!nl) continue;
+    const text = [nl.firstChild?.textContent, nl.querySelector('small')?.textContent].map(t => (t || '').trim()).filter(Boolean).join(' · ');
+    if (!navNarrow.matches) { if (b.dataset.navTitle) { b.removeAttribute('title'); delete b.dataset.navTitle; } }
+    else if (b.title !== text) { b.title = text; b.dataset.navTitle = '1'; }
+  }
+}
+navNarrow.addEventListener('change', navTitles);
 
 // ---------- Analyse (logiciels constructeurs, appareils branchés) ----------
 
@@ -194,7 +213,7 @@ function countUp(el, bytes, force = false) {
 // Petites icônes au trait (cartes de l'accueil et de l'allègement)
 const PICT = {
   search: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM20 20l-4-4',
-  heavy: 'M6 8h12l2 12H4zM9 8a3 3 0 0 1 6 0',
+  heavy: 'M3 7h18v9H3zM7 16v3M11 16v3M15 16v3M19 16v3M7.5 10.5v2M12 10.5v2M16.5 10.5v2',
   light: 'M20 6 9 17l-5-5',
   pause: 'M8 5v14M16 5v14',
   undo: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
@@ -284,7 +303,10 @@ function deviceTool(d) {
 function orgbTool() {
   if (!NATIVE) return '';
   const box = h('div', { class: 'muted small' });
-  nativeInvoke('openrgb_info').then(st => {
+  // Dernier état connu (openrgbPoll, js/drivers/openrgb.js) : l'accueil est redessiné souvent, et chaque
+  // openrgb_info relit la liste des processus et l'empreinte du service
+  const known = typeof orgbSvc !== 'undefined' && orgbSvc ? Promise.resolve(orgbSvc) : nativeInvoke('openrgb_info');
+  known.then(st => {
     if (st.server) return box.replaceChildren('OpenRGB est lancé avec son serveur : son éclairage apparaît dans l’onglet Éclairage.');
     if (!st.installed) return box.replaceChildren('OpenRGB (livré avec PeriphHub) est introuvable : réinstallez PeriphHub.');
     if (st.ours) return box.replaceChildren('OpenRGB démarre (détection des appareils, quelques secondes)…');
@@ -331,7 +353,7 @@ function otherDevices() {
       h('div', { class: 'tico' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
-        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', d.kind, `USB ${d.vid}:${d.pid}`].join(' · ')),
+        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', (KIND_NAME?.[d.kind] || d.kind).toLowerCase(), `USB ${d.vid}:${d.pid}`].join(' · ')),
         ...deviceHint(d),
         drvReason(d)),
       h('div', { class: 'dside' },
@@ -360,7 +382,7 @@ function pendingNav() {
     const tab = KIND_TAB[d.kind];
     const icon = tab ? document.querySelector(`nav [data-tab="${tab}"] svg`)?.cloneNode(true) : kindIcon(d.kind);
     const name = d.product || d.catalog_name || `${d.vid}:${d.pid}`;
-    document.querySelector('nav .nfoot').before(h('button', { class: 'pending', 'data-pending': id, title: 'Détecté, pas encore connecté : voir pourquoi',
+    document.querySelector('nav .nfoot').before(h('button', { class: 'pending', 'data-pending': id, title: name + ' · ' + 'Détecté, pas encore connecté : voir pourquoi',
       onclick: () => {
         othersOpen = true;
         showTab('home');
@@ -381,6 +403,7 @@ function refreshHome() {
   sub('hsSub', hs ? (hb != null ? hb + ' %' + (hs.state.charging ? ' · en charge' : '') : 'Connecté') : 'Non connecté');
   sub('rgbSub', rgb ? 'Connecté' : 'Carte mère');
   pendingNav();
+  navTitles();
   $('devGroup').hidden = !drvDevices().length && !document.querySelector('nav .pending')
     && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
   bgTipSync();
@@ -394,6 +417,7 @@ function refreshHome() {
   if ($('home').hidden) return;
 
   const tiles = deviceTiles();
+  const others = otherDevices();
   const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
   $('homeLead').textContent = live ? plural(live, 'appareil connecté', 'appareils connectés') : 'Vos appareils et votre PC, en un coup d’œil.';
   $('homeBody').replaceChildren(...[
@@ -405,10 +429,10 @@ function refreshHome() {
         tiles.length ? h('span', { class: 'muted small' }, 'Cliquez sur un appareil pour le régler') : null),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
         : h('div', { class: 'empty' }, !report ? 'Recherche des appareils…'
-          : otherDevices() ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
+          : others ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
-    otherDevices(),
+    others,
     NATIVE && report ? h('div', { class: 'homefoot' },
       h('span', {}, 'Un appareil manque ou ne marche pas ?'),
       h('div', { class: 'row-inline' },
@@ -654,7 +678,7 @@ if (NATIVE) window.__TAURI__.event.listen('close-ask', () => {
   };
   const m = modal(
     h('header', { class: 'dhead' }, h('h3', {}, 'Garder PeriphHub en arrière-plan ?'),
-      h('button', { class: 'x', title: 'Fermer', onclick: () => m.close() }, '×')),
+      h('button', { class: 'x', title: 'Fermer', 'aria-label': 'Fermer', onclick: () => m.close() }, '×')),
     h('p', {}, 'Fenêtre fermée, PeriphHub peut rester dans la zone de notification, près de l’horloge (sous la flèche ^ si son icône n’y est pas).'),
     h('p', { class: 'muted small' }, 'Il renvoie alors vos réglages aux appareils qui les oublient : casque rallumé, appareil rebranché, sortie de veille. '
       + 'Il se met en veille et consomme peu de mémoire. Modifiable à tout moment dans les Options.'),
@@ -740,15 +764,47 @@ function brandDevices(v) {
   return (report?.devices || []).filter(d => ids.includes(d.vid + ':' + d.pid));
 }
 
+let modalSeq = 0;
 function modal(...kids) {
-  const ov = h('div', { class: 'overlay' }, h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true' }, ...kids));
-  const close = () => { ov.remove(); document.removeEventListener('keydown', esc); };
+  const before = document.activeElement; // retrouve le focus à la fermeture (clavier, lecteur d'écran)
+  const box = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', tabindex: '-1' }, ...kids);
+  const ov = h('div', { class: 'overlay' }, box);
+  // Le contenu change en cours de route (préparation → étapes → résultat) : le titre annoncé suit
+  const relabel = () => {
+    const t = box.querySelector('h3');
+    if (!t) return box.removeAttribute('aria-labelledby');
+    if (!t.id) t.id = 'dlgTitle' + ++modalSeq;
+    box.setAttribute('aria-labelledby', t.id);
+  };
+  const watch = new MutationObserver(relabel);
+  const close = () => {
+    if (!ov.isConnected) return;
+    watch.disconnect();
+    ov.remove();
+    document.removeEventListener('keydown', key, true);
+    if (before?.isConnected) before.focus?.();
+  };
   const busy = () => ov.querySelector('.spin, .wbusy');
-  const esc = e => { if (e.key === 'Escape' && !busy()) close(); };
+  const focusable = () => [...box.querySelectorAll('button, input, select, textarea, summary, a[href]')]
+    .filter(e => !e.disabled && e.getClientRects().length);
+  const key = e => {
+    if (ov.nextElementSibling?.classList.contains('overlay')) return; // une autre fenêtre est ouverte par-dessus
+    if (e.key === 'Escape') { if (!busy()) close(); return; }
+    if (e.key !== 'Tab') return;
+    // Tab ne sort pas de la fenêtre : la page derrière n'est pas utilisable tant qu'elle est ouverte
+    const f = focusable(), at = document.activeElement;
+    if (!f.length) { e.preventDefault(); box.focus(); }
+    else if (!box.contains(at) || at === box) { e.preventDefault(); (e.shiftKey ? f[f.length - 1] : f[0]).focus(); }
+    else if (e.shiftKey && at === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && at === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  };
   ov.addEventListener('click', e => { if (e.target === ov && !busy()) close(); });
-  document.addEventListener('keydown', esc);
+  document.addEventListener('keydown', key, true);
   document.body.append(ov);
-  return { close, box: ov.firstChild };
+  relabel();
+  watch.observe(box, { childList: true });
+  box.focus();
+  return { close, box };
 }
 
 function svgCheck() {
@@ -837,7 +893,7 @@ async function slimWizard(v) {
     const wasOpen = m.box.querySelector('details.more')?.open;
     m.box.replaceChildren(
       h('header', { class: 'dhead' }, h('h3', {}, 'Alléger ' + plan.name),
-        h('button', { class: 'x', title: 'Fermer', onclick: m.close }, '×')),
+        h('button', { class: 'x', title: 'Fermer', 'aria-label': 'Fermer', onclick: m.close }, '×')),
       h('div', { class: 'stack' },
         h('p', { class: 'wlead' }, plan.running
           ? `PeriphHub va fermer ${plan.name} et l’empêcher de se relancer avec Windows.`
@@ -1030,7 +1086,7 @@ function diagDialog(focus = '') {
   } }, 'Envoyer');
   const m = modal(
     h('header', { class: 'dhead' }, h('h3', {}, 'Envoyer le diagnostic'),
-      h('button', { class: 'x', title: 'Fermer', onclick: () => m.close() }, '×')),
+      h('button', { class: 'x', title: 'Fermer', 'aria-label': 'Fermer', onclick: () => m.close() }, '×')),
     h('label', { class: 'stack tight' }, h('span', { class: 'muted small' }, 'Appareil concerné'), sel),
     h('label', { class: 'stack tight' }, h('span', { class: 'muted small' }, 'Ce qui ne marche pas (facultatif, mais ça aide beaucoup)'), area),
     h('p', { class: 'muted small' }, 'Le diagnostic contient la version de Windows, la liste des appareils USB, ce que PeriphHub a essayé '
@@ -1080,6 +1136,28 @@ function diagAsk() {
       h('button', { onclick: () => choose('on') }, 'Oui, envoyer (et à l’avenir aussi)'),
       h('button', { class: 'ghost', onclick: () => { try { localStorage.setItem('diagAuto', 'off'); } catch {} sendDiag(false); } }, 'Envoyer juste cette fois'),
       h('button', { class: 'ghost', onclick: () => choose('off') }, 'Non merci')));
+}
+
+// ---------- Une appli, pas une page web ----------
+// La WebView garde les raccourcis d'un navigateur : F5 ou Ctrl+R rechargeaient toute l'interface (appareils
+// reconnectés, analyse refaite), Ctrl+P ouvrait l'impression, Ctrl+F la recherche, et le clic droit
+// proposait « Enregistrer sous » ou « Imprimer ». F5 et Ctrl+R relancent maintenant l'analyse (comme
+// « Actualiser ») ; le clic droit reste là où il sert : champs de saisie et texte sélectionné (copier).
+if (NATIVE) {
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+    if (e.shiftKey && ctrl && k === 'r') return; // rechargement complet gardé pour le développement
+    if (e.key === 'F5' || (ctrl && k === 'r')) {
+      e.preventDefault();
+      if (!document.querySelector('.overlay')) rescan();
+    } else if (e.key === 'F3' || e.key === 'F7' || (ctrl && ['p', 'f', 'g', 'j', 's', 'u', 'o'].includes(k))) {
+      e.preventDefault();
+    }
+  }, true);
+  window.addEventListener('contextmenu', e => {
+    if (e.target.closest?.('input, textarea, [contenteditable]') || String(getSelection() || '').trim()) return;
+    e.preventDefault();
+  });
 }
 
 // ---------- Démarrage ----------

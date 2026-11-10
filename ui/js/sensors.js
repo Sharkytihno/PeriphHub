@@ -29,6 +29,8 @@ function sensLevel(hw, t, name = '') {
   return t >= hot ? 'hot' : t >= warm ? 'warm' : 'ok';
 }
 
+const SENS_LEVEL = { warm: 'Chaud', hot: 'Très chaud' };
+
 // Noms de LibreHardwareMonitor (anglais) → noms parlants
 const SENS_NAMES = [
   [/^GPU Hot ?Spot$/i, 'Point chaud'], [/^GPU Memory( Junction)?$/i, 'Mémoire'], [/^GPU Core$/i, 'Puce'],
@@ -92,7 +94,7 @@ function sensRow(hw, s) {
   const lvl = s.k === 'Temperature' ? sensLevel(hw, s.v, s.n) : '';
   return h('div', { class: 'srow' },
     h('span', { class: 'sname', title: s.n }, sensName(s)),
-    h('span', { class: 'sval ' + lvl }, fmtV(s)),
+    h('span', { class: 'sval ' + lvl, title: SENS_LEVEL[lvl] || null }, fmtV(s)),
     s.k === 'Temperature' && s.max ? h('span', { class: 'smax muted small', title: 'Maximum relevé depuis que le service tourne' }, 'max ' + fmtT(s.max)) : h('span'));
 }
 
@@ -109,6 +111,8 @@ function sensCard(hw, parent) {
       h('div', {}, h('div', { class: 'muted small' }, parent ? `${kind} · ${parent}` : kind), h('strong', {}, hw.n)),
       main || pw ? h('div', { class: 'sside' },
         main ? h('div', { class: 'sbig ' + sensLevel(hw, main.v, main.n), title: sensName(main) }, fmtT(main.v)) : null,
+        // Dit en toutes lettres : la couleur seule ne suffit pas (daltonisme, écran mal réglé)
+        main && SENS_LEVEL[sensLevel(hw, main.v, main.n)] ? h('div', { class: 'slvl ' + sensLevel(hw, main.v, main.n) }, SENS_LEVEL[sensLevel(hw, main.v, main.n)]) : null,
         pw ? h('div', { class: 'spow', title: 'Consommation électrique en direct' }, fmtW(pw.v)) : null) : null),
     rows.length ? h('div', { class: 'srows' }, rows.map(s => sensRow(hw, s))) : null);
 }
@@ -186,6 +190,9 @@ function renderSensors() {
 async function sensorsPoll() {
   clearTimeout(sensTimer);
   if (!NATIVE) { renderSensors(); return; }
+  // Fenêtre fermée (PeriphHub près de l'horloge) avec cette page restée ouverte : plus aucune lecture,
+  // sinon le service des capteurs et son pilote ne s'arrêteraient jamais. Reprise au retour de la fenêtre.
+  if (document.hidden) return;
   try {
     sensLast = await nativeInvoke('sensors_read');
     sensErr = '';
@@ -242,6 +249,11 @@ $('temps') && (() => {
   // Page quittée : plus aucune lecture (l'ouverture est gérée par showTab, js/shell.js)
   new MutationObserver(() => { if ($('temps').hidden) clearTimeout(sensTimer); })
     .observe($('temps'), { attributes: true, attributeFilter: ['hidden'] });
+  // Fenêtre cachée puis rouverte sur cette page : les lectures s'arrêtent puis reprennent
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(sensTimer);
+    else if (!$('temps').hidden) sensorsPoll();
+  });
   // Sous-titre de la barre latérale, sans démarrer le service
   if (NATIVE) nativeInvoke('sensors_info').then(i => {
     if (!sensLast) $('tempsSub').textContent = i?.service && i.service !== 'absent' ? 'Activé' : 'Désactivé';

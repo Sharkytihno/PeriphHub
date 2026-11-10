@@ -537,13 +537,7 @@ pub fn undo(id: &str) -> Result<Value, String> {
     let validated = execute(user, admin)?;
     // Ce qui est revenu à l'état d'origine sort du journal ; le reste y reste pour réessayer
     let entries = startup::all();
-    let restored = |a: &Action| match a.kind.as_str() {
-        "service" => a.start != 2 || service_start(&a.name).is_some_and(|(s, _)| s == 2),
-        _ => entries
-            .iter()
-            .any(|e| e.kind == a.kind && e.scope == a.scope && e.name == a.name && e.mode == Some("actif")),
-    };
-    let left: Vec<Action> = log.actions.iter().filter(|a| !restored(a)).cloned().collect();
+    let left: Vec<Action> = log.actions.iter().filter(|a| !restored(a, &entries, service_gone)).cloned().collect();
     let n = log.actions.len() - left.len();
     if left.is_empty() {
         j.remove(pos);
@@ -552,6 +546,30 @@ pub fn undo(id: &str) -> Result<Value, String> {
     }
     save_journal(&j)?;
     Ok(json!({ "cancelled": !validated, "restored": n, "failed": left.iter().map(|a| &a.name).collect::<Vec<_>>() }))
+}
+
+/// Le service n'existe plus du tout (logiciel désinstallé ou mis à jour depuis l'allègement).
+/// Seule l'absence certaine de sa clé compte : une erreur de lecture ne vaut pas « disparu ».
+fn service_gone(name: &str) -> bool {
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ};
+    winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags(format!(r"SYSTEM\CurrentControlSet\Services\{name}"), KEY_READ)
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+}
+
+/// Une action du journal est-elle revenue à l'état d'origine ?
+/// Un lancement automatique que le logiciel a retiré depuis (désinstallation, mise à jour qui le
+/// renomme) n'a plus rien à remettre : sans ça, « Annuler l'allègement » restait bloqué à vie sur
+/// « remis en partie, à réessayer ». Les tâches planifiées gardent la règle stricte : leur liste peut
+/// être incomplète quand le Planificateur ne répond pas, et une tâche encore désactivée ne doit
+/// jamais sortir du journal.
+fn restored(a: &Action, entries: &[startup::Entry], service_gone: impl Fn(&str) -> bool) -> bool {
+    let mut same = entries.iter().filter(|e| e.kind == a.kind && e.scope == a.scope && e.name == a.name);
+    match a.kind.as_str() {
+        "service" => a.start != 2 || service_start(&a.name).is_some_and(|(s, _)| s == 2) || service_gone(&a.name),
+        "run" | "dossier" => same.next().is_none_or(|e| e.mode == Some("actif")),
+        _ => same.any(|e| e.mode == Some("actif")),
+    }
 }
 
 // ---------- À la demande ----------
@@ -618,6 +636,30 @@ mod tests {
         for r in [svc::stop(name), svc::start(name), svc::set_start(name, false, false)] {
             assert!(r.unwrap_err().contains("introuvable"));
         }
+    }
+
+    #[test]
+    fn annulation_un_lancement_disparu_sort_du_journal() {
+        let act = |kind: &str, name: &str| Action { kind: kind.into(), scope: "HKCU".into(), name: name.into(), start: 2, delayed: false };
+        let entry = |kind: &'static str, name: &str, mode: &'static str| startup::Entry {
+            kind,
+            name: name.into(),
+            target: String::new(),
+            mode: Some(mode),
+            scope: "HKCU",
+        };
+        let entries = [entry("run", "Remis", "actif"), entry("run", "Encore coupé", "désactivé"), entry("tâche", "Tâche remise", "actif")];
+        let (gone, here) = (|_: &str| true, |_: &str| false);
+        // Clé Run : remise, encore coupée, ou retirée par le logiciel depuis (plus rien à remettre)
+        assert!(restored(&act("run", "Remis"), &entries, here));
+        assert!(!restored(&act("run", "Encore coupé"), &entries, here));
+        assert!(restored(&act("run", "Retiré depuis"), &entries, here));
+        // Tâche planifiée : jamais « remise » sur la seule foi d'une liste où elle manque
+        assert!(restored(&act("tâche", "Tâche remise"), &entries, here));
+        assert!(!restored(&act("tâche", "Tâche absente de la liste"), &entries, here));
+        // Service qui n'existe plus : remis seulement si sa clé a vraiment disparu
+        assert!(restored(&act("service", "PeriphHub-service-inexistant"), &entries, gone));
+        assert!(!restored(&act("service", "PeriphHub-service-inexistant"), &entries, here));
     }
 
     #[test]

@@ -11,7 +11,7 @@
   <script src="js/i18n.js"></script>
 </head>
 <body>
-  <nav>
+  <nav aria-label="Pages">
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="17" fill="currentColor"/>
@@ -57,7 +57,7 @@
     <div class="nfoot">
       <button data-tab="options">
         <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
-        <span class="nl">Options<small id="verSub">PeriphHub</small></span>
+        <span class="nl">Options<small id="verSub">Apparence, langue, mises à jour</small></span>
       </button>
     </div>
   </nav>
@@ -124,7 +124,7 @@
     </section>
   </main>
   <div id="loadbar" aria-hidden="true"></div>
-  <div id="toasts" aria-live="polite"></div>
+  <div id="toasts" role="status" aria-live="polite"></div>
   <script src="js/hid-descriptor.js" defer></script>
   <script src="js/native-hid.js" defer></script>
   <script src="js/protocols/scyrox.js" defer></script>

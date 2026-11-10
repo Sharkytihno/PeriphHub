@@ -72,13 +72,14 @@ async function apply(label, fn) {
 // ---------- Souris ----------
 
 function segmented(options, current, onPick) {
-  return h('div', { class: 'seg' }, options.map(o =>
-    h('button', { class: o.v === current ? 'on' : '', onclick: () => o.v !== current && onPick(o.v) }, o.label)));
+  // aria-pressed : le choix en cours est annoncé par les lecteurs d'écran (pas seulement par la couleur)
+  return h('div', { class: 'seg', role: 'group' }, options.map(o =>
+    h('button', { class: o.v === current ? 'on' : '', 'aria-pressed': String(o.v === current), onclick: () => o.v !== current && onPick(o.v) }, o.label)));
 }
 
 function toggle(label, on, onChange, disabled = false, hint = '') {
   return h('label', { class: 'toggle' + (disabled ? ' disabled' : ''), title: hint },
-    h('input', { type: 'checkbox', checked: on, disabled, onchange: e => onChange(e.target.checked) }),
+    h('input', { type: 'checkbox', role: 'switch', checked: on, disabled, onchange: e => onChange(e.target.checked) }),
     h('span', { class: 'sw' }), label);
 }
 
@@ -879,8 +880,8 @@ async function loadThx() {
 function slider(min, max, step, value, unit, onCommit, disabled = false) {
   const out = h('span', { class: 'val' }, value + unit);
   return h('div', { class: 'row-inline' },
-    h('input', { type: 'range', min, max, step, value, disabled,
-      oninput: e => { out.textContent = e.target.value + unit; },
+    h('input', { type: 'range', min, max, step, value, disabled, 'aria-valuetext': value + unit,
+      oninput: e => { out.textContent = e.target.value + unit; e.target.setAttribute('aria-valuetext', e.target.value + unit); },
       onchange: e => onCommit(Number(e.target.value)) }), out);
 }
 

@@ -83,7 +83,7 @@ pub fn info() -> Value {
             .is_some_and(|v| crate::openrgb::config_ok(&v))
     };
     let stale = st.is_some()
-        && (service_dir().and_then(|d| crate::openrgb::sha256_file(&d.join("OpenRGB.exe"))).as_deref() != exe_hash
+        && (service_dir().and_then(|d| crate::openrgb::sha256_cached(&d.join("OpenRGB.exe"))).as_deref() != exe_hash
             || !conf_ok());
     json!({ "service": label, "serviceStale": stale, "pawnio": state("PawnIO").is_some() })
 }

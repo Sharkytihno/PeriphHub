@@ -62,7 +62,7 @@ fn label(st: Option<u32>) -> &'static str {
 pub fn info() -> Value {
     let st = state(SERVICE);
     let exe_hash = SENSOR_FILES.iter().find(|(n, _)| *n == EXE).map(|(_, h)| *h);
-    let stale = st.is_some() && service_dir().and_then(|d| crate::openrgb::sha256_file(&d.join(EXE))).as_deref() != exe_hash;
+    let stale = st.is_some() && service_dir().and_then(|d| crate::openrgb::sha256_cached(&d.join(EXE))).as_deref() != exe_hash;
     json!({
         "module": !SENSOR_FILES.is_empty(),
         "service": label(st),
