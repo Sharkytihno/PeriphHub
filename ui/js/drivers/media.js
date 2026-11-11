@@ -155,7 +155,7 @@ function audioInstance(g) {
             !isMain ? h('button', { class: 'mini', onclick: () => set(`${e.name} par défaut`, 'default', 'all') }, `Utiliser comme ${what} par défaut`) : null,
             !isComms ? h('button', { class: 'mini ghost', onclick: () => set('Appels', 'default', 'comms') }, isMain ? 'Aussi pour les appels' : 'Seulement pour les appels') : null) : null,
           fl?.length > 1 ? h('div', {}, h('div', { class: 'muted small' }, 'Qualité (format utilisé par Windows)'),
-            h('select', { onchange: ev => { const f = fl[Number(ev.target.value)]; set(fmtLabel(f), 'format', f); } },
+            h('select', { onchange: ev => { const f = fl[Number(ev.target.value)]; return set(fmtLabel(f), 'format', f); } },
               fl.map((f, i) => h('option', { value: i, selected: e.format && f.rate === e.format.rate && f.bits === e.format.bits }, fmtLabel(f))))) :
             e.format ? h('div', { class: 'muted small' }, 'Format : ' + fmtLabel(e.format)) : null);
       });

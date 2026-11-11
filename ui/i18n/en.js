@@ -675,6 +675,15 @@ const I18N_EN = {
   'Par défaut, seuls les casques, micros, DAC et enceintes USB ou Bluetooth ont un onglet. « Tout afficher » ajoute le son de la carte mère, des écrans (HDMI) et les pilotes audio virtuels.':
     'By default, only USB or Bluetooth headsets, mics, DACs and speakers get a tab. “Show all” adds motherboard audio, displays (HDMI) and virtual audio drivers.',
   'Mettre à jour': 'Update',
+  'Une mise à jour est disponible': 'An update is available',
+  'Nouveautés': 'What’s new',
+  'Plus tard': 'Later',
+  'Mettre à jour maintenant': 'Update now',
+  'Installation en un clic, vos réglages sont conservés. PeriphHub se ferme quelques secondes puis redémarre tout seul.': 'One-click install, your settings are kept. PeriphHub closes for a few seconds, then restarts on its own.',
+  'Installez-la maintenant : un clic, vos réglages sont conservés.': 'Install it now: one click, your settings are kept.',
+  'Mise à jour': 'Update',
+  'Chargement': 'Loading',
+  'Lecture…': 'Reading…',
   'Téléchargement et installation en un clic, vos réglages sont conservés. PeriphHub redémarre tout seul.': 'Download and install in one click, your settings are kept. PeriphHub restarts on its own.',
   'Mises à jour': 'Updates',
   'Assurées par le Microsoft Store.': 'Handled by the Microsoft Store.',
@@ -1017,6 +1026,8 @@ const I18N_EN = {
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  'PeriphHub {} · vous avez la {}': 'PeriphHub {} · you have {}',
+  'Installer PeriphHub {}': 'Install PeriphHub {}',
   'Liquide {} °C · pompe {} tr/min ({} %) · ventilateurs {} tr/min ({} %)': 'Liquid {} °C · pump {} rpm ({} %) · fans {} rpm ({} %)',
   'plus que {} %': '{} % left',
   '{} zones': '{} zones',

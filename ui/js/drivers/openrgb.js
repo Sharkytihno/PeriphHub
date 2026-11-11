@@ -127,13 +127,13 @@ function orgbZoneRows(inst, d) {
       const input = h('input', { type: 'number', min: z.min, max: z.max, value: z.count, style: 'width:5em' });
       const go = () => {
         const size = Math.max(z.min, Math.min(z.max, Math.round(Number(input.value) || 0)));
-        if (size !== z.count) drvSet(inst, `${d.name} : ${z.name} à ${size} LED`, 'zone', { index: d.index, zone: z.i, size });
+        if (size !== z.count) return drvSet(inst, `${d.name} : ${z.name} à ${size} LED`, 'zone', { index: d.index, zone: z.i, size });
       };
       input.onchange = go;
       return h('div', {}, h('div', { class: 'muted small' }, `Prise ${z.name} : nombre de LED (${z.min} à ${z.max})`),
         h('div', { class: 'row-inline' }, input,
           ...[12, 24, 36].filter(n => n <= z.max).map(n => h('button', { class: 'mini ghost' + (z.count === n ? ' on' : ''),
-            title: n / 12 + ' ventilateur(s) de 12 LED', onclick: () => { input.value = n; go(); } }, String(n)))));
+            title: n / 12 + ' ventilateur(s) de 12 LED', onclick: () => { input.value = n; return go(); } }, String(n)))));
     }),
   ];
 }
@@ -151,13 +151,13 @@ function orgbModeRows(inst, d) {
   const sub = text => h('div', { class: 'muted small' }, text);
   return [
     h('div', {}, sub('Effet'),
-      h('select', { onchange: e => { const i = Number(e.target.value); send(orgbName(modes[i].name), i, modes[i]); } },
+      h('select', { onchange: e => { const i = Number(e.target.value); return send(orgbName(modes[i].name), i, modes[i]); } },
         modes.map((m, i) => h('option', { value: i, selected: i === d.active }, orgbName(m.name))))),
     cur.speed && cur.speed.min !== cur.speed.max ? h('div', {}, sub('Vitesse'),
       slider(0, 100, 5, orgbPct(cur.speed), ' %', v => send(curLabel, d.active, cur, { speed: orgbSpeed(cur.speed, v) }))) : null,
     dirs.length > 1 ? h('div', {}, sub('Sens'), segmented(dirs, cur.direction, v => send(curLabel, d.active, cur, { direction: v }))) : null,
     cur.colors ? h('div', {}, sub(cols.length > 1 ? 'Couleurs de l’effet' : 'Couleur de l’effet'), h('div', { class: 'row-inline' },
-      cols.map((c, i) => h('input', { type: 'color', value: c, onchange: e => { const next = [...cols]; next[i] = e.target.value; send(curLabel, d.active, cur, { colors: next }); } })),
+      cols.map((c, i) => h('input', { type: 'color', value: c, onchange: e => { const next = [...cols]; next[i] = e.target.value; return send(curLabel, d.active, cur, { colors: next }); } })),
       cols.length < cur.colors.max ? h('button', { class: 'mini ghost', title: 'Ajouter une couleur', onclick: () => send(curLabel, d.active, cur, { colors: [...cols, '#ffffff'] }) }, '+') : null,
       cols.length > Math.max(1, cur.colors.min) ? h('button', { class: 'mini ghost', title: 'Retirer la dernière couleur', onclick: () => send(curLabel, d.active, cur, { colors: cols.slice(0, -1) }) }, '−') : null)) : null,
     cur.save ? h('div', { class: 'row-inline' },

@@ -421,14 +421,13 @@ function refreshHome() {
   const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
   $('homeLead').textContent = live ? plural(live, 'appareil connecté', 'appareils connectés') : 'Vos appareils et votre PC, en un coup d’œil.';
   $('homeBody').replaceChildren(...[
-    updateNotice(),
     hidBlockedNotice(),
     pcCard(),
     h('section', { class: 'block' },
       h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils'),
         tiles.length ? h('span', { class: 'muted small' }, 'Cliquez sur un appareil pour le régler') : null),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
-        : h('div', { class: 'empty' }, !report ? 'Recherche des appareils…'
+        : h('div', { class: 'empty' }, !report ? loading('Recherche des appareils…')
           : others ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
@@ -453,17 +452,57 @@ function hidBlockedNotice() {
 }
 
 // ---------- Mises à jour (version GitHub ; celle du Store est mise à jour par le Store) ----------
+// Une nouvelle version doit être la première chose qu'on voit :
+//  - la dernière version trouvée est gardée d'un lancement à l'autre (localStorage « updKnown ») et
+//    affichée dès l'ouverture, sans attendre GitHub ; la vérification part tout de suite au lancement ;
+//  - bandeau en haut de TOUTES les pages (#updBar) tant qu'elle n'est pas installée ;
+//  - fenêtre « Mise à jour disponible » à l'ouverture de PeriphHub (au plus une fois toutes les 10 min) ;
+//  - fenêtre fermée : notification Windows (une par version), entrée « Installer » dans le menu de
+//    l'icône et infobulle. Vérifié toutes les heures, et à chaque ouverture de la fenêtre.
 
-let upd = null; // dernier résultat de update_check
+let upd = null; // dernier résultat de update_check (ou version retenue du lancement précédent)
 let updBusy = false;
+let updAt = 0;          // dernière vérification réussie
+let updAskedAt = 0;     // dernière fois que la fenêtre de mise à jour a été montrée
+let updDlg = null;      // fenêtre de mise à jour ouverte
+let updProg = null;     // installation en cours : { text, pct }
 const autoUpdate = () => { try { return localStorage.getItem('autoUpdate') !== 'off'; } catch { return true; } };
 
+// « 1.10.0 » est plus récent que « 1.9.2 » (comparaison nombre par nombre)
+function verNewer(a, b) {
+  const p = v => String(v || '').split(/[.+-]/).slice(0, 3).map(n => parseInt(n, 10) || 0);
+  const x = p(a), y = p(b);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+function updRemember() {
+  try {
+    if (upd?.available) localStorage.setItem('updKnown', JSON.stringify({ version: upd.version, notes: String(upd.notes || '').slice(0, 6000) }));
+    else if (upd) localStorage.removeItem('updKnown');
+  } catch {}
+}
+
+// Au lancement : la mise à jour vue la dernière fois s'affiche aussitôt (GitHub confirme ensuite)
+async function updRestore() {
+  if (!NATIVE || !autoUpdate()) return;
+  let k = null;
+  try { k = JSON.parse(localStorage.getItem('updKnown') || 'null'); } catch {}
+  if (!k?.version) return;
+  const cur = await window.__TAURI__.app.getVersion().catch(() => null);
+  if (!cur || !verNewer(k.version, cur)) { try { localStorage.removeItem('updKnown'); } catch {} return; }
+  if (upd) return; // la vérification a déjà répondu
+  upd = { available: true, version: k.version, current: cur, notes: k.notes, remembered: true };
+  updShow();
+}
+
 async function checkUpdate(manual = false) {
-  if (!NATIVE || updBusy) return;
+  if (!NATIVE || updBusy || updProg) return;
   updBusy = true;
-  if (manual) renderOptions();
   try {
     upd = await nativeInvoke('update_check');
+    updAt = Date.now();
+    updRemember();
     // Fenêtre fermée (PeriphHub près de l'horloge, démarré avec Windows) : une notification par
     // nouvelle version, sinon personne ne la verrait
     let told = null;
@@ -473,54 +512,171 @@ async function checkUpdate(manual = false) {
       nativeInvoke('notify_show', { title: tx(`PeriphHub ${upd.version} est disponible`),
         body: tx('Ouvrez PeriphHub pour l’installer en un clic, vos réglages sont conservés.') }).catch(() => {});
     }
-    if (manual) toast(upd.store ? 'Mises à jour assurées par le Microsoft Store'
-      : upd.available ? `PeriphHub ${upd.version} est disponible` : 'PeriphHub est à jour');
+    if (manual && !upd.available) toast(upd.store ? 'Mises à jour assurées par le Microsoft Store' : 'PeriphHub est à jour');
+    if (manual && upd.available) updAskedAt = 0; // vérification demandée : la fenêtre s'ouvre
   } catch (e) {
     if (manual) toast('Vérification impossible : ' + e, 'err');
   } finally {
     updBusy = false;
   }
-  refreshHome();
-  bgSync(); // infobulle de l'icône : mise à jour disponible
-  if (!$('options').hidden) renderOptions();
+  updShow();
 }
 
-async function installUpdate(btn) {
-  btn.disabled = true;
-  btn.textContent = 'Téléchargement…';
-  // Progression envoyée par update.rs ; le bouton peut être recréé par un rendu : on le retrouve
-  const label = (t) => { for (const b of document.querySelectorAll('.upd button')) b.textContent = t; btn.textContent = t; };
+// Bandeau, accueil, icône, options et (fenêtre visible) la fenêtre de mise à jour
+function updShow() {
+  updBar();
+  refreshHome();
+  bgSync(); // menu et infobulle de l'icône
+  if (!$('options').hidden) renderOptions();
+  updAsk();
+}
+
+function updAsk(force = false) {
+  if (!upd?.available || document.hidden || updDlg) return;
+  if (!force && (Date.now() - updAskedAt < 10 * 60000 || document.querySelector('.overlay'))) return;
+  updAskedAt = Date.now();
+  updDialog();
+}
+
+// Notes de version (CHANGELOG.md) en texte simple : listes « - » → puces, sans les **gras**. Le
+// paragraphe « *In English: …* » remplace les notes (en français) quand l'interface est en anglais.
+function updNotes(text) {
+  const paras = String(text || '').replace(/\r/g, '').split(/\n\s*\n/);
+  const en = paras.find(p => /^\s*\*In English:/.test(p));
+  if (en && LANG !== 'fr') return [en.replace(/\s+/g, ' ').trim().replace(/^\*In English:\s*/, '').replace(/\*$/, '')];
+  const items = [];
+  for (const para of paras) {
+    if (para === en) continue;
+    for (const raw of para.split('\n')) {
+      const l = raw.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+      if (!l.trim() || /^\s*#/.test(l)) continue;
+      if (/^\s*[-*] /.test(l)) items.push(l.replace(/^\s*[-*] /, ''));
+      else if (items.length && /^\s{2,}/.test(l)) items[items.length - 1] += ' ' + l.trim();
+      else items.push(l.trim());
+    }
+  }
+  return items.slice(0, 12);
+}
+
+function updDialog() {
+  const notes = updNotes(upd.notes);
+  const m = modal(h('div', { class: 'upddlg' },
+    h('div', { class: 'updhero' }, h('span', { class: 'updicon', 'aria-hidden': 'true' }, svgUpd()),
+      h('div', {}, h('h3', {}, 'Une mise à jour est disponible'),
+        h('div', { class: 'muted small' }, upd.current ? `PeriphHub ${upd.version} · vous avez la ${upd.current}` : `PeriphHub ${upd.version}`))),
+    notes.length ? h('div', { class: 'updnotes' }, h('div', { class: 'lghead' }, 'Nouveautés'), h('ul', {}, notes.map(n => h('li', {}, n)))) : null,
+    h('div', { class: 'updprog', id: 'updDlgProg' }, ...updProgEls()),
+    h('p', { class: 'muted small' }, 'Installation en un clic, vos réglages sont conservés. PeriphHub se ferme quelques secondes puis redémarre tout seul.'),
+    h('div', { class: 'row-inline dlgact' },
+      h('button', { class: 'ghost', id: 'updLater', disabled: !!updProg, onclick: () => m.close() }, 'Plus tard'),
+      h('button', { class: 'updgo', 'data-busy': 'updinstall', onclick: () => installUpdate() }, 'Mettre à jour maintenant'))));
+  updDlg = m;
+  // Fermeture (Plus tard, Échap, clic à côté) : la fenêtre se libère pour la prochaine ouverture
+  const watch = new MutationObserver(() => { if (!m.box.isConnected) { watch.disconnect(); if (updDlg === m) updDlg = null; } });
+  watch.observe(document.body, { childList: true });
+  m.box.querySelector('.updgo')?.focus();
+}
+
+function svgUpd() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  const p = document.createElementNS(ns, 'path');
+  p.setAttribute('d', 'M12 3v12M7 10l5 5 5-5M5 21h14');
+  svg.append(p);
+  return svg;
+}
+
+// Progression : dans le bandeau et dans la fenêtre de mise à jour
+function updProgress(text, pct) {
+  updProg = { text, pct };
+  updBar();
+  const box = $('updDlgProg');
+  if (box) box.replaceChildren(...updProgEls());
+  const later = $('updLater');
+  if (later) later.disabled = true;
+  // lancée depuis le menu de l'icône, sans clic sur le bouton : il tourne quand même
+  for (const b of document.querySelectorAll('.updgo')) busyMark(b, true);
+}
+function updProgEls() {
+  if (!updProg) return [];
+  return [h('div', { class: 'updptext' }, h('span', { class: 'spin sm', 'aria-hidden': 'true' }), updProg.text),
+    h('div', { class: 'updpbar' + (updProg.pct == null ? ' ind' : ''), role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100',
+      'aria-valuenow': updProg.pct == null ? null : String(updProg.pct) }, h('i', { style: updProg.pct == null ? null : `width:${updProg.pct}%` }))];
+}
+
+async function installUpdate() {
+  if (updProg) return;
+  updProgress('Téléchargement…', 0);
   let stop = null;
   try {
     stop = await window.__TAURI__.event.listen('update-progress', ({ payload: p }) => {
-      if (p.installing) label('Installation… PeriphHub va redémarrer');
-      else if (p.total) label(`Téléchargement… ${Math.min(100, Math.round(p.done * 100 / p.total))} %`);
+      if (p.installing) updProgress('Installation… PeriphHub va redémarrer', null);
+      else if (p.total) {
+        const pct = Math.min(100, Math.round(p.done * 100 / p.total));
+        updProgress(`Téléchargement… ${pct} %`, pct);
+      }
     });
   } catch { /* sans progression */ }
   try {
     // PeriphHub se ferme : l'installeur attend sa fermeture, installe et le relance
     await nativeInvoke('update_install');
   } catch (e) {
+    updProg = null;
     toast('Mise à jour impossible : ' + e, 'err');
-    btn.disabled = false;
-    label('Mettre à jour');
+    const box = $('updDlgProg');
+    if (box) box.replaceChildren(h('div', { class: 'small err' }, 'Mise à jour impossible : ' + e));
+    const later = $('updLater');
+    if (later) later.disabled = false;
+    for (const b of document.querySelectorAll('.updgo')) busyMark(b, false);
+    updBar();
+    // « aucune mise à jour » : la version retenue n'existe plus, GitHub a le dernier mot
+    checkUpdate();
   } finally {
     stop?.();
   }
 }
 
-function updateNotice() {
-  if (!upd?.available) return null;
-  const btn = h('button', { onclick: () => installUpdate(btn) }, 'Mettre à jour');
-  return h('div', { class: 'notice warn upd' },
-    h('strong', {}, `PeriphHub ${upd.version} est disponible`),
-    h('p', { class: 'muted small' }, 'Téléchargement et installation en un clic, vos réglages sont conservés. PeriphHub redémarre tout seul.'),
-    btn);
+// Bandeau en haut de chaque page
+function updBar() {
+  let bar = $('updBar');
+  if (!bar) {
+    bar = h('div', { id: 'updBar', class: 'updbar', role: 'region', 'aria-label': 'Mise à jour', hidden: true });
+    document.querySelector('main')?.prepend(bar);
+  }
+  if (!upd?.available) { bar.hidden = true; bar.replaceChildren(); return; }
+  bar.hidden = false;
+  bar.replaceChildren(...[
+    h('span', { class: 'updicon', 'aria-hidden': 'true' }, svgUpd()),
+    h('div', { class: 'updtxt' },
+      h('strong', {}, `PeriphHub ${upd.version} est disponible`),
+      updProg ? h('div', { class: 'updprog' }, ...updProgEls())
+        : h('span', { class: 'muted small' }, 'Installez-la maintenant : un clic, vos réglages sont conservés.')),
+    updProg ? null : h('div', { class: 'row-inline' },
+      updNotes(upd.notes).length ? h('button', { class: 'ghost', onclick: () => updAsk(true) }, 'Nouveautés') : null,
+      h('button', { 'data-busy': 'updinstall', onclick: () => installUpdate() }, 'Mettre à jour'))].filter(Boolean));
 }
 
+if (NATIVE) {
+  // Clic sur « Installer PeriphHub x.y.z » dans le menu de l'icône (background.rs)
+  window.__TAURI__.event.listen('update-install', () => {
+    if (!upd?.available) return checkUpdate(true);
+    if (!updDlg) updAsk(true);
+    installUpdate();
+  }).catch(() => {});
+  // Fenêtre rouverte depuis l'icône : la mise à jour en attente est proposée tout de suite, et
+  // GitHub est consulté de nouveau si la dernière vérification date de plus de 5 min
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    updAsk();
+    if (autoUpdate() && Date.now() - updAt > 5 * 60000) checkUpdate();
+  });
+}
 if (NATIVE && autoUpdate()) {
-  setTimeout(checkUpdate, 5000);
-  setInterval(() => autoUpdate() && checkUpdate(), 6 * 3600 * 1000);
+  updRestore();
+  // Tout de suite (l'appel passe par le nom : l'édition perso remplace checkUpdate)
+  setTimeout(() => checkUpdate(), 0);
+  setInterval(() => autoUpdate() && checkUpdate(), 3600 * 1000);
 }
 
 // ---------- Arrière-plan : zone de notification, démarrage avec Windows (background.rs) ----------
@@ -564,6 +720,7 @@ function bgSync() {
     keep: bgKeep(), ask: !bgAnswered(),
     open: tx('Ouvrir PeriphHub'), quit: tx('Quitter PeriphHub'),
     tooltip: bgTipLast,
+    update: upd?.available ? tx(`Installer PeriphHub ${upd.version}`) : '',
   }).catch(e => console.warn('[PeriphHub] arrière-plan', e));
 }
 // Appelé à chaque actualisation de l'accueil : l'infobulle suit les batteries
@@ -661,7 +818,7 @@ function bgField() {
     h('div', { class: 'muted small' }, 'Démarrer avec Windows'),
     bgInfo && !bgInfo.error
       ? segmented([{ v: 'on', label: 'Oui, fenêtre fermée' }, { v: 'off', label: 'Non' }], st === 'on' ? 'on' : 'off', v => bgAutostart(v === 'on'))
-      : h('div', { class: 'muted small' }, bgInfo?.error ? 'Indisponible : ' + bgInfo.error : 'Lecture…'),
+      : bgInfo?.error ? h('div', { class: 'muted small' }, 'Indisponible : ' + bgInfo.error) : loading('Lecture…', 'small'),
     st === 'bloqué' ? h('p', { class: 'warnline' }, bgInfo.store
       ? 'Windows empêche PeriphHub de démarrer avec lui : réactivez-le dans Paramètres > Applications > Démarrage.'
       : 'Désactivé dans le Gestionnaire des tâches (Applications de démarrage) : choisissez « Oui » pour le réactiver.') : null,
@@ -962,12 +1119,13 @@ function renderOptions() {
       ? [h('div', { class: 'muted small' }, 'Assurées par le Microsoft Store.')]
       : [segmented([{ v: 'on', label: 'Automatiques' }, { v: 'off', label: 'Désactivées' }], autoUpdate() ? 'on' : 'off', v => {
           try { localStorage.setItem('autoUpdate', v); } catch {}
-          if (v === 'off') upd = null;
+          if (v === 'off') { upd = null; try { localStorage.removeItem('updKnown'); } catch {} updBar(); bgSync(); }
+          else checkUpdate();
           renderOptions();
           refreshHome();
         }),
         h('div', { class: 'row-inline' },
-          h('button', { class: 'ghost', disabled: updBusy, onclick: () => checkUpdate(true) }, updBusy ? 'Vérification…' : 'Vérifier maintenant')),
+          h('button', { class: 'ghost', 'data-busy': 'updcheck', onclick: () => checkUpdate(true) }, 'Vérifier maintenant')),
         h('div', { class: 'muted small' }, 'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. '
           + 'Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.')])) : null,
     NATIVE ? bgField() : null,

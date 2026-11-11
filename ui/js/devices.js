@@ -5,13 +5,108 @@ const $ = id => document.getElementById(id);
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), k === 'onclick' || k === 'onchange' ? busyWrap(el, v) : v);
     else if (v === true) el.setAttribute(k, '');
     else if (v !== false && v != null) el.setAttribute(k, v);
   }
   el.append(...kids.flat().filter(k => k != null));
+  // Action encore en cours alors que la page a été redessinée : le nouveau bouton reprend le chargement
+  if (attrs['data-busy'] && busyKeys.has(attrs['data-busy'])) { busyMark(el, true); busyEls.add(el); }
   return el;
 };
+
+// ---------- Chargement ----------
+// Tout clic (ou changement de réglage) dont l'action prend du temps se voit : le bouton affiche un
+// cercle qui tourne à la place de son texte, l'interrupteur fait tourner sa pastille, et une fine
+// barre défile en haut de la fenêtre. Automatique : il suffit que le gestionnaire renvoie une
+// promesse (fonction async, nativeInvoke(...).then(...)). Pendant ce temps, un nouveau clic sur le
+// même élément est ignoré (pas d'action lancée deux fois). Rien ne s'affiche pour une action de
+// moins de 150 ms (pas de clignotement). `data-busy: 'clé'` : le chargement survit aux rendus.
+const BUSY_DELAY = 150;
+const busyEls = new WeakSet();
+const busyKeys = new Set();
+let busyCount = 0;
+
+function busyTarget(el) {
+  return el.closest?.('.toggle') || el;
+}
+
+function busyMark(el, on) {
+  el.classList.toggle('busy', on);
+  if (on) el.setAttribute('aria-busy', 'true');
+  else el.removeAttribute('aria-busy');
+  const input = el.matches('.toggle') ? el.querySelector('input') : null;
+  if (input && on) { input.dataset.busyWas = input.disabled ? '1' : ''; input.disabled = true; }
+  else if (input && 'busyWas' in input.dataset) { input.disabled = !!input.dataset.busyWas; delete input.dataset.busyWas; }
+}
+
+function busyBar() {
+  let bar = document.getElementById('busyBar');
+  if (!bar && busyCount > 0) {
+    bar = document.createElement('div');
+    bar.id = 'busyBar';
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', 'Chargement');
+    document.body.append(bar);
+  }
+  if (bar) bar.classList.toggle('on', busyCount > 0);
+}
+
+/** Montre un chargement sur `el` (et la barre du haut) tant que `p` n'est pas terminée ; renvoie `p`. */
+function busy(el, p) {
+  const t = el ? busyTarget(el) : null;
+  const key = t?.dataset?.busy || null;
+  if (t) busyEls.add(t);
+  let shown = false;
+  const timer = setTimeout(() => {
+    shown = true;
+    busyCount++;
+    busyBar();
+    if (t) busyMark(t, true);
+    if (!key) return;
+    busyKeys.add(key);
+    for (const e of document.querySelectorAll('[data-busy]')) if (e.dataset.busy === key) busyMark(busyTarget(e), true);
+  }, BUSY_DELAY);
+  const end = () => {
+    clearTimeout(timer);
+    if (t) busyEls.delete(t);
+    if (!shown) return;
+    if (key) busyKeys.delete(key);
+    busyCount--;
+    busyBar();
+    if (t) busyMark(t, false);
+    // l'élément a pu être redessiné entre-temps : ses copies reprennent leur état normal
+    if (key) for (const e of document.querySelectorAll('[data-busy]')) if (e.dataset.busy === key) { busyEls.delete(busyTarget(e)); busyMark(busyTarget(e), false); }
+  };
+  Promise.resolve(p).then(end, end);
+  return p;
+}
+
+function busyWrap(el, fn) {
+  if (typeof fn !== 'function' || fn.busyWrapped) return fn;
+  const w = function (e) {
+    const t = busyTarget(el);
+    if (busyEls.has(t) || t.classList?.contains('busy')) { e?.preventDefault?.(); return; }
+    const r = fn.call(this, e);
+    if (r && typeof r.then === 'function') busy(t, r);
+    return r;
+  };
+  w.busyWrapped = true;
+  return w;
+}
+
+// Même chose pour les boutons dont le gestionnaire est posé directement (`btn.onclick = …`)
+for (const prop of ['onclick', 'onchange']) {
+  const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
+  if (d?.set) Object.defineProperty(HTMLElement.prototype, prop, {
+    configurable: true, enumerable: d.enumerable,
+    get() { return d.get.call(this); },
+    set(fn) { d.set.call(this, busyWrap(this, fn)); },
+  });
+}
+
+/** Texte d'attente avec un petit cercle qui tourne (« Lecture… », « Connexion… ») */
+const loading = (text, cls = '') => h('div', { class: 'loading ' + cls, role: 'status' }, h('span', { class: 'spin sm', 'aria-hidden': 'true' }), text);
 
 let mouse = null;
 
@@ -340,7 +435,7 @@ function renderMouseButtons(box) {
     return field(name, h('div', { class: 'row-inline' }, sel,
       ['keys', 'macro', 'fire'].includes(v) && msEdit?.i !== i ? h('button', { class: 'ghost', onclick: () => msPick(i, v) }, 'Modifier') : null,
       isDefault ? null : h('button', { class: 'ghost', title: 'Fonction d’usine', onclick: () => {
-        msEdit = null; apply(`${name} remis d’usine`, () => mouse.resetButton(i));
+        msEdit = null; return apply(`${name} remis d’usine`, () => mouse.resetButton(i));
       } }, 'Remettre d’usine')),
       msEdit?.i === i ? msEditor() : null);
   });
@@ -536,7 +631,7 @@ function renderKbKeys(box) {
         : h('div', { class: 'row-inline' }, sel,
           h('button', { onclick: () => {
             const v = Number($('kbKeySel').value);
-            kbDo(`${name} → ${rektKeyName(v)}`, () => kb.setKey(kbLayer, kbKey, v));
+            return kbDo(`${name} → ${rektKeyName(v)}`, () => kb.setKey(kbLayer, kbKey, v));
           } }, 'Appliquer'),
           changed(kbKey) ? h('button', { class: 'ghost', onclick: () =>
             kbDo(`${name} remise d’origine`, () => kb.setKey(kbLayer, kbKey, origin.layers[kbLayer][kbKey])) }, 'Remettre d’origine') : null),
@@ -804,7 +899,7 @@ function renderKbTravel(box) {
           const patch = {};
           if ($('kbTrig').value !== '') patch.trigger = read('kbTrig');
           if ($('kbReset').value !== '') patch.reset = read('kbReset');
-          kbApply('Rapid trigger', () => kb.applyRt(sel, patch));
+          return kbApply('Rapid trigger', () => kb.applyRt(sel, patch));
         } }, 'Appliquer')),
       h('div', { class: 'muted small' }, 'La touche se relâche dès qu’elle remonte un peu, et se réactive dès qu’elle redescend, n’importe où dans sa course. Idéal en jeu.')),
   );
@@ -900,7 +995,7 @@ function eqEditor(bands, onCommit) {
     return h('div', { class: 'eqb' }, out,
       h('input', { type: 'range', class: 'vert', min: -12, max: 12, step: 1, value: vals[i],
         oninput: e => { out.textContent = fmtDb(Number(e.target.value)); },
-        onchange: e => { vals[i] = Number(e.target.value); onCommit([...vals]); } }),
+        onchange: e => { vals[i] = Number(e.target.value); return onCommit([...vals]); } }),
       h('span', { class: 'muted small' }, f));
   }));
 }

@@ -3,6 +3,22 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.4.0
+
+*In English: a new version now shows up the moment PeriphHub opens (banner on every page, update
+window, tray menu entry), and every button that makes you wait shows a spinner.*
+
+- **Mises à jour visibles tout de suite** : plus besoin d’attendre plusieurs secondes sur l’accueil.
+  La vérification part dès le lancement, la dernière version trouvée s’affiche immédiatement au
+  démarrage suivant, et une fenêtre « Une mise à jour est disponible » s’ouvre avec les nouveautés.
+- **Bandeau sur toutes les pages** tant que la mise à jour n’est pas installée, avec la progression
+  du téléchargement.
+- **Fenêtre fermée** : entrée « Installer PeriphHub x.y.z » dans le menu de l’icône près de l’horloge
+  (elle ouvre PeriphHub et lance l’installation). Vérification toutes les heures et à chaque ouverture.
+- **Chargements partout** : un bouton qui fait patienter affiche un cercle qui tourne à la place de
+  son texte, un interrupteur fait tourner sa pastille, et une fine barre défile en haut de la fenêtre.
+  Un second clic pendant l’action est ignoré (plus d’action lancée deux fois).
+
 ## 1.3.0
 
 *In English: keyboard and screen-reader access (switches, dialogs, current page), better contrast,

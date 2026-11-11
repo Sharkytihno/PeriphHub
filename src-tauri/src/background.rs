@@ -31,7 +31,12 @@ pub const BACKGROUND_ARG: &str = "--background";
 pub struct TrayItems {
     open: MenuItem<Wry>,
     quit: MenuItem<Wry>,
+    /// « Installer PeriphHub x.y.z », en tête du menu seulement quand une mise à jour attend
+    update: MenuItem<Wry>,
+    menu: Menu<Wry>,
 }
+/// L'entrée de mise à jour est dans le menu en ce moment
+static UPDATE_IN_MENU: AtomicBool = AtomicBool::new(false);
 
 /// Lancé au démarrage de Windows (clé Run ou tâche de démarrage du Store) : fenêtre cachée
 pub fn launched_hidden() -> bool {
@@ -101,7 +106,15 @@ pub fn tray(app: &AppHandle) -> tauri::Result<()> {
         b = b.icon(icon.clone());
     }
     b.build(app)?;
-    app.manage(TrayItems { open, quit });
+    let update = MenuItem::with_id(app, "update", "Installer la mise à jour", true, None::<&str>)?;
+    // Entrée de mise à jour : la fenêtre s'ouvre et l'interface lance l'installation (js/shell.js)
+    app.on_menu_event(|app, e| {
+        if e.id.as_ref() == "update" {
+            show(app);
+            let _ = app.emit("update-install", ());
+        }
+    });
+    app.manage(TrayItems { open, quit, update, menu });
     Ok(())
 }
 
@@ -137,14 +150,28 @@ pub fn bg_quit(app: AppHandle) {
 }
 
 /// Réglages venus de l'interface : garder en arrière-plan à la fermeture, question à poser,
-/// textes du menu (langue), infobulle de l'icône (mise à jour disponible…)
+/// textes du menu (langue), infobulle de l'icône (mise à jour disponible…), entrée « Installer
+/// PeriphHub x.y.z » (texte vide : pas de mise à jour, l'entrée est retirée)
 #[tauri::command]
-pub fn bg_set(app: AppHandle, keep: bool, ask: bool, open: String, quit: String, tooltip: String) {
+pub fn bg_set(app: AppHandle, keep: bool, ask: bool, open: String, quit: String, tooltip: String, update: Option<String>) {
     KEEP.store(keep, Ordering::Relaxed);
     ASK.store(ask, Ordering::Relaxed);
     if let Some(t) = app.try_state::<TrayItems>() {
         let _ = t.open.set_text(open.chars().take(60).collect::<String>());
         let _ = t.quit.set_text(quit.chars().take(60).collect::<String>());
+        match update.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+            Some(label) => {
+                let _ = t.update.set_text(label.chars().take(60).collect::<String>());
+                if !UPDATE_IN_MENU.swap(true, Ordering::Relaxed) {
+                    let _ = t.menu.insert(&t.update, 0);
+                }
+            }
+            None => {
+                if UPDATE_IN_MENU.swap(false, Ordering::Relaxed) {
+                    let _ = t.menu.remove(&t.update);
+                }
+            }
+        }
     }
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(tooltip.chars().take(120).collect::<String>()));

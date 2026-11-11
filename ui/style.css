@@ -735,3 +735,66 @@ main > section { animation: pagein .26s var(--ease); }
   .toggle input:checked + .sw { background: Highlight; }
   .meter > i, .htrack > i, .prog > i, .pwbar i { background: Highlight; }
 }
+
+/* ---------- Chargement (js/devices.js : busy) ---------- */
+/* Bouton : le texte laisse sa place à un cercle qui tourne (la largeur ne bouge pas) */
+button.busy { position: relative; color: transparent !important; cursor: progress; pointer-events: none; }
+button.busy > * { visibility: hidden; }
+button.busy::after { content: ''; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .35); border-top-color: #fff; animation: spin .7s linear infinite; }
+button.ghost.busy::after, .seg button.busy::after, nav button.busy::after { border-color: var(--line2); border-top-color: var(--accent); }
+button.busy:disabled { opacity: 1; }
+/* Interrupteur : la pastille devient un anneau qui tourne */
+.toggle.busy { cursor: progress; }
+.toggle.busy .sw::after { background: transparent; box-shadow: none; border: 2px solid rgba(255, 255, 255, .9); border-right-color: transparent;
+  width: 12px; height: 12px; top: 2px; animation: knobspin .7s linear infinite; }
+.toggle.busy input:not(:checked) + .sw::after { border-color: var(--accent); border-right-color: transparent; }
+.toggle.busy.disabled { opacity: 1; }
+@keyframes knobspin { from { transform: translateX(var(--kx, 0)) rotate(0); } to { transform: translateX(var(--kx, 0)) rotate(360deg); } }
+.toggle input:checked + .sw { --kx: 16px; }
+select.busy, input.busy { cursor: progress; opacity: .7; }
+/* Barre fine en haut de la fenêtre tant qu'une action est en cours (cachée sous une fenêtre de dialogue) */
+#busyBar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .2s; }
+#busyBar.on { opacity: 1; }
+#busyBar::before { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent); animation: busyslide 1.1s ease-in-out infinite; }
+body:has(.overlay) #busyBar { opacity: 0; }
+@keyframes busyslide { from { left: -35%; } to { left: 100%; } }
+/* Texte d'attente avec un petit cercle */
+.spin.sm { width: 14px; height: 14px; border-width: 2px; }
+.loading { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); }
+.loading.block { display: flex; padding: 18px 0; }
+.chip .spin.sm { width: 10px; height: 10px; border-width: 2px; display: inline-block; border-color: currentColor; border-top-color: transparent; }
+
+/* ---------- Mise à jour disponible (js/shell.js : updBar, updDialog) ---------- */
+.updbar { position: sticky; top: -12px; z-index: 6; max-width: 980px; margin: -12px auto 20px; display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px 12px 12px; border-radius: var(--r); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 16%, var(--card)), var(--card) 70%); box-shadow: var(--sh1);
+  animation: updin .35s var(--ease, ease-out); }
+.updbar[hidden] { display: none; }
+.updbar .updtxt { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.updbar .row-inline { flex: none; }
+.updicon { width: 34px; height: 34px; border-radius: 10px; flex: none; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent2), var(--accent)); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent); }
+.updicon svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.updbar .updicon svg, .updhero .updicon svg { animation: updnudge 2.4s ease-in-out infinite; }
+@keyframes updnudge { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(2px); } 90% { transform: translateY(-1px); } }
+@keyframes updin { from { opacity: 0; transform: translateY(-6px); } }
+.upddlg { display: grid; gap: 16px; width: min(520px, 86vw); }
+.updhero { display: flex; gap: 14px; align-items: center; }
+.updhero h3 { margin: 0 0 2px; }
+.updhero .updicon { width: 46px; height: 46px; border-radius: 13px; }
+.updhero .updicon svg { width: 24px; height: 24px; }
+.updnotes { max-height: 34vh; overflow: auto; padding: 12px 14px; border-radius: var(--rs); background: var(--hover); border: 1px solid var(--line2); }
+.updnotes ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; line-height: 1.45; }
+.upddlg > p { margin: 0; }
+.dlgact { justify-content: flex-end; }
+.updprog { display: grid; gap: 8px; }
+.updprog:empty { display: none; }
+.updptext { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 13px; }
+.updpbar { height: 6px; border-radius: 3px; background: var(--line2); overflow: hidden; position: relative; }
+.updpbar > i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s; }
+.updpbar.ind > i { width: 35%; position: absolute; animation: busyslide 1.1s ease-in-out infinite; }
+@media (max-width: 700px) { .updbar { flex-wrap: wrap; } .updbar .row-inline { width: 100%; justify-content: flex-end; } }
+@media (prefers-reduced-motion: reduce) { .updbar, .updicon svg { animation: none !important; } }
+.updprog .err { color: var(--err); }
