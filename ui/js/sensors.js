@@ -10,9 +10,9 @@ let sensTimer = 0;
 const SENS_KIND = {
   Cpu: 'Processeur', GpuNvidia: 'Carte graphique', GpuAmd: 'Carte graphique', GpuIntel: 'Carte graphique',
   Motherboard: 'Carte mère', SuperIO: 'Sondes de la carte mère', EmbeddedController: 'Contrôleur de la carte mère',
-  Storage: 'Disque',
+  Storage: 'Disque', AsusAtk: 'Portable ASUS',
 };
-const SENS_ORDER = ['Cpu', 'GpuNvidia', 'GpuAmd', 'GpuIntel', 'Motherboard', 'SuperIO', 'EmbeddedController', 'Storage'];
+const SENS_ORDER = ['Cpu', 'GpuNvidia', 'GpuAmd', 'GpuIntel', 'Motherboard', 'SuperIO', 'EmbeddedController', 'AsusAtk', 'Storage'];
 
 // Valeur affichable : une sonde débranchée renvoie souvent 0, -55, 127 ou 255 °C
 // Les SSD publient aussi leurs seuils d'alerte comme des « températures » : ce ne sont pas des mesures
@@ -84,7 +84,9 @@ const fmtV = s => s.k === 'Temperature' ? fmtT(s.v)
 // Lignes affichées : températures valides, ventilateurs branchés, charge et consommation principales
 function sensRows(hw) {
   const main = sensMain(hw);
-  const rows = hw.s.filter(s => s !== main && (sensTempOk(s) || sensFanOk(s)
+  // Vitesses des ventilateurs pilotables : en grand dans la section Ventilateurs (js/fancontrol.js)
+  const fans = typeof fcShown !== 'function' || !fcShown(hw);
+  const rows = hw.s.filter(s => s !== main && (sensTempOk(s) || (fans && sensFanOk(s))
     || (s.k === 'Load' && /^(CPU Total|GPU Core)$/i.test(s.n))));
   // Processeur : une ligne par cœur, c'est trop ; on garde le maximum et la moyenne
   return hw.k === 'Cpu' ? rows.filter(s => !(s.k === 'Temperature' && /^(CPU )?Core #\d+|^CCD\d+ \(|^Core #\d+/i.test(s.n) && !/Max|Average/i.test(s.n))) : rows;
@@ -99,6 +101,7 @@ function sensRow(hw, s) {
 }
 
 function sensCard(hw, parent) {
+  if (hw.k === 'AsusAtk' && typeof fcShown === 'function' && fcShown(hw)) return null;
   const main = sensMain(hw);
   const rows = sensRows(hw);
   // Partie graphique du processeur : sa consommation est déjà dans celle du processeur (et souvent fantaisiste)
@@ -147,8 +150,8 @@ function sensIntro() {
   return h('div', { class: 'card sintro' },
     h('strong', {}, 'Voir les températures de votre PC'),
     h('p', { class: 'muted' }, 'Processeur, carte mère (sondes et ventilateurs), carte graphique et disques, avec la consommation électrique en direct. Windows réserve ces capteurs aux administrateurs : '
-      + 'PeriphHub installe une fois pour toutes un petit service en lecture seule (LibreHardwareMonitor et le pilote signé PawnIO). '
-      + 'Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne touche à aucun réglage.'),
+      + 'PeriphHub installe une fois pour toutes un petit service (LibreHardwareMonitor et le pilote signé PawnIO). '
+      + 'Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne change rien tant que vous ne réglez pas vous-même un ventilateur.'),
     h('button', { class: 'lg', disabled: sensBusy, onclick: () => sensAdmin('install') }, sensBusy ? 'Installation…' : 'Activer (une validation Windows)'));
 }
 
@@ -176,10 +179,14 @@ function renderSensors() {
       if (v.info && !v.info.pawnio) parts.push(h('div', { class: 'card warn' }, 'Le pilote PawnIO n’est pas installé : le processeur et la carte mère restent illisibles. ',
         h('button', { disabled: sensBusy, onclick: () => sensAdmin('install') }, 'Réinstaller')));
     }
-    parts.push(h('div', { class: 'muted small sfoot' }, 'Mesures relues toutes les 2 secondes, en lecture seule. ',
-      h('button', { class: 'ghost', disabled: sensBusy, onclick: () => sensAdmin('uninstall') }, 'Retirer l’accès aux capteurs')));
+    const foot = h('div', { class: 'muted small sfoot' }, 'Mesures relues toutes les 2 secondes. ',
+      h('button', { class: 'ghost', disabled: sensBusy, onclick: () => sensAdmin('uninstall') }, 'Retirer l’accès aux capteurs'));
+    // Sous les ventilateurs (#fanCtl) ; la version perso range elle-même le pied de page
+    if ($('tempsFoot') && typeof fcPerso === 'function' && !fcPerso()) $('tempsFoot').replaceChildren(foot); else parts.push(foot);
   }
+  if (!v?.installed && $('tempsFoot')) $('tempsFoot').replaceChildren();
   body.replaceChildren(...parts);
+  if (typeof fcRender === 'function') fcRender(v);
   const sub = $('tempsSub');
   const cpu = v?.hw?.find(x => x.k === 'Cpu');
   const t = cpu && sensMain(cpu);
@@ -242,6 +249,7 @@ async function sensorsDiag() {
       + (temps ? ` · ${temps}` : '') + (fans ? ` · ventilateurs ${fans}` : '')
       + (pws ? ` · watts ${pws}${pw ? ' (retenu : ' + pw.n + ')' : ' (aucun retenu)'}` : ''));
   }
+  if (typeof fcDiag === 'function') lines.push(...fcDiag(v));
   return lines;
 }
 

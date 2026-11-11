@@ -175,6 +175,12 @@ async fn sensors_info() -> Result<Value, String> {
     blocking(|| Ok(sensors::info())).await
 }
 
+/// Ventilateurs : une commande au service des capteurs (« fan », « asus_mode », « reset »), revérifiée par lui
+#[tauri::command]
+async fn sensors_fan(cmd: Value) -> Result<Value, String> {
+    blocking(move || sensors::command(&cmd)).await
+}
+
 /// Installe (« install ») ou retire (« uninstall ») le service des capteurs : une validation Windows.
 /// false : l'utilisateur l'a refusée.
 #[tauri::command]
@@ -397,6 +403,7 @@ fn main() {
             openrgb_color,
             sensors_read,
             sensors_info,
+            sensors_fan,
             sensors_admin,
             openrgb_color_all,
             openrgb_resize,

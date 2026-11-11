@@ -44,8 +44,11 @@ foreach ($p in $Packages) {
 }
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $csc -nologo -optimize+ -platform:x64 -target:exe "-out:$(Join-Path $dest 'PeriphHubSensors.exe')" `
-  "-r:$(Join-Path $dest 'LibreHardwareMonitorLib.dll')" -r:System.ServiceProcess.dll -r:System.Core.dll $src
+  "-r:$(Join-Path $dest 'LibreHardwareMonitorLib.dll')" -r:System.ServiceProcess.dll -r:System.Core.dll -r:System.Web.Extensions.dll $src
 if ($LASTEXITCODE) { throw "Compilation du module capteurs impossible ($LASTEXITCODE)" }
+# Calculs des ventilateurs (courbes, garde-fous), sans matériel
+& (Join-Path $dest 'PeriphHubSensors.exe') --selftest
+if ($LASTEXITCODE) { throw "Essais du module capteurs en échec ($LASTEXITCODE)" }
 Remove-Item $tmp -Recurse -Force
 Set-Content $stamp $want -Encoding ascii -NoNewline
 Write-Host "Module capteurs prêt : $((Get-ChildItem $dest -Filter *.dll).Count) bibliothèques + PeriphHubSensors.exe"

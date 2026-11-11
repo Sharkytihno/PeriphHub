@@ -22,11 +22,13 @@ include!(concat!(env!("OUT_DIR"), "/sensor_files.rs"));
 
 pub const SERVICE: &str = "PeriphHubSensors";
 const PIPE: &str = r"\\.\pipe\PeriphHubSensors";
+const CMD_PIPE: &str = r"\\.\pipe\PeriphHubSensorsCmd";
 const EXE: &str = "PeriphHubSensors.exe";
 
 /// Droits du service : système et administrateurs comme d'habitude ; tout utilisateur connecté peut le
-/// démarrer (RP) et voir son état (LC, CC), pas l'arrêter, le modifier ni le supprimer.
-const SDDL: &str = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCLCSWRPLORC;;;AU)";
+/// démarrer (RP) et voir son état (LC, CC), pas l'arrêter, le modifier ni le supprimer. Le système (le
+/// service lui-même) peut changer son démarrage (DC) : automatique tant qu'un ventilateur est piloté.
+const SDDL: &str = "D:(A;;CCDCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCLCSWRPLORC;;;AU)";
 
 /// %ProgramFiles%\PeriphHub-Sensors (version 64 bits de Program Files)
 pub fn service_dir() -> Option<PathBuf> {
@@ -176,6 +178,67 @@ pub fn read() -> Result<Value, String> {
     Ok(v)
 }
 
+/// Une commande au service (ventilateurs) : une ligne JSON, une ligne JSON en réponse. Même garde que la
+/// lecture : le canal doit appartenir au processus du service.
+pub fn command(cmd: &Value) -> Result<Value, String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, OPEN_EXISTING};
+    use windows_sys::Win32::System::Pipes::{GetNamedPipeServerProcessId, WaitNamedPipeW};
+    let line = serde_json::to_string(cmd).map_err(|e| e.to_string())? + "\n";
+    if line.len() > 60000 {
+        return Err("commande trop longue".into());
+    }
+    // Service arrêté : démarré comme pour une lecture
+    let st = read()?;
+    if st.get("installed") != Some(&json!(true)) {
+        return Err("service des capteurs non installé".into());
+    }
+    let name = wide(CMD_PIPE);
+    let mut h = INVALID_HANDLE_VALUE;
+    for _ in 0..10 {
+        h = unsafe { CreateFileW(name.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, std::ptr::null(), OPEN_EXISTING, 0, std::ptr::null_mut()) };
+        if h != INVALID_HANDLE_VALUE {
+            break;
+        }
+        unsafe { WaitNamedPipeW(name.as_ptr(), 500) };
+    }
+    if h == INVALID_HANDLE_VALUE {
+        return Err("le service des capteurs ne prend pas encore de commandes : mettez-le à jour (page Températures)".into());
+    }
+    let pid = service_pid();
+    let mut server = 0u32;
+    let owned = unsafe { GetNamedPipeServerProcessId(h, &mut server) } != 0 && server == pid && pid != 0;
+    let mut data = Vec::new();
+    if owned {
+        let mut n = 0u32;
+        let ok = unsafe { WriteFile(h, line.as_ptr(), line.len() as u32, &mut n, std::ptr::null_mut()) };
+        if ok != 0 {
+            let mut buf = [0u8; 16384];
+            loop {
+                let mut n = 0u32;
+                let ok = unsafe { ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, &mut n, std::ptr::null_mut()) };
+                if ok == 0 || n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n as usize]);
+                if data.ends_with(b"\n") || data.len() > 1 << 20 {
+                    break;
+                }
+            }
+        }
+    }
+    unsafe { CloseHandle(h) };
+    if !owned {
+        return Err("canal des commandes tenu par un autre programme : rien n’a été envoyé".into());
+    }
+    let v: Value = serde_json::from_slice(&data).map_err(|e| format!("réponse du service illisible ({e})"))?;
+    if v.get("ok") == Some(&json!(true)) {
+        Ok(v)
+    } else {
+        Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("commande refusée").to_string())
+    }
+}
+
 /// Instance administrateur : `periphhub.exe --sensors-service install|uninstall`.
 /// Code de sortie : 0 réussi, 1 module livré invalide, 2 copie impossible, 3 PawnIO, 4 service, 5 inconnu.
 pub fn elevated_main(action: &str) -> i32 {
@@ -253,7 +316,7 @@ fn install() -> i32 {
             Handle(h)
         }
     };
-    let mut desc = wide("Températures et ventilateurs pour PeriphHub, en lecture seule. Démarré à la demande, s'arrête seul.");
+    let mut desc = wide("Températures et ventilateurs pour PeriphHub. Démarré à la demande, s'arrête seul sauf si un ventilateur est réglé à la main.");
     let d = SERVICE_DESCRIPTIONW { lpDescription: desc.as_mut_ptr() };
     unsafe { ChangeServiceConfig2W(svc.0, SERVICE_CONFIG_DESCRIPTION, &d as *const _ as *const _) };
     if !set_security(&svc) {
@@ -308,6 +371,9 @@ mod tests {
     fn droits_du_service() {
         // Les utilisateurs (AU) peuvent démarrer (RP) mais ni arrêter (WP), ni modifier (DC), ni supprimer (SD)
         let au = SDDL.split('(').find(|a| a.ends_with(";;;AU)")).unwrap();
+        // Le service lui-même (système) règle son démarrage, sans pouvoir se supprimer ni changer ses droits
+        let sy = SDDL.split('(').find(|a| a.ends_with(";;;SY)")).unwrap();
+        assert!(sy.contains("DC") && !sy.contains("SD") && !sy.contains("WD"));
         assert!(au.contains("RP"));
         for bad in ["WP", "DC", "SD", "WD", "WO", "DT"] {
             assert!(!au.contains(bad), "{bad}");

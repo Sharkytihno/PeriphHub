@@ -432,11 +432,15 @@ function refreshHome() {
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
     others,
-    NATIVE && report ? h('div', { class: 'homefoot' },
-      h('span', {}, 'Un appareil manque ou ne marche pas ?'),
+    NATIVE && report ? h('section', { class: 'card homediag' },
+      h('div', {},
+        h('strong', {}, 'Un souci, une idée ? Envoyez le diagnostic du PC'),
+        h('div', { class: 'muted small' }, 'En un clic, sans rien écrire : appareils, capteurs, ventilateurs et réglages de Windows partent au développeur, '
+          + 'qui s’en sert pour corriger ou ajouter ce qui manque. Ni numéro de série, ni nom d’utilisateur, ni fichier.')),
       h('div', { class: 'row-inline' },
-        h('button', { class: 'ghost', disabled: diagBusy, onclick: () => diagDialog() }, diagBusy ? 'Envoi…' : 'Signaler un problème'),
-        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier le diagnostic'))) : null].filter(Boolean));
+        h('button', { disabled: diagBusy, onclick: sendPcDiag }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic du PC'),
+        h('button', { class: 'ghost', disabled: diagBusy, title: 'Choisir un appareil et dire ce qui ne marche pas', onclick: () => diagDialog() }, 'Signaler un problème…'),
+        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier'))) : null].filter(Boolean));
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment
@@ -1148,7 +1152,9 @@ function renderOptions() {
       h('div', { class: 'muted small' }, 'Quand un appareil détecté ne se connecte pas, ou si PeriphHub rencontre une erreur interne, il peut envoyer tout seul son diagnostic au développeur pour qu’il corrige : '
         + 'version de Windows, liste des appareils USB et essais des pilotes, sans numéro de série, nom d’utilisateur ni fichier. Une seule fois par problème. '
         + 'Il arrive dans un dépôt GitHub privé.'),
-      h('div', { class: 'row-inline' }, h('button', { class: 'ghost', onclick: () => diagDialog() }, 'Envoyer un diagnostic maintenant'))) : null,
+      h('div', { class: 'row-inline' },
+        h('button', { disabled: diagBusy, onclick: sendPcDiag }, 'Envoyer le diagnostic du PC'),
+        h('button', { class: 'ghost', onclick: () => diagDialog() }, 'Avec un message ou un appareil…'))) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),
@@ -1218,6 +1224,11 @@ async function sendDiag(auto, { comment = '', focus = null, sig = null, title = 
     diagBusy = false;
     refreshHome();
   }
+}
+
+// Diagnostic global en un clic (accueil, Options) : tout le PC, sans commentaire ni appareil choisi
+function sendPcDiag() {
+  return sendDiag(false, { title: 'Diagnostic du PC', focus: [] });
 }
 
 // Envoi manuel : l'utilisateur dit sur quel appareil et ce qui ne marche pas (le diagnostic suffit

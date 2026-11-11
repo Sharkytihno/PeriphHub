@@ -353,6 +353,13 @@ function drvRelease(dev, quiet = false) {
 function drvAdd(inst, drv) {
   inst.driver = drv;
   drvLive.set(inst.key, inst);
+  // Pris par un autre chemin (casque par HeadsetControl…) après une analyse HID sans pilote : ce n'était
+  // pas un échec (Arctis Nova 5, diagnostic #14 : « connecté » et « aucun pilote ne correspond » à la fois)
+  if (inst.dev) {
+    const id = devId(inst.dev);
+    const errs = (drvErrors.get(id) || []).filter(e => e !== 'aucun pilote ne correspond à ses interfaces');
+    if (errs.length) drvErrors.set(id, errs); else drvErrors.delete(id);
+  }
   const tab = KIND_ICON_TAB[inst.kind];
   const icon = tab ? document.querySelector(`nav [data-tab="${tab}"] svg`).cloneNode(true) : kindIcon(inst.kind);
   const nb = h('button', { 'data-tab': inst.key, onclick: () => showTab(inst.key) }, icon,

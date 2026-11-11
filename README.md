@@ -45,6 +45,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 | Claviers à effet Hall Wooting (ARM), SteelSeries Apex Pro et Keychron HE ; claviers Razer et Logitech en secours | Bibliothèque OpenMouse (`@openmouse/keyboard-protocol`) | Point d'activation, rapid trigger, fréquence, luminosité (réglages globaux) | 🧪 |
 | Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
 | Casques Razer Kraken filaires (7.1, V2, Tournament Edition, Ultimate, Kitty V2, Classic) | D'après OpenRazer | Éclairage (fixe, respiration, cycle, éteint) | 🧪 |
+| Ventilateurs du PC : puces de carte mère (ITE, Nuvoton…), cartes graphiques, portables ASUS (TUF, ROG, Vivobook) | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) ; interface ATK d’ASUS d’après [G-Helper](https://github.com/seerge/g-helper) | Automatique, vitesse fixe ou courbe selon une température ; profils Silencieux / Équilibré / Turbo des portables ASUS ; 100 % de sécurité si le processeur ou la carte graphique chauffe trop | 🧪 |
 | Watercoolings NZXT Kraken Z, 2023 et 2024 (Elite, Plus) | D'après [liquidctl](https://github.com/liquidctl/liquidctl) | Température du liquide, vitesses de la pompe et des ventilateurs, profils de vitesse, luminosité de l'écran | 🧪 |
 | Casques Razer BlackShark V2 HyperSpeed | Protocole observé | Égaliseur, retour micro, veille, THX | ✅ |
 | Casque HyperX Cloud Alpha Wireless | Pilote intégré | Batterie, retour micro, extinction auto, annonces vocales | 🧪 |
@@ -86,6 +87,7 @@ fonctionne (ou pas) ? Ouvrez un [ticket « Retour sur un appareil »](https://gi
 | 0.20 | **Diagnostic sans compte GitHub** : envoi en un clic, ou automatique avec votre accord ; un appareil HID figé ne bloque plus les autres | ✅ |
 | 0.21 – 0.22 | SteelSeries Apex 3 (couleurs par zone, effets) ; Turtle Beach Vulcan II TKL Pro et HyperX Cloud Alpha Wireless ; bouton « Lancer OpenRGB » | ✅ |
 | **1.0** | **Fermer les logiciels constructeurs** : réglages Windows de toutes les souris et de tous les claviers, batteries Bluetooth et alerte de batterie faible, effets OpenRGB ; PeriphHub en arrière-plan (près de l'horloge, démarrage avec Windows) ; plus aucun blocage ; aucun programme en ligne de commande lancé en arrière-plan (antivirus) ; diagnostics complets du premier coup | ✅ |
+| 1.2 – 1.5 | **Températures** du processeur, de la carte mère, des cartes graphiques et des disques, consommation en direct ; **ventilateurs** : automatique, vitesse fixe ou courbe (puces de carte mère, cartes graphiques, portables ASUS) ; diagnostic du PC en un clic depuis l’accueil | ✅ |
 
 Détail de chaque version : [CHANGELOG.md](CHANGELOG.md). Suite : [feuille de route](docs/ROADMAP.md).
 

@@ -715,6 +715,35 @@ main > section { animation: pagein .26s var(--ease); }
 .sbig.hot, .sval.hot { color: var(--err); }
 .sfoot { margin-top: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
+/* ---------- Ventilateurs (1.5, js/fancontrol.js) ---------- */
+#fanCtl:not(:empty) { margin-top: 22px; }
+.fchead { margin-bottom: 12px; }
+.fccard.idle { opacity: .6; }
+.fccard .unit { font-size: 13px; font-weight: 600; color: var(--muted); }
+.fccard select { max-width: 100%; }
+.fccard, .fccard > *, .curvebox, .fcedit { min-width: 0; }
+.fccard > .seg { display: flex; flex-wrap: nowrap; }
+.fccard > .seg button { flex: 1; padding: 5px 6px; white-space: nowrap; }
+.fccard .fanpre { display: flex; }
+.fccard .fanpre button { flex: 1 1 auto; padding: 5px 8px; }
+.fcedit { display: grid; gap: 6px; }
+svg.fccurve { width: 100%; max-width: 420px; height: auto; background: var(--inset); border: 1px solid var(--line); border-radius: 10px; touch-action: none; }
+svg.fccurve .grid { stroke: var(--grid); }
+svg.fccurve .ax { fill: var(--muted); font-size: 10px; }
+svg.fccurve .line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+svg.fccurve .pt { fill: var(--card); stroke: var(--accent); stroke-width: 2.5; cursor: grab; }
+svg.fccurve .pt:hover, svg.fccurve .pt:focus-visible { fill: var(--accent); outline: none; }
+svg.fccurve .pt:active { cursor: grabbing; }
+svg.fccurve .now { stroke: var(--info); stroke-dasharray: 4 3; stroke-width: 1.5; }
+.fctip { min-height: 1.3em; }
+.fanpre { align-self: flex-start; }
+details.fanidle { margin-top: 12px; }
+details.fanidle > summary { cursor: pointer; padding: 6px 0; }
+#tempsFoot .sfoot { margin-top: 18px; }
+/* Accueil : diagnostic du PC en un clic */
+.homediag { display: flex; align-items: center; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap; }
+.homediag > div:first-child { display: grid; gap: 4px; max-width: 70ch; }
+
 /* ---------- Accessibilité et confort (1.3) ---------- */
 .toggle { position: relative; }
 /* Pastille de l'allègement : chiffre sombre sur orange (le blanc y était illisible, contraste 2:1) */

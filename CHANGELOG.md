@@ -3,6 +3,29 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.5.0
+
+*In English: control your fans from the Temperatures page (automatic, fixed speed or a curve you
+drag with the mouse) on desktop motherboards, graphics cards and ASUS laptops, with a 100 % safety
+when things get too hot; and a one-click “Send PC diagnostics” button on the home page.*
+
+- **Ventilateurs** (page Températures) : pour chaque ventilateur, **Automatique** (courbe de la carte
+  mère ou de la carte graphique), **Vitesse fixe** ou **Courbe** selon la température de votre choix
+  (processeur, carte graphique, sondes de la carte mère). La courbe se modifie en glissant ses points à
+  la souris ou avec les flèches du clavier ; préréglages Silencieux, Équilibré, Performance.
+- **Portables ASUS** (TUF, ROG, Vivobook…) : profils Silencieux / Équilibré / Turbo comme dans Armoury
+  Crate, et une courbe par ventilateur (processeur, carte graphique) tenue par le portable lui-même.
+- **Sécurité** : jamais moins de 20 % pour le ventilateur du processeur ou une pompe, et 100 % sur tous
+  les ventilateurs réglés ici dès que le processeur dépasse 90 °C ou la carte graphique 85 °C.
+- **Réglages gardés** : ils tiennent PeriphHub fermé et après un redémarrage (le service des capteurs
+  démarre alors avec Windows) ; « Tout remettre en automatique » rend la main à la carte mère.
+  Le module capteurs doit être mis à jour une fois (une validation Windows, bouton sur la page).
+- **Diagnostic du PC en un clic** : nouveau bloc en bas de l’accueil, « Envoyer le diagnostic du PC »
+  part sans rien écrire ni choisir d’appareil (appareils, capteurs, ventilateurs, réglages de Windows).
+  « Signaler un problème… » garde le message et l’appareil concerné.
+- Casque piloté par HeadsetControl (Arctis Nova 5…) : plus de faux « aucun pilote ne correspond » dans le
+  diagnostic.
+
 ## 1.4.0
 
 *In English: a new version now shows up the moment PeriphHub opens (banner on every page, update
