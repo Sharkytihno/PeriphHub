@@ -88,6 +88,21 @@ pub fn info() -> Value {
     json!({ "service": label, "serviceStale": stale, "pawnio": state("PawnIO").is_some() })
 }
 
+/// Copie qui patiente quelques secondes si le fichier est encore tenu (service tout juste arrêté :
+/// son processus peut mettre un instant à libérer l'exe et ses bibliothèques, et la mise à jour
+/// échouait alors en laissant l'ancienne version en place)
+pub(crate) fn copy_retry(from: &std::path::Path, to: &std::path::Path) -> bool {
+    for i in 0..40 {
+        if std::fs::copy(from, to).is_ok() {
+            return true;
+        }
+        if i < 39 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+    false
+}
+
 pub(crate) fn stop_and_wait(svc: &Handle) {
     let mut st: SERVICE_STATUS = unsafe { std::mem::zeroed() };
     unsafe { ControlService(svc.0, SERVICE_CONTROL_STOP, &mut st) };
@@ -154,7 +169,7 @@ fn install() -> i32 {
                 return 2;
             }
         }
-        if std::fs::copy(src.join(name), &to).is_err() {
+        if !copy_retry(&src.join(name), &to) {
             return 2;
         }
     }
@@ -238,7 +253,7 @@ pub(crate) fn elevate_with(flag: &str, action: &str) -> Result<Option<u32>, Stri
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
     use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SW_HIDE};
     if !matches!(action, "install" | "uninstall") {
         return Err("action inconnue".into());
     }
@@ -252,6 +267,9 @@ pub(crate) fn elevate_with(flag: &str, action: &str) -> Result<Option<u32>, Stri
         info.lpFile = file.as_ptr();
         info.lpParameters = params.as_ptr();
         info.nShow = SW_HIDE;
+        // Fenêtre de validation rattachée à PeriphHub (au premier plan au moment du clic) : sans cela,
+        // Windows peut la laisser clignoter dans la barre des tâches au lieu de l'afficher
+        info.hwnd = GetForegroundWindow();
         if ShellExecuteExW(&mut info) == 0 {
             // 1223 : l'utilisateur a refusé la fenêtre de validation
             return if GetLastError() == 1223 { Ok(None) } else { Err("impossible d’obtenir les droits administrateur".into()) };

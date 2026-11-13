@@ -171,6 +171,34 @@ fn is_admin() -> bool {
     unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
 }
 
+/// Contrôle de compte d'utilisateur (UAC) : Windows affiche-t-il une fenêtre de validation quand
+/// PeriphHub demande les droits administrateur ? Pas de fenêtre (validation automatique) quand PeriphHub
+/// tourne déjà en administrateur, quand l'UAC est coupé, ou réglé sur « Ne jamais m'avertir » pour les
+/// comptes administrateurs : l'interface ne doit alors pas demander de « valider la fenêtre de Windows ».
+fn uac_from(elevated: bool, enable_lua: Option<u32>, consent_admin: Option<u32>) -> (bool, &'static str) {
+    if elevated {
+        (false, "PeriphHub déjà lancé en administrateur")
+    } else if enable_lua == Some(0) {
+        (false, "contrôle de compte coupé")
+    } else if consent_admin == Some(0) {
+        (false, "réglé sur « Ne jamais m’avertir »")
+    } else {
+        (true, "fenêtre de validation")
+    }
+}
+
+pub fn uac() -> Value {
+    let k = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System");
+    let get = |n: &str| k.as_ref().ok().and_then(|k| k.get_value::<u32, _>(n).ok());
+    let (prompt, why) = uac_from(is_admin(), get("EnableLUA"), get("ConsentPromptBehaviorAdmin"));
+    json!({ "prompt": prompt, "why": why })
+}
+
+#[tauri::command]
+pub fn uac_info() -> Value {
+    uac()
+}
+
 #[tauri::command]
 pub fn sys_info() -> Value {
     json!({
@@ -181,6 +209,7 @@ pub fn sys_info() -> Value {
         "webview2": tauri::webview_version().unwrap_or_else(|e| format!("introuvable ({e})")),
         "store": crate::update::from_store(),
         "admin": is_admin(),
+        "uac": uac(),
         "smart_app_control": smart_app_control(),
         "notify": crate::notify::status(),
         "errors": crash_lines(8),
@@ -190,6 +219,15 @@ pub fn sys_info() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uac_sans_fenetre() {
+        assert!(uac_from(false, Some(1), Some(5)).0);
+        assert!(uac_from(false, None, None).0);
+        assert!(!uac_from(true, Some(1), Some(5)).0);
+        assert!(!uac_from(false, Some(0), Some(5)).0);
+        assert!(!uac_from(false, Some(1), Some(0)).0);
+    }
 
     #[test]
     fn nettoie_les_chemins() {

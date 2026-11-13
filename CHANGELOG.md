@@ -3,6 +3,29 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.5.1
+
+*In English: Hall Effect keyboards no longer show up as mice (and no longer receive mouse commands),
+the Windows permission buttons no longer promise a prompt when Windows shows none, sensors and
+OpenRGB services update reliably, and the home page offers motherboard lighting when it needs it.*
+
+- **Clavier pris pour une souris** (clavier à effet Hall X68HE et autres claviers Akko, MonsGeek… sur
+  l’identifiant 0x3151) : le type d’un appareil vient maintenant de son interface principale, et les
+  protocoles de souris d’OpenMouse ne sont plus jamais essayés sur un clavier de ce fabricant (ils lui
+  envoyaient des réglages de DPI et de fréquence).
+- **Autorisation Windows** : quand Windows ne montre pas de fenêtre (contrôle de compte réglé sur
+  « Ne jamais m’avertir », coupé, ou PeriphHub lancé en administrateur), les boutons ne parlent plus
+  de fenêtre à valider. Sinon, la fenêtre s’ouvre devant PeriphHub au lieu de clignoter dans la barre
+  des tâches. Le diagnostic indique le réglage.
+- **Mise à jour des services** (capteurs, OpenRGB) : la copie attend que l’ancienne version libère ses
+  fichiers, au lieu d’échouer et de garder l’ancien module (sondes et ventilateurs de la carte mère
+  absents).
+- **Éclairage de la carte mère** (ASRock, ASUS, MSI…) : l’accueil propose de l’activer quand rien
+  d’autre ne le pilote ; il passe ensuite dans l’onglet Éclairage avec les ventilateurs et bandeaux
+  branchés dessus.
+- Souris sur un identifiant USB partagé (Attack Shark sur le dongle 3554:F517) : si OpenMouse lit des
+  données incohérentes, la page CompX de PeriphHub prend le relais.
+
 ## 1.5.0
 
 *In English: control your fans from the Temperatures page (automatic, fixed speed or a curve you

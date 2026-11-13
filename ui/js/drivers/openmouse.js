@@ -22,6 +22,32 @@ const OM_SKIP = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '15
 const omHex = n => n.toString(16).toUpperCase().padStart(4, '0');
 const omId = d => omHex(d.vendorId) + ':' + omHex(d.productId);
 
+// Clavier : son interface principale (le plus petit numéro, l'interface « boot ») porte un clavier
+// et pas de souris. Beaucoup de claviers exposent aussi une souris (macros) sur une autre interface.
+function omIsKeyboard(group) {
+  const ifs = group.filter(d => Number.isInteger(d.info?.interface) && d.info.interface >= 0);
+  if (!ifs.length) return false;
+  const first = Math.min(...ifs.map(d => d.info.interface));
+  const top = ifs.filter(d => d.info.interface === first)
+    .map(d => [d.info.usage_page ?? d.collections?.[0]?.usagePage, d.info.usage ?? d.collections?.[0]?.usage]);
+  return top.some(([p, u]) => p === 1 && u === 6) && !top.some(([p, u]) => p === 1 && u === 2);
+}
+// 0x3151 est l'identifiant d'un fabricant (MicLink/mlzn) partagé par des souris Fantech et GearHub
+// ET par des dizaines de claviers (Akko, MonsGeek, Attack Shark X68HE…) qui ont la même interface
+// 0xFFFF/0x02. Les pilotes de souris d'OpenMouse sur ce VID prendraient le clavier pour une souris et
+// lui enverraient des commandes de DPI et de fréquence (diagnostic #15, X68HE 3151:502D) : refusé.
+const OM_ODM_MICE = 0x3151;
+const omScanKind = d => (typeof report !== 'undefined' && report?.devices || [])
+  .find(r => (r.vid + ':' + r.pid).toUpperCase() === omId(d))?.kind;
+// Souris dont OpenMouse a lu des données incohérentes : même identifiant USB qu'un autre modèle, autre
+// organisation de la mémoire (diagnostic #15 : « ATTACK SHARK Mouse » sur 3554:F517, l'identifiant du
+// dongle Scyrox V8S ; « corrupt DPI stage from address 6912 »). Plus réclamée par OpenMouse jusqu'au
+// prochain lancement : la page CompX de PeriphHub (js/devices.js) la reprend.
+const omMismatch = new Set();
+const OM_MISMATCH = /corrupt|checksum|unexpected|malformed/i;
+const omKeyboardOnOdm = (d, group) => d.vendorId === OM_ODM_MICE
+  && (omScanKind(d) === 'clavier' || (group ? omIsKeyboard(group) : false));
+
 // ---------- Interface USB complète, comme WebHID la présente dans Chrome ----------
 // Sous Windows, chaque « collection » d'une interface est un périphérique à part pour hidapi ;
 // Chrome les réunit en un seul HIDDevice et envoie chaque rapport à la bonne collection.
@@ -270,6 +296,7 @@ function omRows(inst) {
 }
 
 async function omConnect(group) {
+  if (omKeyboardOnOdm(group[0], group)) throw new Error('clavier : les protocoles de souris ne s’appliquent pas');
   const cands = omCandidates(group);
   if (!cands.length) throw new Error('modèle non reconnu par OpenMouse');
   // Souris sans fil endormie : on lui laisse quelques secondes pour répondre (3 tours)
@@ -279,6 +306,11 @@ async function omConnect(group) {
       try { return await omTry(dev, group); } catch (e) { err = e; }
     }
     await new Promise(r => setTimeout(r, 1000));
+  }
+  if (OM_MISMATCH.test(err?.message || '')) {
+    omMismatch.add(omId(group[0]));
+    // Page CompX de PeriphHub (souris 0x3554) : elle n'attendait que ce refus
+    if (group[0].vendorId === 0x3554 && typeof autoConnect === 'function') setTimeout(() => autoConnect(), 0);
   }
   throw err;
 }
@@ -290,7 +322,7 @@ async function omTry(dev, group) {
   const inst = {
     key: 'om-' + omHex(dev.vendorId) + omHex(dev.productId),
     name: dev.productName || 'Souris',
-    kind: /keyboard|clavier/i.test(dev.productName || '') ? 'clavier' : 'souris',
+    kind: omIsKeyboard(group) || omScanKind(dev) === 'clavier' || /keyboard|clavier/i.test(dev.productName || '') ? 'clavier' : 'souris',
     dev: group[0], devs: group, client, state: {}, caps: {},
     restoreCaps: Object.keys(OM_SETTERS).filter(k => !['dpi', 'rate'].includes(k)),
     source: 'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. ' +
@@ -513,6 +545,7 @@ window.omApi = {
   claims(dev, all) {
     if (!OM_VIDS.has(dev.vendorId) || OM_SKIP.has(omId(dev))) return false;
     const peers = all.filter(d => omId(d) === omId(dev));
+    if (omKeyboardOnOdm(dev, peers) || omMismatch.has(omId(dev))) return false;
     try { return !!omBest(peers); } catch { return false; }
   },
   driver: {
@@ -521,7 +554,7 @@ window.omApi = {
     // Seulement les modèles qu'OpenMouse connaît : sinon il réclame tout appareil de la marque (casque
     // Arctis Nova…), échoue, et l'appareil est marqué « muet » puis réessayé toutes les quelques minutes
     match: d => {
-      if (!OM_VIDS.has(d.vendorId) || OM_SKIP.has(omId(d))) return false;
+      if (!OM_VIDS.has(d.vendorId) || OM_SKIP.has(omId(d)) || omKeyboardOnOdm(d) || omMismatch.has(omId(d))) return false;
       try { return clientSupportScore(window.__TAURI__ ? new OmHIDDevice([d]) : d) > 0; } catch { return false; }
     },
     connect: (_dev, group) => omConnect(group),

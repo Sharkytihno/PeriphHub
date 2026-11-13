@@ -274,7 +274,7 @@ fn install() -> i32 {
         }
     }
     for (name, _) in SENSOR_FILES {
-        if std::fs::copy(src.join(name), dst.join(name)).is_err() {
+        if !crate::openrgb_service::copy_retry(&src.join(name), &dst.join(name)) {
             return 2;
         }
     }

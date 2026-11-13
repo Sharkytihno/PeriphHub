@@ -188,7 +188,7 @@ async function orgbAuto() {
 let orgbSvc = null; // dernier openrgb_info : service, serviceStale, pawnio
 async function orgbAdmin(action, btn) {
   btn.disabled = true;
-  btn.textContent = action === 'install' ? 'Installation… (validez la fenêtre de Windows)' : 'Retrait…';
+  btn.textContent = action === 'install' ? (uacPrompt() ? 'Installation… (validez la fenêtre de Windows)' : 'Installation…') : 'Retrait…';
   try {
     const done = await nativeInvoke('openrgb_admin', { action });
     if (!done) toast('Autorisation refusée : rien n’a été changé.', 'err');
@@ -196,9 +196,33 @@ async function orgbAdmin(action, btn) {
   } catch (e) { toast(String(e?.message || e), 'err'); }
   orgbAutoAt = 0; // service retiré ou refusé : l'OpenRGB livré peut reprendre aussitôt
   // Le service détecte les appareils (quelques secondes) : nouvelle lecture tout de suite, puis 8 s après
+  const redraw = () => { if (!$('options').hidden) renderOptions(); if (typeof refreshHome === 'function') refreshHome(); };
   await openrgbPoll();
-  if (!$('options').hidden) renderOptions();
-  setTimeout(async () => { await openrgbPoll(); if (!$('options').hidden) renderOptions(); }, 8000);
+  redraw();
+  setTimeout(async () => { await openrgbPoll(); redraw(); }, 8000);
+}
+
+// ---------- Carte mère à éclairage sur SMBus (ASRock Polychrome, ASUS Aura, MSI Mystic Light…) ----------
+// Aucun appareil USB ne l'annonce : l'analyse ne peut pas la proposer, et sans le service OpenRGB son
+// éclairage (et celui des ventilateurs ou bandeaux branchés sur ses prises RGB) restait introuvable dans
+// PeriphHub (diagnostic #15, ASRock B650M-HDV/M.2). L'accueil le propose tant que le service n'est pas activé.
+let orgbBoard = '';
+if (NATIVE) nativeInvoke('sys_info').then(v => { orgbBoard = v?.hardware?.board || ''; }).catch(() => {});
+const ORGB_BOARD_MAKERS = /^(ASRock|ASUSTeK|ASUS|Micro-Star|MSI|Gigabyte|NZXT|EVGA|Biostar)\b/i;
+function orgbBoardHint() {
+  if (!NATIVE || !orgbSvc?.bundled || orgbSvc.service !== 'absent' || !ORGB_BOARD_MAKERS.test(orgbBoard)) return null;
+  if (typeof rgb !== 'undefined' && rgb) return null; // Gigabyte RGB Fusion 2 en USB : page dédiée
+  if (orgbInst?.state.list?.some(d => /carte mère/i.test(d.kind))) return null; // déjà pilotée en USB par OpenRGB
+  try { if (localStorage.getItem('orgbBoardHint') === 'off') return null; } catch {}
+  const b = h('button', { onclick: () => orgbAdmin('install', b) }, winOk('Activer (une autorisation Windows)'));
+  return h('section', { class: 'card homediag' },
+    h('div', {},
+      h('strong', {}, 'Éclairage de la carte mère ' + orgbBoard),
+      h('div', { class: 'muted small' }, 'Son éclairage, et celui des ventilateurs ou bandeaux RGB branchés sur ses prises, passe par une puce que Windows réserve aux administrateurs. '
+        + 'Une seule fois : PeriphHub installe OpenRGB en service Windows (avec le pilote signé PawnIO). La carte apparaît ensuite dans l’onglet Éclairage ; '
+        + 'si rien n’apparaît, elle n’a pas d’éclairage pilotable : envoyez le diagnostic du PC.')),
+    h('div', { class: 'row-inline' }, b,
+      h('button', { class: 'ghost', onclick: () => { try { localStorage.setItem('orgbBoardHint', 'off'); } catch {} refreshHome(); } }, 'Non merci')));
 }
 function orgbAdminRow() {
   const s = orgbSvc;
@@ -211,7 +235,7 @@ function orgbAdminRow() {
   if (s.service === 'absent') {
     text = 'Barrettes de mémoire (RAM) et certaines cartes mères : Windows exige une autorisation administrateur. '
       + 'Une seule fois : PeriphHub installe le pilote PawnIO et OpenRGB en service Windows, puis plus rien à faire.';
-    buttons = [btn('Activer (une autorisation Windows)', 'install')];
+    buttons = [btn(winOk('Activer (une autorisation Windows)'), 'install')];
   } else if (s.serviceStale) {
     text = 'OpenRGB a été mis à jour avec PeriphHub : une autorisation Windows met aussi à jour le service.';
     buttons = [btn('Mettre à jour', 'install'), btn('Retirer', 'uninstall', 'mini ghost')];

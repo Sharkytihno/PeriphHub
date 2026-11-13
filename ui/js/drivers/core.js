@@ -35,6 +35,15 @@ const DEDICATED = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '
 const KIND_ICON_TAB = { souris: 'mouse', clavier: 'keyboard', casque: 'headset', rgb: 'rgb' };
 const KIND_NAME = { souris: 'Souris', clavier: 'Clavier', casque: 'Casque', rgb: 'Éclairage', micro: 'Micro', audio: 'Son', webcam: 'Webcam', manette: 'Manette', refroidissement: 'Watercooling', autre: 'Appareil' };
 
+// ---------- Validation Windows (UAC) ----------
+// Windows n'affiche pas toujours de fenêtre quand PeriphHub demande les droits administrateur : UAC réglé
+// sur « Ne jamais m'avertir », coupé, ou PeriphHub déjà lancé en administrateur (system.rs, uac_info).
+// La demande passe alors toute seule : les boutons ne doivent pas annoncer une fenêtre à valider.
+let uacInfo = null;
+if (NATIVE) nativeInvoke('uac_info').then(v => { uacInfo = v; }).catch(() => {});
+const uacPrompt = () => uacInfo?.prompt !== false;
+const winOk = s => uacPrompt() ? s : s.replace(/ \(une (validation|autorisation) Windows\)/, '');
+
 // ---------- Connexion automatique ----------
 
 let drvScanning = false;
@@ -60,7 +69,8 @@ async function sysDiag() {
   const o = s?.os || {};
   lines.unshift(`PeriphHub ${s?.periphhub || report?.version || '?'}${s ? (s.store ? ' (Microsoft Store)' : ' (installeur)') : ''} · `
     + (o.name ? `${o.name} ${o.version || ''} build ${o.build}`.replace(/\s+/g, ' ') : navigator.userAgent.match(/Windows NT [\d.]+/)?.[0] || 'Windows ?')
-    + (o.arch ? ' · ' + o.arch : '') + (s?.admin ? ' · lancé en administrateur' : ''));
+    + (o.arch ? ' · ' + o.arch : '') + (s?.admin ? ' · lancé en administrateur' : '')
+    + (s?.uac ? ` · UAC : ${s.uac.prompt ? 'fenêtre de validation' : 'sans fenêtre (' + s.uac.why + ')'}` : ''));
   if (s) lines.push(`WebView2 ${s.webview2} · Smart App Control : ${s.smart_app_control} · avis de Windows : ${s.notify}`);
   // Matériel (modèles, sans numéro de série) : dit quelles puces de capteurs attendre
   const hw = s?.hardware;

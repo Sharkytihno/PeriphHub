@@ -1003,6 +1003,8 @@ const I18N_EN = {
   "Processeur, carte mère (sondes et ventilateurs), carte graphique et disques. Windows réserve ces capteurs aux administrateurs : PeriphHub installe une fois pour toutes un petit service en lecture seule (LibreHardwareMonitor et le pilote signé PawnIO). Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne touche à aucun réglage.": "CPU, motherboard (sensors and fans), graphics card and drives. Windows only lets administrators read these sensors: PeriphHub installs, once and for all, a small read-only service (LibreHardwareMonitor and the signed PawnIO driver). It only runs while this page is open and stops on its own afterwards. It changes no setting.",
   "Installation…": "Installing…",
   "Activer (une validation Windows)": "Turn on (one Windows prompt)",
+  "Activer": "Turn on",
+  "Son éclairage, et celui des ventilateurs ou bandeaux RGB branchés sur ses prises, passe par une puce que Windows réserve aux administrateurs. Une seule fois : PeriphHub installe OpenRGB en service Windows (avec le pilote signé PawnIO). La carte apparaît ensuite dans l’onglet Éclairage ; si rien n’apparaît, elle n’a pas d’éclairage pilotable : envoyez le diagnostic du PC.": "Its lighting, and that of RGB fans or strips plugged into its headers, goes through a chip Windows reserves for administrators. Just once: PeriphHub installs OpenRGB as a Windows service (with the signed PawnIO driver). The board then shows up in the Lighting tab; if nothing shows up, it has no controllable lighting: send the PC diagnostic.",
   "Lecture des capteurs…": "Reading sensors…",
   "Le module capteurs date d’une version précédente de PeriphHub.": "The sensor module comes from an earlier PeriphHub version.",
   "Mettre à jour (une validation Windows)": "Update (one Windows prompt)",
@@ -1066,6 +1068,7 @@ const I18N_EN = {
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  'Éclairage de la carte mère {}': 'Motherboard lighting {}',
   'PeriphHub {} · vous avez la {}': 'PeriphHub {} · you have {}',
   'Installer PeriphHub {}': 'Install PeriphHub {}',
   'Liquide {} °C · pompe {} tr/min ({} %) · ventilateurs {} tr/min ({} %)': 'Liquid {} °C · pump {} rpm ({} %) · fans {} rpm ({} %)',

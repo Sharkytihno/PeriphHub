@@ -19,7 +19,8 @@ pub struct Device {
 // Lu dans le gestionnaire Plug and Play (pnp.rs) : aucun appareil n'est ouvert, donc un appareil
 // qui ne répond pas ne peut plus vider la liste.
 pub fn list() -> Vec<Device> {
-    let mut map: BTreeMap<(u16, u16), (Device, u8)> = BTreeMap::new();
+    // (appareil, rang du type retenu, numéro d'interface qui l'a donné)
+    let mut map: BTreeMap<(u16, u16), (Device, u8, i32)> = BTreeMap::new();
     for d in crate::pnp::hid_interfaces() {
         let (vid, pid) = (d.vid, d.pid);
         if vid == 0 {
@@ -46,6 +47,7 @@ pub fn list() -> Vec<Device> {
                     vendor_page: false,
                 },
                 0,
+                i32::MAX,
             )
         });
         e.0.interfaces += 1;
@@ -53,13 +55,19 @@ pub fn list() -> Vec<Device> {
         if e.0.product.is_empty() {
             e.0.product = d.product.trim().to_string();
         }
-        if rank > e.1 {
+        // À rang égal (clavier qui expose aussi une souris pour ses macros, souris qui expose un clavier
+        // pour ses boutons), l'interface au plus petit numéro l'emporte : c'est la fonction principale de
+        // l'appareil (MI_00, l'interface « boot »). Avant, la première lue gagnait, et Windows ne les
+        // donne pas dans l'ordre : un clavier Hall Effect sur 3151:502D passait pour une souris.
+        let iface = if d.interface < 0 { i32::MAX - 1 } else { d.interface };
+        if better((rank, iface), (e.1, e.2)) {
             e.0.kind = kind;
             e.1 = rank;
+            e.2 = iface;
         }
     }
     map.into_values()
-        .map(|(mut d, _)| {
+        .map(|(mut d, _, _)| {
             // Beaucoup de claviers exposent aussi une interface souris (et inversement) :
             // le nom du produit tranche quand il est explicite.
             if let Some(k) = kind_from_name(&d.product) {
@@ -81,5 +89,38 @@ fn kind_from_name(name: &str) -> Option<&'static str> {
         Some("casque")
     } else {
         None
+    }
+}
+
+/// Le type lu sur cette interface (rang, numéro d'interface) remplace-t-il celui retenu jusqu'ici ?
+fn better(new: (u8, i32), cur: (u8, i32)) -> bool {
+    new.0 > cur.0 || (new.0 == cur.0 && new.0 > 0 && new.1 < cur.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Type retenu pour une suite d'interfaces (type, rang, numéro), lues dans cet ordre
+    fn pick(ifaces: &[(&'static str, u8, i32)]) -> &'static str {
+        let (mut kind, mut cur) = ("autre", (0u8, i32::MAX));
+        for &(k, r, i) in ifaces {
+            if better((r, i), cur) {
+                (kind, cur) = (k, (r, i));
+            }
+        }
+        kind
+    }
+
+    #[test]
+    fn interface_principale_a_rang_egal() {
+        // Clavier X68HE (3151:502D) : clavier sur MI_00, souris des macros sur MI_01, lus dans n'importe quel ordre
+        assert_eq!(pick(&[("souris", 3, 1), ("clavier", 3, 0)]), "clavier");
+        assert_eq!(pick(&[("clavier", 3, 0), ("souris", 3, 1)]), "clavier");
+        // Souris qui expose un clavier pour ses boutons : souris sur MI_00
+        assert_eq!(pick(&[("clavier", 3, 2), ("souris", 3, 0)]), "souris");
+        // Un type plus précis l'emporte toujours, quelle que soit l'interface
+        assert_eq!(pick(&[("souris", 3, 0), ("casque", 4, 3)]), "casque");
+        assert_eq!(pick(&[("audio", 1, 0), ("souris", 3, 2)]), "souris");
     }
 }

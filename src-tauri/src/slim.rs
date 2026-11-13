@@ -377,7 +377,7 @@ fn elevate(ops: &[Op]) -> Result<bool, String> {
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
     use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SW_HIDE};
 
     let json = serde_json::to_vec(ops).map_err(|e| e.to_string())?;
     let hex: String = json.iter().map(|b| format!("{b:02x}")).collect();
@@ -392,6 +392,9 @@ fn elevate(ops: &[Op]) -> Result<bool, String> {
         info.lpFile = file.as_ptr();
         info.lpParameters = params.as_ptr();
         info.nShow = SW_HIDE;
+        // Fenêtre de validation rattachée à PeriphHub (au premier plan au moment du clic) : sans cela,
+        // Windows peut la laisser clignoter dans la barre des tâches au lieu de l'afficher
+        info.hwnd = GetForegroundWindow();
         if ShellExecuteExW(&mut info) == 0 {
             // 1223 : l'utilisateur a refusé la fenêtre de validation
             return if GetLastError() == 1223 {

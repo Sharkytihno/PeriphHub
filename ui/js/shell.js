@@ -431,6 +431,7 @@ function refreshHome() {
           : others ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
+    typeof orgbBoardHint === 'function' ? orgbBoardHint() : null,
     others,
     NATIVE && report ? h('section', { class: 'card homediag' },
       h('div', {},

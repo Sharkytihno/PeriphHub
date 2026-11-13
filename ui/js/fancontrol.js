@@ -277,7 +277,7 @@ function fcSection(v) {
   const f = v.fan;
   const head = note => h('div', { class: 'bhead fchead' }, h('h3', {}, 'Ventilateurs'), note ? h('span', { class: 'muted small' }, note) : null);
   if (!f) return [head(''), h('div', { class: 'card warn' }, 'Pour régler les ventilateurs, le module capteurs doit être mis à jour. ',
-    h('button', { disabled: sensBusy, onclick: () => sensAdmin('install') }, 'Mettre à jour (une validation Windows)'))];
+    h('button', { disabled: sensBusy, onclick: () => sensAdmin('install') }, winOk('Mettre à jour (une validation Windows)')))];
   const outs = fcOutputs(v);
   if (!outs.length) return [head(''), h('div', { class: 'card scard' },
     h('strong', {}, 'PeriphHub ne peut pas encore régler les ventilateurs de ce PC'),

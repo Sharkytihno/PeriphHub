@@ -426,6 +426,7 @@ fn main() {
             ui_log,
             report_device,
             system::sys_info,
+            system::uac_info,
             background::bg_set,
             background::bg_hide,
             background::bg_quit,

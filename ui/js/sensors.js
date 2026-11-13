@@ -152,7 +152,7 @@ function sensIntro() {
     h('p', { class: 'muted' }, 'Processeur, carte mère (sondes et ventilateurs), carte graphique et disques, avec la consommation électrique en direct. Windows réserve ces capteurs aux administrateurs : '
       + 'PeriphHub installe une fois pour toutes un petit service (LibreHardwareMonitor et le pilote signé PawnIO). '
       + 'Il ne démarre que quand cette page est ouverte et s’arrête tout seul ensuite. Il ne change rien tant que vous ne réglez pas vous-même un ventilateur.'),
-    h('button', { class: 'lg', disabled: sensBusy, onclick: () => sensAdmin('install') }, sensBusy ? 'Installation…' : 'Activer (une validation Windows)'));
+    h('button', { class: 'lg', disabled: sensBusy, onclick: () => sensAdmin('install') }, sensBusy ? 'Installation…' : winOk('Activer (une validation Windows)')));
 }
 
 function renderSensors() {
@@ -165,7 +165,7 @@ function renderSensors() {
     parts.push(v || !NATIVE ? sensIntro() : h('div', { class: 'card muted' }, 'Lecture des capteurs…'));
   } else {
     if (v.info?.stale) parts.push(h('div', { class: 'card warn' }, 'Le module capteurs date d’une version précédente de PeriphHub. ',
-      h('button', { disabled: sensBusy, onclick: () => sensAdmin('install') }, 'Mettre à jour (une validation Windows)')));
+      h('button', { disabled: sensBusy, onclick: () => sensAdmin('install') }, winOk('Mettre à jour (une validation Windows)'))));
     if (v.error) parts.push(h('div', { class: 'card err' }, 'Le service des capteurs a rencontré une erreur : ' + v.error));
     if (!v.ready) parts.push(h('div', { class: 'card muted' }, 'Préparation des capteurs (quelques secondes au premier affichage)…'));
     else {
