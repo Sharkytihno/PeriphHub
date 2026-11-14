@@ -3,6 +3,26 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.5.2
+
+*In English: new driver for Rongyuan-based keyboards (Attack Shark X68HE and about 960 other models,
+most Hall Effect keyboards sold with the qmk.top web driver): polling rate up to 8 kHz, lighting
+effects, actuation point and Rapid Trigger.*
+
+- **Claviers Rongyuan** (Attack Shark X68HE, et environ 960 autres modèles de Cherry, Womier, Ajazz,
+  Aula, Madlions… : la plupart des claviers magnétiques vendus avec le logiciel web qmk.top) : nouveau
+  pilote, d’après le protocole de ce logiciel officiel.
+  - Fréquence d’interrogation jusqu’à 8 kHz (selon le modèle et son firmware, mêmes règles que le
+    logiciel du fabricant).
+  - Éclairage : effets du clavier, luminosité, vitesse, sens, couleur ou arc-en-ciel.
+  - Claviers magnétiques : point de déclenchement et Rapid Trigger (sensibilités à l’appui et au
+    relâchement), sur toutes les touches à la fois.
+  - Les réglages sont enregistrés par le clavier lui-même. Un modèle absent de la liste est reconnu,
+    mais rien n’y est écrit.
+  - Les trames envoyées ont été comparées octet par octet à celles du logiciel officiel. Ce pilote
+    n’a pas encore été confirmé sur un vrai clavier : merci d’envoyer un diagnostic si quelque chose
+    ne va pas.
+
 ## 1.5.1
 
 *In English: Hall Effect keyboards no longer show up as mice (and no longer receive mouse commands),
