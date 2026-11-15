@@ -9,6 +9,7 @@
 // mise à jour de firmware, de remise à zéro d'usine ni d'appairage.
 import { createSupportedClient, clientSupportScore, deviceBrand } from '../../vendor/openmouse/drivers/registry.js';
 import * as kbReg from '../../vendor/openmouse-kb/drivers/registry.js';
+import { LamzuAtlantisHidClient } from '../../vendor/openmouse/drivers/lamzu-atlantis/hid.js';
 
 const OM_VIDS = new Set([
   0x03EB, 0x03F0, 0x0483, 0x045E, 0x046D, 0x04D9, 0x04F3, 0x093A, 0x0951, 0x0B05, 0x0BDA,
@@ -538,6 +539,51 @@ const kcMatch = d => {
   if (d.vendorId !== 0x3434 || OM_SKIP.has(omId(d))) return false;
   try { return kbFind([d])?.brand === 'Keychron'; } catch { return false; }
 };
+
+// Sonde du diagnostic (voir js/drivers/probes.js) : souris CompX (Scyrox, Lamzu, Pulsar, Attack Shark,
+// VGN…). Lit toute la mémoire de réglages par la commande de lecture 0x08 (celle du logiciel du
+// fabricant), 10 octets à la fois : de quoi retrouver où un modèle inconnu range ses paliers DPI, sa
+// fréquence, ses boutons. Aucune écriture. Arrêt à la première erreur (fin de mémoire, souris endormie).
+const COMPX_VIDS = new Set([0x3554, 0x373E, 0x3710]);
+const COMPX_FLASH_END = 0x2000;
+const compxIface = group => omInterfaces(group).find(d => COMPX_VIDS.has(d.vendorId)
+  && (() => { try { return LamzuAtlantisHidClient.hasConfigCollection(d); } catch { return false; } })());
+export async function compxDump(dev, { end = COMPX_FLASH_END, budgetMs = 9000 } = {}) {
+  const client = new LamzuAtlantisHidClient(dev, {});
+  const bytes = [];
+  let stop = '';
+  const t0 = performance.now();
+  try {
+    await client.open();
+    await client.transaction(async () => {
+      for (let a = 0; a < end; a += 10) {
+        if (performance.now() - t0 > budgetMs) { stop = 'temps écoulé'; break; }
+        try { bytes.push(...await client.readRaw(a, Math.min(10, end - a))); }
+        catch (e) {
+          stop = String(e?.message || e).slice(0, 120);
+          // Fin de mémoire au milieu du bloc : les derniers octets un par un
+          if (!/no answer|closed/.test(stop)) for (let b = a; b < Math.min(a + 10, end); b++) {
+            try { bytes.push(...await client.readRaw(b, 1)); } catch { break; }
+          }
+          break;
+        }
+      }
+    });
+  } finally {
+    await client.close().catch(() => {});
+  }
+  return { bytes: Uint8Array.from(bytes), stop };
+}
+(globalThis.DIAG_PROBES ||= []).push({
+  id: 'compx',
+  label: 'mémoire de réglages CompX (commande 0x08)',
+  match: group => !!compxIface(group),
+  async run(group) {
+    const { bytes, stop } = await compxDump(compxIface(group));
+    const lines = [`flash 0000-${(bytes.length - 1).toString(16).toUpperCase().padStart(4, '0')} (${bytes.length} o)${stop ? ' · arrêt : ' + stop : ''}`];
+    return bytes.length ? lines.concat(diagHexDump(bytes)) : lines;
+  },
+});
 
 window.omApi = {
   vids: OM_VIDS,

@@ -3,6 +3,22 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.6.0
+
+*In English: manual diagnostics now include a read-only probe of the faulty device (CompX mice:
+their whole settings memory; any device: its vendor feature reports), so a single diagnostic is
+enough to add or fix its support. Never on automatic sends.*
+
+- **Diagnostic plus complet, pour corriger du premier coup** : quand un appareil n'a pas de pilote
+  ou que son pilote échoue, « Envoyer le diagnostic » (et « Copier le diagnostic ») ajoute une
+  lecture de l'appareil, **sans rien y écrire** :
+  - souris CompX (Scyrox, Lamzu, Pulsar, Attack Shark…) : toute leur mémoire de réglages, comme la
+    lit le logiciel du fabricant ;
+  - tout appareil à interface constructeur : ses rapports « fonction ».
+  Cela peut prendre quelques secondes. Jamais lors d'un envoi automatique, et le texte reste
+  visible avant l'envoi (« Voir exactement ce qui sera envoyé »). Politique de confidentialité
+  mise à jour en conséquence.
+
 ## 1.5.3
 
 *In English: Attack Shark V8 mice (and other mice sold with the same CompX 8K dongle as the Scyrox

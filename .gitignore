@@ -15,3 +15,6 @@ src-tauri/resources/PawnIO_setup.exe
 
 # module capteurs compilé par scripts/fetch-sensors.ps1 (empreintes relevées par build.rs)
 src-tauri/resources/sensors/
+
+# Diagnostics de testeurs rapatriés par scripts/diag-fixture.mjs (PC d un tiers : jamais publiés)
+tests/fixtures/diag-*.txt

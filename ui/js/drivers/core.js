@@ -95,7 +95,7 @@ async function sysDiag() {
   return lines;
 }
 
-async function deviceDiag(vid, pid, { trace = false, probe } = {}) {
+async function deviceDiag(vid, pid, { trace = false, probe, probes = false } = {}) {
   const id = (vid + ':' + pid).toUpperCase();
   const hex = n => '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0');
   const ifs = ('hid' in navigator ? await navigator.hid.getDevices().catch(() => []) : []).filter(d => devId(d) === id);
@@ -147,6 +147,10 @@ async function deviceDiag(vid, pid, { trace = false, probe } = {}) {
     if (trace && d.trace?.length) lines.push(...d.trace.slice(-25).map(t => '  ⇄ ' + t));
   }
   if (!ifs.length) lines.push('Aucune interface HID accessible à PeriphHub');
+  // Appareil en cause sans pilote connecté : sondes en lecture seule (js/drivers/probes.js)
+  // Seulement sur un envoi manuel (texte visible avant l'envoi) : la mémoire d'une souris peut porter ses macros
+  if (probes && trace && !lives.length && ifs.length && typeof runProbes === 'function')
+    try { lines.push(...(await runProbes(id, ifs)).map(l => '  ' + l)); } catch (e) { lines.push('  Sondes : ' + (e?.message || e)); }
   return lines.join('\n');
 }
 
@@ -224,7 +228,8 @@ async function globalDiag(probe) {
 //   comment : ce que l'utilisateur dit du problème (en tête du diagnostic)
 //   focus   : appareils en cause (« VID:PID ») : en premier, avec leurs derniers échanges
 const DIAG_MAX = 36000; // le relais (server/diag-relay) refuse au-delà de 40 000 caractères
-async function fullDiag(onlyId, { comment = '', focus = [] } = {}) {
+//   probes  : sondes en lecture seule des appareils en cause (js/drivers/probes.js) — envoi manuel seulement
+async function fullDiag(onlyId, { comment = '', focus = [], probes = false } = {}) {
   const head = [];
   const note = String(comment || '').trim().slice(0, 1500);
   if (note) head.push('Message de l’utilisateur :\n' + note.split(/\r?\n/).map(l => '> ' + l).join('\n'));
@@ -238,25 +243,26 @@ async function fullDiag(onlyId, { comment = '', focus = [] } = {}) {
   for (const id of ids) {
     const [vid, pid] = id.split(':');
     const hot = want.has(id) || drvErrors.has(id) || drvFails.has(id) || drvRetry.has(id);
-    devs.push({ focus: want.has(id), lines: (await deviceDiag(vid, pid, { trace: hot, probe })).split('\n') });
+    devs.push({ focus: want.has(id), lines: (await deviceDiag(vid, pid, { trace: hot, probe, probes })).split('\n') });
   }
   devs.sort((a, b) => b.focus - a.focus);
   const log = (typeof nativeHid !== 'undefined' ? nativeHid.log : [])
     .filter(l => !onlyId || l.includes(onlyId) || /OpenMouse|HID\+\+|Logitech/i.test(l)).slice(-25);
   const tail = log.length ? ['Journal :\n' + log.join('\n')] : [];
   // Trop long : on retire d'abord les échanges, puis les descripteurs bruts, des appareils hors de cause
-  const build = level => [...head, ...devs.map(d => d.lines.filter(l => d.focus
-    || !((level >= 1 && l.startsWith('  ⇄ ')) || (level >= 2 && l.startsWith('  descripteur ')))).join('\n')), ...tail].join('\n\n');
+  // (les vidages des sondes passent en premier : longs, et seulement utiles pour l'appareil en cause)
+  const dump = l => /^ {4,}▸ /.test(l);
+  const build = level => [...head, ...devs.map(d => d.lines.filter(l => !(level >= 4 && dump(l)) && (d.focus
+    || !((level >= 1 && dump(l)) || (level >= 2 && l.startsWith('  ⇄ ')) || (level >= 3 && l.startsWith('  descripteur '))))).join('\n')), ...tail].join('\n\n');
   let text = build(0);
-  if (text.length > DIAG_MAX) text = build(1);
-  if (text.length > DIAG_MAX) text = build(2);
+  for (let level = 1; level <= 4 && text.length > DIAG_MAX; level++) text = build(level);
   if (text.length > DIAG_MAX) text = text.slice(0, DIAG_MAX) + '\n… (coupé)';
   return '```\n' + text.replace(/```/g, "'''") + '\n```';
 }
 
 async function copyDiag(onlyId, opts) {
   try {
-    await navigator.clipboard.writeText(await fullDiag(onlyId, opts));
+    await navigator.clipboard.writeText(await fullDiag(onlyId, { ...opts, probes: true }));
     toast('Diagnostic copié : collez-le dans un message Discord (Ctrl+V) et envoyez-le.', 'ok');
   } catch (e) {
     toast('Copie impossible : ' + (e.message || e), 'err');

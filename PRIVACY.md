@@ -1,6 +1,6 @@
 # Politique de confidentialité — PeriphHub
 
-*Dernière mise à jour : 4 novembre 2026 (version 1.0)*
+*Dernière mise à jour : 15 novembre 2026 (version 1.6)*
 
 PeriphHub est un logiciel libre (GPL-3.0) qui fonctionne sur votre ordinateur. Il n'a ni compte,
 ni publicité, ni télémétrie, ni statistiques d'usage. Il ne vend et ne partage aucune donnée.
@@ -33,6 +33,10 @@ appareils USB et HID (identifiants du fabricant et du modèle, nom du modèle, t
 PeriphHub a essayé avec eux ; les réglages de souris et de clavier de Windows (vitesse,
 accélération, molette) ; le type et le niveau des batteries Bluetooth ; l'état des notifications
 Windows ; les dernières erreurs internes de PeriphHub ; votre commentaire, si vous en écrivez un.
+Pour un envoi **manuel** seulement (jamais automatique), il peut contenir aussi une lecture de la
+mémoire de réglages de l'appareil en cause (DPI, fréquence, boutons, éclairage, et les macros
+enregistrées dans l'appareil s'il en a) : c'est elle qui permet de le prendre en charge sans
+l'avoir sous la main. Elle apparaît dans le texte montré avant l'envoi.
 
 Il ne contient **ni numéro de série, ni chemin de périphérique, ni nom d'utilisateur, ni nom
 d'appareil Bluetooth, ni fichier**. Les chemins sont retirés dans l'application, puis une seconde
@@ -82,7 +86,7 @@ Questions ou signalements : <https://github.com/Sharkytihno/PeriphHub/issues>
 
 # Privacy policy — PeriphHub (English)
 
-*Last updated: November 4, 2026 (version 1.0)*
+*Last updated: November 15, 2026 (version 1.6)*
 
 PeriphHub is free software (GPL-3.0) that runs on your computer. No account, no ads, no
 telemetry, no usage statistics. It does not sell or share any data.
@@ -100,7 +104,9 @@ telemetry, no usage statistics. It does not sell or share any data.
    any time). It contains the Windows, PeriphHub and WebView2 versions, the USB/HID device list
    (vendor and product IDs, model name, type) and what PeriphHub tried with them, Windows mouse
    and keyboard settings, Bluetooth battery types and levels, the Windows notification state,
-   recent PeriphHub internal errors and your comment if you write one. It contains **no serial
+   recent PeriphHub internal errors and your comment if you write one. Manual sends only (never
+   automatic ones) may also include a read of the faulty device's settings memory (DPI, polling
+   rate, buttons, lighting, and macros stored in the device if any), shown in the text before sending. It contains **no serial
    number, device path, user name, Bluetooth device name or file**. It goes through a relay run
    by the developer (`sharkywedding.fr`) to a **private** GitHub repository read only by the
    developer. The relay does not store your IP address (it keeps a hash in memory to limit

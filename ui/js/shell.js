@@ -1210,7 +1210,7 @@ async function sendDiag(auto, { comment = '', focus = null, sig = null, title = 
     const r = await fetch(DIAG_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' }, // requête « simple » : pas de vérification CORS préalable
-      body: JSON.stringify({ version: report?.version || '', text: await fullDiag(null, { comment, focus: ids }), summary, auto }),
+      body: JSON.stringify({ version: report?.version || '', text: await fullDiag(null, { comment, focus: ids, probes: !auto }), summary, auto }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
@@ -1246,7 +1246,7 @@ function diagDialog(focus = '') {
   const opts = () => ({ comment: area.value, focus: sel.value ? [sel.value] : null });
   // <code> : le texte envoyé reste en français (le développeur le lit tel quel), pas traduit à l'écran
   const code = h('code');
-  const preview = async () => { code.textContent = '…'; try { code.textContent = await fullDiag(null, opts()); } catch (e) { code.textContent = String(e); } };
+  const preview = async () => { code.textContent = '…'; try { code.textContent = await fullDiag(null, { ...opts(), probes: true }); } catch (e) { code.textContent = String(e); } };
   const det = h('details', { ontoggle: () => det.open && preview() }, h('summary', {}, 'Voir exactement ce qui sera envoyé'), h('pre', { class: 'diagprev' }, code));
   const send = h('button', { onclick: async () => {
     send.disabled = true;
