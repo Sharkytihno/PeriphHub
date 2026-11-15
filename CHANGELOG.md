@@ -3,6 +3,19 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.5.3
+
+*In English: Attack Shark V8 mice (and other mice sold with the same CompX 8K dongle as the Scyrox
+V8S) no longer fail with "corrupt DPI stage": PeriphHub now finds where the mouse keeps its DPI
+presets.*
+
+- **Souris Attack Shark V8** (dongle 8K 3554:F517, le même que la Scyrox V8S) : la page de la souris
+  échouait avec « corrupt DPI stage ». Ce dongle sert à plusieurs marques et la V8 ne range pas ses
+  paliers DPI au même endroit que la Scyrox : PeriphHub vérifie maintenant les deux emplacements et
+  garde celui dont la somme de contrôle est bonne. Sur une souris autre que Scyrox, les réglages
+  propres à la Scyrox (mode 20K, hauteurs de décollage du capteur 3955, angle) sont masqués et le DPI
+  est plafonné à 26 000.
+
 ## 1.5.2
 
 *In English: new driver for Rongyuan-based keyboards (Attack Shark X68HE and about 960 other models,
