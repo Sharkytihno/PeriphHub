@@ -103,7 +103,56 @@ export const SCYROX_PRODUCTS = new Map([
             mirrorSleepToPerformanceTime: true,
         }],
 ]);
+/**
+ * PeriphHub (1.9.0): VGN's own vendor id 0x391D. VGN's web configurator
+ * (hub.vgnlab.com) drives these mice with the same class it uses for its CompX
+ * models on 0x3554 (family "vgn-y2": report 8 on usage page 0xFF02, flash read
+ * 0x08 / write 0x07, per-field seal, 3955 stage records at 6912 or legacy
+ * fields at 12 chosen by sensor, rate bytes 1000/rate below 1 kHz and
+ * rate/2000*16 above — CompX's "pulsar" family). The stage layout is probed on
+ * the mouse (ScyroxHidClient.probeDpiLayout), never assumed. Not verified on
+ * hardware: every product is unverified and drops the Scyrox-only extras.
+ */
+export const VGN_COMPX_VENDOR_ID = 0x391d;
+const vgnCompx = (model, wireless) => ({
+    brand: "VGN",
+    model,
+    wireless,
+    pollingRates: RATES_V8S,
+    rateFamily: "pulsar",
+    dpiLayout: "sensor3955",
+    verified: false,
+    otherBrand: true,
+    minDpi: 50,
+    maxDpi: 30000,
+    dpiStep: 50,
+    maxDpiStages: 8,
+    supportsHyperMode: false,
+    supportsAngleTuning: false,
+    supportsFactoryReset: false,
+});
+/** From the configurator's device table: wired mouse, then its receiver (receiver: true). */
+export const VGN_COMPX_PRODUCTS = new Map([
+    [0x1005, vgnCompx("Dragonfly 3 Master", false)],
+    [0x1a05, vgnCompx("Dragonfly 3 Master", true)],
+    [0x101d, vgnCompx("Dragonfly 3 MasterGT", false)],
+    [0x1a1a, vgnCompx("Dragonfly 3 MasterGT", true)],
+    [0x1034, vgnCompx("Dragonfly Y2 V2 MasterGT", false)],
+    [0x1a2f, vgnCompx("Dragonfly Y2 V2 MasterGT", true)],
+    [0x1032, vgnCompx("Dragonfly F2 MasterGT", false)],
+    [0x102d, vgnCompx("Dragonfly F2 MasterGT", true)],
+    [0x1038, vgnCompx("Dragonfly F1 V2 SE+", false)],
+    [0x1a32, vgnCompx("Dragonfly F1 V2 SE+", true)],
+    [0x1036, vgnCompx("Dragonfly F2 Turbo+", false)],
+    [0x1a31, vgnCompx("Dragonfly F2 Turbo+", true)],
+    [0x1035, vgnCompx("Dragonfly F2 Turbo", false)],
+    [0x1a30, vgnCompx("Dragonfly F2 Turbo", true)],
+    [0x1039, vgnCompx("Dragonfly 3 MINI SE+", true)],
+    [0x1a33, vgnCompx("Dragonfly 3 MINI SE+", false)],
+]);
 export function scyroxProduct(vendorId, productId) {
+    if (vendorId === VGN_COMPX_VENDOR_ID)
+        return VGN_COMPX_PRODUCTS.get(productId);
     if (vendorId !== SCYROX_VENDOR_ID)
         return undefined;
     return SCYROX_PRODUCTS.get(productId);

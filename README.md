@@ -37,7 +37,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 |---|---|---|---|
 | **Toutes les souris et tous les claviers** | Réglages de Windows, réunis sur une page | Vitesse du pointeur, accélération, molette, double-clic, boutons inversés, répétition des touches | 🧪 |
 | **Appareils Bluetooth** (casques, souris, claviers, manettes) | Batterie affichée par Windows | Niveau de batterie, alerte de batterie faible | 🧪 |
-| Souris CompX (Scyrox, VXE, ATK, MCHOSE…) | Protocole observé | DPI, fréquence jusqu'à 8 kHz, boutons, macros, veille | ✅ Scyrox V6 · 🧪 autres |
+| Souris CompX (Scyrox, VXE, ATK, MCHOSE, Attack Shark, VGN Dragonfly…) | Protocole observé | DPI, fréquence jusqu'à 8 kHz, boutons, macros, veille | ✅ Scyrox V6 · 🧪 autres |
 | Claviers VIA / Vial (Keychron, Akko, NuPhy, REKT…) | Protocole VIA | Éclairage enregistré dans le clavier ; REKT : touches, rapid trigger, macros | ✅ REKT · 🧪 autres |
 | Claviers SteelSeries Apex 3 / 3 TKL, Turtle Beach Vulcan II TKL Pro | Pilotes intégrés | Éclairage (Apex 3 : couleurs par zone, effets animés) | 🧪 |
 | Logitech (HID++ 2.0) | D'après Solaar / libratbag | DPI, fréquence, SmartShift, molette, batterie | 🧪 |

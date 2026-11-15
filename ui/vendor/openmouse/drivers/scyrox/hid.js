@@ -60,7 +60,11 @@ export class ScyroxHidClient extends LamzuAtlantisHidClient {
                 return;
             }
             const legacy = await this.readRaw(FLASH.dpiValues, STAGE_STRIDE);
-            if (lamzuAtlantisFieldIsIntact(legacy)) {
+            if (lamzuAtlantisFieldIsIntact(legacy) && base.otherBrand) {
+                // Already another brand in the catalog (VGN on 0x391D): keep its identity
+                this.productOverride = { ...base, dpiLayout: "legacy", maxDpi: Math.min(base.maxDpi, 26000), liftOffMillimetres: undefined };
+            }
+            else if (lamzuAtlantisFieldIsIntact(legacy)) {
                 const name = (this.device.productName || "").trim();
                 const brand = /attack\s*shark/i.test(name) ? "Attack Shark" : (name || "CompX");
                 this.productOverride = {

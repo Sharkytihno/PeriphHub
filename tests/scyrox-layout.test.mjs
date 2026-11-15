@@ -79,3 +79,36 @@ test('Sonde CompX : arrêt propre en fin de mémoire', async () => {
   assert.equal(bytes.length, 0x100);
   assert.match(stop, /failed with status 1/);
 });
+
+// ---------- VGN sur son propre identifiant 0x391D (famille « vgn-y2 » du logiciel web VGN) ----------
+import { createSupportedClient } from '../ui/vendor/openmouse/drivers/registry.js';
+
+test('VGN Dragonfly F2 Turbo (391D:1A30) : pris par le client CompX, nom VGN, paliers détectés', async () => {
+  const flash = new Map();
+  put(flash, 12, seal([0x0f, 0x0f, 0x00])); // 800 DPI, disposition classique
+  const dev = fakeCompx('VGN USB Receiver', flash, { vendorId: 0x391d, productId: 0x1a30 });
+  assert.equal(ScyroxHidClient.isSupported(dev), true);
+  const c = createSupportedClient(dev);
+  assert.equal(c.constructor.name, 'ScyroxHidClient');
+  await c.probeDpiLayout();
+  assert.equal(c.dpiLayout(), 'legacy');
+  assert.equal(c.displayName(), 'VGN Dragonfly F2 Turbo');
+  assert.equal(c.turboModeAddress(), null); // pas d'option propre à Scyrox
+  assert.equal(c.decodeDpiStage(await c.transaction(() => c.readRaw(c.dpiStageAddress(0), c.dpiStageStride()))).x, 800);
+  assert.equal(dev.writes.length, 0);
+});
+
+test('VGN à capteur 3955 : paliers à 6912 gardés, identité VGN conservée', async () => {
+  const flash = new Map();
+  put(flash, 6912, seal([0x3f, 0x06, 0x3f, 0x06, 0x00])); // 1 600 DPI
+  const dev = fakeCompx('Dragonfly 3 MasterGT', flash, { vendorId: 0x391d, productId: 0x101d });
+  const c = new ScyroxHidClient(dev);
+  await c.probeDpiLayout();
+  assert.equal(c.dpiLayout(), 'sensor3955');
+  assert.equal(c.displayName(), 'VGN Dragonfly 3 MasterGT');
+  assert.equal(c.turboModeAddress(), null);
+});
+
+test('VGN : clavier ou modèle inconnu sur 0x391D jamais pris pour une souris', () => {
+  assert.equal(ScyroxHidClient.isSupported(fakeCompx('VGN V98Pro V4', new Map(), { vendorId: 0x391d, productId: 0x2000 })), false);
+});

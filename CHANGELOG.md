@@ -3,6 +3,20 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.9.0
+
+*In English: VGN mice on VGN's own USB ID (0x391D): Dragonfly 3 Master and MasterGT, Dragonfly Y2 V2
+MasterGT, Dragonfly F2 MasterGT, Turbo and Turbo+, Dragonfly F1 V2 SE+, Dragonfly 3 MINI SE+, wired
+and with their receiver. Same CompX protocol as the models already supported, read from VGN's web
+configurator; not yet tested on hardware (“Experimental” until confirmed).*
+
+- **Souris VGN** sur l'identifiant USB propre à VGN (0x391D) : Dragonfly 3 Master et MasterGT,
+  Dragonfly Y2 V2 MasterGT, Dragonfly F2 MasterGT, Turbo et Turbo+, Dragonfly F1 V2 SE+, Dragonfly 3
+  MINI SE+, en filaire et avec leur récepteur. Le logiciel web de VGN les règle avec le même
+  protocole CompX que les souris déjà prises en charge (Scyrox, Attack Shark V8) ; la disposition
+  des paliers DPI est lue dans la souris, jamais supposée. Pas encore essayé sur le vrai matériel :
+  « Expérimental » jusqu'à la première confirmation (« Tester cet appareil » suffit).
+
 ## 1.8.0
 
 *In English: “Test this device”. One button on each device page changes every supported setting,
