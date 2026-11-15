@@ -431,6 +431,7 @@ function refreshHome() {
           : others ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
+    typeof confirmAsk === 'function' ? confirmAsk() : null,
     typeof orgbBoardHint === 'function' ? orgbBoardHint() : null,
     others,
     NATIVE && report ? h('section', { class: 'card homediag' },
@@ -1156,6 +1157,13 @@ function renderOptions() {
       h('div', { class: 'row-inline' },
         h('button', { disabled: diagBusy, onclick: sendPcDiag }, 'Envoyer le diagnostic du PC'),
         h('button', { class: 'ghost', onclick: () => diagDialog() }, 'Avec un message ou un appareil…'))) : null,
+    NATIVE && typeof confirmSetAuto === 'function' ? field('Confirmations',
+      segmented([{ v: 'on', label: 'Prévenir le développeur' }, { v: 'off', label: 'Jamais' }], confirmAuto() === 'on' ? 'on' : 'off', v => {
+        confirmSetAuto(v);
+        renderOptions();
+      }),
+      h('div', { class: 'muted small' }, 'Quand un réglage marche (ou échoue) sur un appareil, PeriphHub peut le dire au développeur : le modèle passe alors de « expérimental » à « confirmé » pour tout le monde. '
+        + 'Seuls partent le modèle (identifiant USB et nom), le pilote et le nom des réglages essayés ; ni valeur choisie, ni numéro de série, ni information personnelle.')) : null,
     field('Sauvegardes',
       h('div', { class: 'muted small' }, 'Avant la première modification d’un appareil, PeriphHub garde une copie de ses réglages d’origine : ' +
         'chaque page propose « Remettre d’origine ». Les réglages vivent dans la mémoire des appareils, pas dans PeriphHub.')),

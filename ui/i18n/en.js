@@ -1064,6 +1064,13 @@ const I18N_EN = {
   "Diagnostic du PC": "PC diagnostics",
   "tr/min": "rpm",
   "Courbe : température → vitesse. Flèches gauche et droite : température du point ; haut et bas : vitesse.": "Curve: temperature → speed. Left and right arrows: point temperature; up and down: speed.",
+  "Le modèle sera marqué « confirmé » pour tout le monde. Seuls partent : le modèle (identifiant USB et nom), le pilote et les réglages qui ont marché ou échoué. Ni valeur choisie, ni numéro de série, ni information personnelle. Modifiable dans les Options.": "The model will be marked “confirmed” for everyone. Only the model (USB ID and name), the driver and the settings that worked or failed are sent. No chosen value, serial number or personal information. Can be changed in Options.",
+  "Oui, à chaque fois": "Yes, every time",
+  "Confirmations": "Confirmations",
+  "Prévenir le développeur": "Tell the developer",
+  "Quand un réglage marche (ou échoue) sur un appareil, PeriphHub peut le dire au développeur : le modèle passe alors de « expérimental » à « confirmé » pour tout le monde. Seuls partent le modèle (identifiant USB et nom), le pilote et le nom des réglages essayés ; ni valeur choisie, ni numéro de série, ni information personnelle.": "When a setting works (or fails) on a device, PeriphHub can tell the developer: the model then goes from “experimental” to “confirmed” for everyone. Only the model (USB ID and name), the driver and the names of the settings tried are sent; no chosen value, serial number or personal information.",
+  "Confirmé": "Confirmed",
+  "Connecté · Confirmé": "Connected · Confirmed",
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -1218,6 +1225,8 @@ const I18N_EN_RE = [
   [/^Mise à jour impossible : (.+)$/, (m, e) => `Update failed: ${e}`],
   [/^Téléchargement… (\d+) %$/, (m, n) => `Downloading… ${n} %`],
   [/^Dernier essai : (.+)$/s, (m, e) => `Last attempt: ${trText(e)}`],
+  [/^Ça marche sur (.+) : prévenir le développeur \?$/, (m, l) => `It works on ${l}: tell the developer?`],
+  [/^Confirmé sur le vrai matériel par des utilisateurs de PeriphHub \((.+)\)$/, (m, l) => `Confirmed on real hardware by PeriphHub users (${l})`],
   [/^PeriphHub n’a pas réussi à se connecter à : (.+)\.$/, (m, l) => `PeriphHub could not connect to: ${l}.`],
   [/^Envoi impossible \((.+)\) : utilisez « Copier le diagnostic » et envoyez-le vous-même\.$/, (m, e) => `Sending failed (${e}): use “Copy diagnostics” and send them yourself.`],
   [/^Copie impossible : (.+)$/, (m, e) => `Copy failed: ${e}`],

@@ -387,10 +387,11 @@ function drvAdd(inst, drv) {
   document.querySelector('main').append(h('section', { class: 'page', id: inst.key, hidden: true },
     h('header', { class: 'phead' },
       h('div', { class: 'ptitle' }, h('h2', {}, inst.name), h('div', { class: 'muted small drvmeta' })),
-      h('div', { class: 'pact' }, h('span', { class: 'status drvstatus' }), inst.chip ? h('span', { class: 'chip supported', title: inst.chip.title }, inst.chip.text) : h('span', { class: 'chip experimental', title: 'Pilote pas encore confirmé sur ce modèle précis' }, 'Expérimental'))),
+      h('div', { class: 'pact' }, h('span', { class: 'status drvstatus' }), drvChip(inst) ? h('span', { class: 'chip supported', title: drvChip(inst).title }, drvChip(inst).text) : h('span', { class: 'chip experimental', title: 'Pilote pas encore confirmé sur ce modèle précis' }, 'Expérimental'))),
     h('div', { class: 'pbody drvbody' })));
   drvRender(inst);
   refreshHome();
+  drvConfirm(inst, 'connexion', true);
   if (!inst.chip) audioPoll(); // un casque HID peut accueillir ses réglages son Windows
 }
 
@@ -400,6 +401,9 @@ function drvStatus(inst, text, kind = '') {
   if (kind === 'err' || (kind === 'ok' && text)) toast(text, kind);
 }
 
+// Pastille du pilote, sinon « Confirmé » si des utilisateurs l'ont confirmé (js/drivers/confirm.js)
+const drvChip = inst => inst.chip || (typeof confirmChip === 'function' ? confirmChip(inst) : null);
+const drvConfirm = (...a) => { if (typeof drvConfirmSend === 'function') try { drvConfirmSend(...a); } catch {} };
 const origKey = inst => 'orig:' + inst.key;
 const wantKey = inst => 'want:' + inst.key;
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
@@ -438,8 +442,11 @@ async function drvSet(inst, label, cap, value) {
     lsSet(wantKey(inst), { ...lsGet(wantKey(inst)), [cap]: value });
     await inst.refresh();
     drvStatus(inst, label + ' ✔', 'ok');
+    // Relu différent : pas forcément une erreur (forme de l'état), mais à savoir pour confirmer le pilote
+    drvConfirm(inst, cap, true, JSON.stringify(inst.state?.[cap]) === JSON.stringify(value) ? '' : 'relu différent');
   } catch (e) {
     drvFail(inst, cap, e);
+    drvConfirm(inst, cap, false, e?.message || e);
     drvStatus(inst, 'Erreur : ' + e.message, 'err');
   }
   drvRender(inst);
@@ -533,7 +540,7 @@ function driverTiles() {
     if (s.battery) stats.push(['Batterie', s.battery.level + ' %' + (s.battery.charging ? ' ⚡' : '')]);
     if (s.dpi) stats.push(['DPI', String(s.dpi)]);
     if (s.rate) stats.push(['Fréquence', s.rate + ' Hz']);
-    return tile(inst.key, inst.name, true, inst.chip ? 'Connecté · ' + inst.chip.text : 'Connecté · expérimental', stats, s.battery ? meter(s.battery.level) : null);
+    return tile(inst.key, inst.name, true, drvChip(inst) ? 'Connecté · ' + drvChip(inst).text : 'Connecté · expérimental', stats, s.battery ? meter(s.battery.level) : null);
   });
 }
 

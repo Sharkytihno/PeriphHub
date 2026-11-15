@@ -54,6 +54,8 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of ipHits) if (!v.some(t => now - t < 3600_000)) ipHits.delete(k);
   for (const [k, t] of seen) if (now - t > DEDUP_MS) seen.delete(k);
+  for (const [k, v] of confirmHits) if (!v.some(t => now - t < 3600_000)) confirmHits.delete(k);
+  for (const [k, t] of confirmSeen) if (now - t > CONFIRM_DEDUP_MS) confirmSeen.delete(k);
 }, 600_000).unref();
 
 // Dernière barrière avant GitHub : retire ce qui ressemblerait à une donnée personnelle
@@ -105,6 +107,117 @@ async function createIssue({ version, text, summary, auto }) {
   return (await r.json()).number;
 }
 
+// ---------- Confirmations (POST /periphhub/confirm) ----------
+// « Ce réglage a marché (ou échoué) sur ce modèle », envoyé par l'appli avec l'accord de l'utilisateur
+// (ui/js/drivers/confirm.js). Un ticket par modèle (étiquette « confirmation »), un commentaire par envoi :
+// scripts/confirmations.mjs en tire la liste des modèles confirmés livrée avec l'appli.
+const CONFIRM_MAX = 8_000;
+const CONFIRM_PER_IP_HOUR = 20;
+const CONFIRM_DEDUP_MS = 30 * 24 * 3600_000; // même confirmation, même adresse : une fois par mois
+const confirmHits = new Map();   // hash d'adresse → [horodatages]
+const confirmSeen = new Map();   // hash (adresse + confirmation) → horodatage
+const INDEX_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'confirm-index.json');
+let confirmIndex = {};           // « VID:PID » → numéro du ticket
+try { confirmIndex = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); } catch {}
+
+export function parseConfirm(body) {
+  let data;
+  try { data = JSON.parse(body); } catch { return null; }
+  if (!data || typeof data.version !== 'string' || !Array.isArray(data.items)) return null;
+  const version = data.version.slice(0, 20).replace(/[^\w.-]/g, '');
+  const items = [];
+  for (const it of data.items.slice(0, 20)) {
+    if (!it || typeof it !== 'object') continue;
+    const id = String(it.id || '').toUpperCase();
+    const driver = String(it.driver || '');
+    const cap = String(it.cap || '');
+    if (!/^[0-9A-F]{4}:[0-9A-F]{4}$/.test(id) || !/^[\w.-]{1,30}$/.test(driver) || !/^[\w.-]{1,30}$/.test(cap)) continue;
+    items.push({
+      id, driver, cap, ok: it.ok === true,
+      name: scrub(String(it.name || '')).replace(/[\r\n`|]+/g, ' ').slice(0, 60),
+      note: scrub(String(it.note || '')).replace(/[\r\n`|]+/g, ' ').slice(0, 120),
+    });
+  }
+  return items.length ? { version, items } : null;
+}
+
+function confirmLimited(ipKey) {
+  const now = Date.now();
+  if (now - day.start > 24 * 3600_000) day = { start: now, n: 0 };
+  if (day.n >= GLOBAL_DAY * 5) return true;
+  const hits = (confirmHits.get(ipKey) || []).filter(t => now - t < 3600_000);
+  if (hits.length >= CONFIRM_PER_IP_HOUR) { confirmHits.set(ipKey, hits); return true; }
+  hits.push(now);
+  confirmHits.set(ipKey, hits);
+  day.n++;
+  return false;
+}
+
+async function gh(method, url, body) {
+  const r = await fetch(`https://api.github.com${url}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'periphhub-diag-relay',
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) throw new Error(`GitHub ${r.status} ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+
+// Ticket du modèle : index local, sinon recherche (index perdu), sinon création
+const issueFor = new Map(); // « VID:PID » → promesse du numéro (deux envois simultanés : un seul ticket)
+function confirmIssue(id, name) {
+  if (confirmIndex[id]) return Promise.resolve(confirmIndex[id]);
+  if (!issueFor.has(id)) issueFor.set(id, (async () => {
+    const found = await gh('GET', `/search/issues?q=${encodeURIComponent(`repo:${REPO} is:issue label:confirmation in:title "${id}"`)}`);
+    let n = found.items?.find(i => i.title.includes(id))?.number;
+    if (!n) n = (await gh('POST', `/repos/${REPO}/issues`, {
+      title: `Confirmations · ${id}${name ? ' · ' + name : ''}`,
+      body: `Réglages essayés sur ce modèle par des utilisateurs (envoi accepté dans l’appli, un commentaire par envoi).
+
+Lu par \`scripts/confirmations.mjs\`.`,
+      labels: ['confirmation'],
+    })).number;
+    confirmIndex[id] = n;
+    try { fs.writeFileSync(INDEX_FILE, JSON.stringify(confirmIndex)); } catch {}
+    return n;
+  })().finally(() => issueFor.delete(id)));
+  return issueFor.get(id);
+}
+
+// Une ligne par réglage : « PeriphHub 1.6.1 · openmouse · dpi ✔ » (lue par scripts/confirmations.mjs)
+export function confirmLines(version, items) {
+  return items.map(i => `PeriphHub ${version || '?'} · ${i.driver} · ${i.cap} ${i.ok ? '✔' : '✘'}${i.note ? ' · ' + i.note : ''}`);
+}
+
+async function handleConfirm(req, res, raw) {
+  const d = parseConfirm(raw);
+  if (!d) return send(res, 400, { error: 'confirmation invalide' });
+  const ipKey = sha('periphhub' + clientIp(req)).slice(0, 16);
+  const fresh = d.items.filter(i => !confirmSeen.has(sha(ipKey + JSON.stringify([d.version, i.id, i.driver, i.cap, i.ok]))));
+  if (!fresh.length) return send(res, 200, { ok: true, duplicate: true });
+  if (confirmLimited(ipKey)) return send(res, 429, { error: 'trop d’envois, réessayez plus tard' });
+  try {
+    const byDev = new Map();
+    for (const i of fresh) byDev.set(i.id, [...(byDev.get(i.id) || []), i]);
+    for (const [id, list] of byDev) {
+      const n = await confirmIssue(id, list[0].name);
+      await gh('POST', `/repos/${REPO}/issues/${n}/comments`, { body: confirmLines(d.version, list).join('\n') });
+      for (const i of list) confirmSeen.set(sha(ipKey + JSON.stringify([d.version, i.id, i.driver, i.cap, i.ok])), Date.now());
+    }
+    console.log(new Date().toISOString(), 'confirmations', [...byDev.keys()].join(','), d.version);
+    send(res, 200, { ok: true });
+  } catch (e) {
+    console.error(new Date().toISOString(), 'échec GitHub (confirmation)', e.message);
+    send(res, 502, { error: 'envoi impossible pour le moment' });
+  }
+}
+
 const send = (res, code, obj) => {
   res.writeHead(code, {
     'Content-Type': 'application/json',
@@ -119,7 +232,9 @@ const send = (res, code, obj) => {
 const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && req.url.endsWith('/health')) return send(res, 200, { ok: true });
-  if (req.method !== 'POST' || !/\/diag\/?$/.test(req.url.split('?')[0])) return send(res, 404, { error: 'introuvable' });
+  const route = req.url.split('?')[0];
+  const isConfirm = /\/confirm\/?$/.test(route);
+  if (req.method !== 'POST' || !(isConfirm || /\/diag\/?$/.test(route))) return send(res, 404, { error: 'introuvable' });
   let size = 0;
   const chunks = [];
   req.on('data', c => {
@@ -129,6 +244,10 @@ const server = http.createServer((req, res) => {
   });
   req.on('end', async () => {
     if (res.writableEnded) return;
+    if (isConfirm) {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      return raw.length > CONFIRM_MAX ? send(res, 413, { error: 'trop gros' }) : handleConfirm(req, res, raw);
+    }
     const d = parse(Buffer.concat(chunks).toString('utf8'));
     if (!d) return send(res, 400, { error: 'diagnostic invalide' });
     const h = sha(d.text);

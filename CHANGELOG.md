@@ -3,6 +3,20 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.7.0
+
+*In English: opt-in confirmations. When a setting works (or fails) on a device, PeriphHub can tell
+the developer — asked once, off until you say yes, Options ▸ Confirmations. Models confirmed by users
+show a “Confirmed” badge instead of “Experimental”. Only the model, driver and setting names are sent.*
+
+- **Confirmations** : quand un réglage vient de marcher sur un appareil, PeriphHub demande une fois
+  s'il peut prévenir le développeur. Si vous acceptez, le modèle passe d'« Expérimental » à
+  « Confirmé » pour tout le monde, sans aller-retour avec les testeurs. Seuls partent le modèle
+  (identifiant USB et nom), le pilote et le nom des réglages essayés, avec leur résultat : ni valeur
+  choisie, ni numéro de série, ni information personnelle. Modifiable dans **Options ▸
+  Confirmations** ; politique de confidentialité mise à jour.
+- Pastille **« Confirmé »** sur les modèles déjà confirmés par des utilisateurs.
+
 ## 1.6.0
 
 *In English: manual diagnostics now include a read-only probe of the faulty device (CompX mice:

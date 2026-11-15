@@ -34,3 +34,39 @@ test('Relais : diagnostic validé, borné, champs nettoyés', () => {
   assert.equal(parse(JSON.stringify({ version: '1', text: '   ' })), null);
   assert.equal(parse(JSON.stringify({ version: '1', text: 'a', auto: 'oui' })).auto, false);
 });
+
+// ---------- Confirmations (POST /periphhub/confirm) ----------
+import { parseConfirm, confirmLines } from '../server/diag-relay/relay.mjs';
+import { parseLine, aggregate } from '../scripts/confirmations.mjs';
+
+test('Confirmations : seuls les champs attendus passent, bornés et nettoyés', () => {
+  const d = parseConfirm(JSON.stringify({ version: '1.6.1', items: [
+    { id: '3554:f517', name: 'ATTACK SHARK `Mouse`\n| x', driver: 'openmouse', cap: 'dpi', ok: true, note: String.raw`C:\Users\Jean\x jean@mail.fr` },
+    { id: '../etc', driver: 'x', cap: 'dpi', ok: true },
+    { id: '1234:5678', driver: 'a b', cap: 'dpi', ok: true },
+    ...Array(30).fill({ id: '1234:5678', driver: 'via', cap: 'rate', ok: false }),
+  ] }));
+  assert.equal(d.items.length, 18); // 20 lus au plus, dont 2 refusés
+  assert.equal(d.items[0].id, '3554:F517');
+  assert.ok(!/[`|\n]/.test(d.items[0].name), d.items[0].name);
+  assert.ok(!/Jean|mail\.fr/.test(d.items[0].note), d.items[0].note);
+  assert.equal(parseConfirm('{"version":"1","items":[]}'), null);
+  assert.equal(parseConfirm('pas du json'), null);
+});
+
+test('Confirmations : lignes du relais relues par scripts/confirmations.mjs', () => {
+  const lines = confirmLines('1.6.1', [
+    { driver: 'openmouse', cap: 'dpi', ok: true, note: '' },
+    { driver: 'openmouse', cap: 'rate', ok: false, note: 'Command 0x07 failed' },
+    { driver: 'openmouse', cap: 'connexion', ok: true, note: '' },
+  ]);
+  assert.deepEqual({ ...parseLine(lines[1]) }, { version: '1.6.1', driver: 'openmouse', cap: 'rate', ok: false, note: 'Command 0x07 failed' });
+  const { confirmed, fails } = aggregate([
+    { title: 'Confirmations · 3554:F517 · ATTACK SHARK Mouse', comments: [{ body: lines.join('\n') }, { body: confirmLines('1.6.1', [{ driver: 'openmouse', cap: 'dpi', ok: true }]).join('\n') }] },
+    { title: 'Confirmations · 1234:5678', comments: [{ body: confirmLines('1.6.1', [{ driver: 'via', cap: 'connexion', ok: true }]).join('\n') }] },
+    { title: 'Diagnostic envoyé', comments: [] },
+  ]);
+  assert.deepEqual(confirmed, { '3554:F517': { name: 'ATTACK SHARK Mouse', caps: ['dpi'], n: 2 } }); // la connexion seule ne confirme pas
+  assert.equal(fails.length, 1);
+  assert.match(fails[0], /rate ✘ · Command 0x07 failed/);
+});
