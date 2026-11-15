@@ -523,6 +523,7 @@ function drvRender(inst) {
       o && !inst.noOrigin ? h('button', { class: 'ghost', onclick: () => drvRestore(inst) }, `Remettre les réglages du ${new Date(o.date).toLocaleDateString(LOCALE)}`) : null,
       // diagId null : pas de VID:PID propre (réglages de Windows, batterie Bluetooth) → diagnostic complet
       NATIVE && inst.dev ? h('div', { class: 'row-inline' },
+        typeof selfTestable === 'function' && selfTestable(inst) ? h('button', { class: 'ghost', title: 'Change chaque réglage, vérifie que l’appareil le prend, puis remet la valeur actuelle', onclick: () => selfTestDialog(inst) }, 'Tester cet appareil') : null,
         h('button', { class: 'ghost', title: 'Envoie le diagnostic de cet appareil au développeur, avec ce qui ne marche pas', onclick: () => diagDialog(drvDiagId(inst) || '') }, 'Signaler un problème'),
         h('button', { class: 'ghost', title: 'À coller dans un message (Discord…) pour dire si ça marche ou pas', onclick: () => copyDiag(drvDiagId(inst) || undefined) }, 'Copier le diagnostic')) : null)));
 }

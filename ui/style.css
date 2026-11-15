@@ -827,3 +827,11 @@ body:has(.overlay) #busyBar { opacity: 0; }
 @media (max-width: 700px) { .updbar { flex-wrap: wrap; } .updbar .row-inline { width: 100%; justify-content: flex-end; } }
 @media (prefers-reduced-motion: reduce) { .updbar, .updicon svg { animation: none !important; } }
 .updprog .err { color: var(--err); }
+
+/* Auto-test guidé (js/drivers/selftest.js) */
+.stlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.stlist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.stlist .stmark { display: inline-block; width: 1.2em; text-align: center; font-weight: 700; }
+.stlist li.ok .stmark { color: var(--ok); }
+.stlist li.err .stmark, .stlist li.err strong { color: var(--err, #e5484d); }
+.stlist li.run { font-weight: 600; }

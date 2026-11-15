@@ -1071,6 +1071,17 @@ const I18N_EN = {
   "Quand un réglage marche (ou échoue) sur un appareil, PeriphHub peut le dire au développeur : le modèle passe alors de « expérimental » à « confirmé » pour tout le monde. Seuls partent le modèle (identifiant USB et nom), le pilote et le nom des réglages essayés ; ni valeur choisie, ni numéro de série, ni information personnelle.": "When a setting works (or fails) on a device, PeriphHub can tell the developer: the model then goes from “experimental” to “confirmed” for everyone. Only the model (USB ID and name), the driver and the names of the settings tried are sent; no chosen value, serial number or personal information.",
   "Confirmé": "Confirmed",
   "Connecté · Confirmé": "Connected · Confirmed",
+  // Auto-test guidé (js/drivers/selftest.js)
+  "Tester cet appareil": "Test this device",
+  "Change chaque réglage, vérifie que l’appareil le prend, puis remet la valeur actuelle": "Changes each setting, checks the device takes it, then puts the current value back",
+  "Lancer le test": "Start the test",
+  "Test en cours…": "Testing…",
+  "Distance de levée": "Lift-off distance",
+  "Anti-ondulation": "Ripple control",
+  "Molette crantée": "Notched wheel",
+  "Course d’activation": "Actuation point",
+  "Sensibilité du Rapid Trigger": "Rapid Trigger sensitivity",
+  "· valeur d’origine pas revenue": "· original value not restored",
 };
 
 // {} = variable part (translated in turn when it is a known text)
@@ -1225,6 +1236,11 @@ const I18N_EN_RE = [
   [/^Mise à jour impossible : (.+)$/, (m, e) => `Update failed: ${e}`],
   [/^Téléchargement… (\d+) %$/, (m, n) => `Downloading… ${n} %`],
   [/^Dernier essai : (.+)$/s, (m, e) => `Last attempt: ${trText(e)}`],
+  [/^Tester (.+)$/, (m, n) => `Test ${n}`],
+  [/^PeriphHub va changer chacun de ces réglages, vérifier que l’appareil a bien pris la nouvelle valeur, puis remettre la valeur actuelle\. Environ (\d+) secondes\. Pour une souris sans fil, bougez-la pendant le test pour qu’elle ne se mette pas en veille\.$/,
+    (m, n) => `PeriphHub will change each of these settings, check the device took the new value, then put the current value back. About ${n} seconds. With a wireless mouse, move it during the test so it does not fall asleep.`],
+  [/^Tout marche : (\d+) réglages? sur \d+\.$/, (m, n) => `Everything works: ${n} setting${n > 1 ? 's' : ''} out of ${n}.`],
+  [/^(\d+) réglages? sur (\d+) marchen?t?\.(.*)$/, (m, a, b, r) => `${a} setting${a > 1 ? 's' : ''} out of ${b} work${a > 1 ? '' : 's'}.` + (/origine/.test(r) ? ' Some original values did not come back: use “Restore the settings” on the device page.' : ' Sending the diagnostics helps fix the rest.')],
   [/^Ça marche sur (.+) : prévenir le développeur \?$/, (m, l) => `It works on ${l}: tell the developer?`],
   [/^Confirmé sur le vrai matériel par des utilisateurs de PeriphHub \((.+)\)$/, (m, l) => `Confirmed on real hardware by PeriphHub users (${l})`],
   [/^PeriphHub n’a pas réussi à se connecter à : (.+)\.$/, (m, l) => `PeriphHub could not connect to: ${l}.`],

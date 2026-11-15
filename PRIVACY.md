@@ -1,6 +1,6 @@
 # Politique de confidentialité — PeriphHub
 
-*Dernière mise à jour : 15 novembre 2026 (version 1.7)*
+*Dernière mise à jour : 15 novembre 2026 (version 1.8)*
 
 PeriphHub est un logiciel libre (GPL-3.0) qui fonctionne sur votre ordinateur. Il n'a ni compte,
 ni publicité, ni télémétrie, ni statistiques d'usage. Il ne vend et ne partage aucune donnée.
@@ -52,8 +52,8 @@ supprimé sur demande (ticket indiquant le jour d'envoi).
 Quand un réglage vient de marcher sur un appareil, PeriphHub vous demande une fois si vous voulez
 prévenir le développeur (modifiable dans **Options ▸ Confirmations**, désactivé tant que vous n'avez
 pas répondu oui). Si vous acceptez, il envoie, par lots : le modèle (identifiant USB et nom), le
-pilote utilisé, le nom des réglages essayés (« dpi », « fréquence »…), s'ils ont marché, et le
-message d'erreur sinon. **Ni la valeur choisie, ni numéro de série, ni information personnelle.**
+pilote utilisé, le nom des réglages essayés (« dpi », « fréquence »…, à la main ou avec « Tester cet
+appareil »), s'ils ont marché, et le message d'erreur sinon. **Ni la valeur choisie, ni numéro de série, ni information personnelle.**
 Même relais et même dépôt privé que les diagnostics ; un même résultat n'est envoyé qu'une fois par
 version de PeriphHub. Le modèle peut alors être marqué « confirmé » dans l'appli, pour tout le monde.
 
@@ -96,7 +96,7 @@ Questions ou signalements : <https://github.com/Sharkytihno/PeriphHub/issues>
 
 # Privacy policy — PeriphHub (English)
 
-*Last updated: November 15, 2026 (version 1.7)*
+*Last updated: November 15, 2026 (version 1.8)*
 
 PeriphHub is free software (GPL-3.0) that runs on your computer. No account, no ads, no
 telemetry, no usage statistics. It does not sell or share any data.
@@ -124,7 +124,7 @@ telemetry, no usage statistics. It does not sell or share any data.
 3. **Confirmations, only with your consent**: when a setting has just worked on a device,
    PeriphHub asks once whether to tell the developer (Options ▸ Confirmations; off until you say
    yes). If you accept, it sends in batches: the model (USB ID and name), the driver, the names of
-   the settings tried, whether they worked, and the error message otherwise. **No chosen value,
+   the settings tried (by hand or with “Test this device”), whether they worked, and the error message otherwise. **No chosen value,
    serial number or personal information.** Same relay and private repository as diagnostics; the
    same result is sent once per PeriphHub version. The model can then show as “confirmed” in the app.
 

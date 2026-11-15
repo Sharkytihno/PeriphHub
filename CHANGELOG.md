@@ -3,6 +3,20 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 1.8.0
+
+*In English: “Test this device”. One button on each device page changes every supported setting,
+reads it back from the device, then puts the current value back, and shows what works. Failures
+offer to send the diagnostics; with confirmations on, results reach the developer directly.*
+
+- **Tester cet appareil** : un bouton sur la page de chaque appareil change un à un les réglages
+  reconnus (DPI, fréquence, distance de levée, interrupteurs, éclairage…), vérifie que l'appareil a
+  bien pris la nouvelle valeur, puis remet la valeur actuelle. Le résultat s'affiche réglage par
+  réglage ; en cas d'échec, PeriphHub propose d'envoyer le diagnostic. Plus besoin de demander
+  « change le DPI, ça marche ? » : avec les confirmations activées, le résultat arrive tout seul.
+- Ne touche jamais aux boutons, macros, profils ni au firmware, ni aux réglages touche par touche
+  des claviers magnétiques ; l'état d'origine est gardé avant le test, comme pour un réglage à la main.
+
 ## 1.7.0
 
 *In English: opt-in confirmations. When a setting works (or fails) on a device, PeriphHub can tell
