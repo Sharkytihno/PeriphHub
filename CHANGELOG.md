@@ -11,7 +11,11 @@ PeriphHub, right-click refreshes or hides it. Vertical taskbar, or by choice: on
 device with the level drawn in it. Options: show or hide each device, background plate for
 transparent taskbars. Every battery is now read each minute, window open or not, and right after a
 device is plugged in or the PC wakes up; a device that sleeps or leaves keeps its last level, dimmed,
-for 30 minutes. Technique adapted from WirelessBattery (GPL-3.0).*
+for 30 minutes. Battery level (read-only) for many new devices: JBL Quantum, Jabra (Link 380/390),
+ROG Pelta, Razer BlackShark V3 / V3 X / V2 Pro 2023 and Barracuda X, Arctis Nova Pro (225D), Logitech
+G435 (0ADF), Fractal Scape, MOONDROP GM01 Pro, Rapoo VT, ASUS ROG mice and keyboards, MCHOSE, Sprime,
+RK MG6 Pro, Redragon (Areson), HECATE, SONiX 2.4 GHz keyboards, Steam and Flydigi controllers.
+Technique and protocols adapted from WirelessBattery (GPL-3.0).*
 
 - **Batteries dans la barre des tâches** : à côté de l'horloge, « 🖱 93 %  🎧 30 % » pour chaque
   appareil sans fil connu de PeriphHub. Rouge à 15 % ou moins, éclair bleu en charge, grisé en
@@ -28,7 +32,16 @@ for 30 minutes. Technique adapted from WirelessBattery (GPL-3.0).*
   affichée, grisée, pendant 30 minutes, même après un redémarrage de PeriphHub ; pas d'alerte de
   batterie faible sur une valeur ancienne. Un appareil vu à la fois en Bluetooth et par le pilote de
   sa marque n'apparaît qu'une fois.
-- Technique reprise du projet libre WirelessBattery (krisgfx9, GPL-3.0), réécrite en Rust.
+- **Batterie de nouveaux appareils** (lecture seule : rien n'est réglé sur l'appareil) : casques JBL
+  Quantum 520 / 650 / 850 / 950 (et X), Jabra derrière un dongle Link 380 / 390, ROG Pelta, Razer
+  BlackShark V3 / V3 Pro / V3 X / V2 Pro (2023) et Barracuda X (2022), SteelSeries Arctis Nova Pro
+  Wireless (dongle 225D), Logitech G435 (dongle 0ADF), Fractal Scape, MOONDROP GM01 Pro ; souris Rapoo
+  VT (VT0 à VT9, VT1 Pro Max, VT3 Pro), ASUS ROG (Chakram, Gladius, Keris, Harpe, Pugio, Spatha, Strix),
+  MCHOSE (L7, M7, A7, K7, G3 V2), Sprime PM1, RK MG6 Pro, Redragon M913 / M915 (récepteurs Areson),
+  HECATE ; claviers ROG (Azoth, Falchion, Strix Scope) et SONiX en 2,4 GHz (AJAZZ AK820 MAX, AK980 V2,
+  AULA F108 Pro) ; manettes Steam et Flydigi Vader 5 Pro. Pas encore confirmés sur le matériel.
+- Technique et protocoles repris du projet libre WirelessBattery (krisgfx9, GPL-3.0), réécrits pour
+  PeriphHub.
 
 ## 1.9.0
 

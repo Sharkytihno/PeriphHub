@@ -260,5 +260,1109 @@
     "kind": "clavier",
     "status": "experimental",
     "plugin": "ranked"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1215",
+    "name": "Rapoo VT3 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1233",
+    "name": "Rapoo VT1 Pro Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1410",
+    "name": "Rapoo VT0 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1411",
+    "name": "Rapoo VT3S (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1412",
+    "name": "Rapoo VT3 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1413",
+    "name": "Rapoo VT7 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1414",
+    "name": "Rapoo VT9 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1415",
+    "name": "Rapoo VT1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1416",
+    "name": "Rapoo VT7 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1417",
+    "name": "Rapoo VT3 Max (Gen 2) (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1418",
+    "name": "Rapoo VT9 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1420",
+    "name": "Rapoo VT0 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1421",
+    "name": "Rapoo VT3S Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1422",
+    "name": "Rapoo VT2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1423",
+    "name": "Rapoo VT2 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1444",
+    "name": "Rapoo VT1 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "1B06",
+    "name": "Rapoo VT3 Max V2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4415",
+    "name": "Rapoo VT3 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4433",
+    "name": "Rapoo VT1 Pro Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4610",
+    "name": "Rapoo VT0 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4611",
+    "name": "Rapoo VT3S (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4612",
+    "name": "Rapoo VT3 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4613",
+    "name": "Rapoo VT7 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4614",
+    "name": "Rapoo VT9 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4615",
+    "name": "Rapoo VT1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4616",
+    "name": "Rapoo VT7 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4617",
+    "name": "Rapoo VT3 Max (Gen 2) (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4618",
+    "name": "Rapoo VT9 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4620",
+    "name": "Rapoo VT0 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4621",
+    "name": "Rapoo VT3S Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4622",
+    "name": "Rapoo VT2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4623",
+    "name": "Rapoo VT2 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4644",
+    "name": "Rapoo VT1 Max (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "24AE",
+    "pid": "4B06",
+    "name": "Rapoo VT3 Max V2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A83",
+    "name": "ROG Azoth (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B3F",
+    "name": "ROG Azoth Extreme (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1CEF",
+    "name": "ROG Azoth Extreme SE (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1C25",
+    "name": "ROG Azoth X (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1C24",
+    "name": "ROG Azoth X (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "193E",
+    "name": "ROG Falchion (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "193C",
+    "name": "ROG Falchion (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B04",
+    "name": "ROG Falchion RX (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1AAE",
+    "name": "ROG Strix Scope II 96 (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B78",
+    "name": "ROG Strix Scope II 96 RX (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A07",
+    "name": "ROG Strix Scope RX TKL (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "18E5",
+    "name": "ROG Chakram (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "18E3",
+    "name": "ROG Chakram (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A1A",
+    "name": "ROG Chakram X (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A18",
+    "name": "ROG Chakram X (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "18A0",
+    "name": "ROG Gladius II Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "197F",
+    "name": "ROG Gladius III Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "197D",
+    "name": "ROG Gladius III Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A72",
+    "name": "ROG Gladius III Aimpoint (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A70",
+    "name": "ROG Gladius III Aimpoint (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B0C",
+    "name": "ROG Gladius III Aimpoint EVA-02 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B0A",
+    "name": "ROG Gladius III Aimpoint EVA-02 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B68",
+    "name": "ROG Harpe Ace Extreme (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B67",
+    "name": "ROG Harpe Ace Extreme (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B65",
+    "name": "ROG Harpe Ace Mini (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B63",
+    "name": "ROG Harpe Ace Mini (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1AD0",
+    "name": "ROG Harpe II Ace (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1C69",
+    "name": "ROG Harpe II Ace (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1960",
+    "name": "ROG Keris Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "195E",
+    "name": "ROG Keris Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A59",
+    "name": "ROG Keris Wireless EVA Edition (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A57",
+    "name": "ROG Keris Wireless EVA Edition (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A68",
+    "name": "ROG Keris Wireless Aimpoint (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1A66",
+    "name": "ROG Keris Wireless Aimpoint (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B16",
+    "name": "ROG Keris II Ace (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1C0C",
+    "name": "ROG Keris II Origin (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1D4C",
+    "name": "ROG Keris II Origin KJP (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1908",
+    "name": "ROG Pugio II (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1906",
+    "name": "ROG Pugio II (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1979",
+    "name": "ROG Spatha X (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1977",
+    "name": "ROG Spatha X (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "18B4",
+    "name": "ROG Strix Carry (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1949",
+    "name": "ROG Strix Impact II Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1947",
+    "name": "ROG Strix Impact II Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1B84",
+    "name": "ROG Pelta (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "2125",
+    "name": "JBL Quantum 650 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "2126",
+    "name": "JBL Quantum 650 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "213B",
+    "name": "JBL Quantum 650X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "213D",
+    "name": "JBL Quantum 650X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "2127",
+    "name": "JBL Quantum 950 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "2128",
+    "name": "JBL Quantum 950 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "213E",
+    "name": "JBL Quantum 950X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "2140",
+    "name": "JBL Quantum 950X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "218D",
+    "name": "JBL Quantum 520 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "218E",
+    "name": "JBL Quantum 520 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "21A7",
+    "name": "JBL Quantum 520X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "21A9",
+    "name": "JBL Quantum 520X Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "219A",
+    "name": "JBL Quantum 850 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "219B",
+    "name": "JBL Quantum 850 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "24C7",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "24C8",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "24C9",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "24CA",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "24E9",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "2E50",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "2E51",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "2E56",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B0E",
+    "pid": "2E57",
+    "name": "Casque Jabra (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0576",
+    "name": "Razer BlackShark V3 Pro (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0577",
+    "name": "Razer BlackShark V3 Pro (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0579",
+    "name": "Razer BlackShark V3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "057A",
+    "name": "Razer BlackShark V3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "057D",
+    "name": "Razer BlackShark V3 X (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "057C",
+    "name": "Razer BlackShark V3 X (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0555",
+    "name": "Razer BlackShark V2 Pro (2023) (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0550",
+    "name": "Razer Barracuda X (2022) (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1038",
+    "pid": "225D",
+    "name": "SteelSeries Arctis Nova Pro Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "046D",
+    "pid": "0ADF",
+    "name": "Logitech G435 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "36BC",
+    "pid": "0001",
+    "name": "Fractal Scape (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "36BC",
+    "pid": "2001",
+    "name": "Fractal Scape (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "35D8",
+    "pid": "0133",
+    "name": "MOONDROP GM01 Pro (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "5253",
+    "pid": "*",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "4245",
+    "name": "MCHOSE G3 V2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "418C",
+    "name": "MCHOSE G3 V2 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1915",
+    "pid": "AC11",
+    "name": "Sprime PM1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1915",
+    "pid": "AC12",
+    "name": "Sprime PM1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1915",
+    "pid": "AC13",
+    "name": "Sprime PM1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1915",
+    "pid": "AC1C",
+    "name": "Sprime PM1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1915",
+    "pid": "AD8C",
+    "name": "Sprime PM1 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2E3C",
+    "pid": "00A5",
+    "name": "RK MG6 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2E3C",
+    "pid": "00A6",
+    "name": "RK MG6 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2E3C",
+    "pid": "00E5",
+    "name": "RK MG6 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2E3C",
+    "pid": "00E6",
+    "name": "RK MG6 Pro (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "25A7",
+    "pid": "FA07",
+    "name": "Souris Redragon sans fil (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "25A7",
+    "pid": "FA08",
+    "name": "Souris Redragon sans fil (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "05AC",
+    "pid": "024F",
+    "name": "AJAZZ AK820 MAX / AULA F108 Pro (dongle 2,4 GHz) (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0C45",
+    "pid": "FEFE",
+    "name": "AJAZZ AK980 V2 (dongle 2,4 GHz) (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "35BB",
+    "pid": "*",
+    "name": "Souris HECATE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "28DE",
+    "pid": "1142",
+    "name": "Manette Steam (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "28DE",
+    "pid": "1302",
+    "name": "Manette Steam (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "28DE",
+    "pid": "1303",
+    "name": "Manette Steam (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "28DE",
+    "pid": "1304",
+    "name": "Manette Steam (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "28DE",
+    "pid": "1305",
+    "name": "Manette Steam (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "37D7",
+    "pid": "2401",
+    "name": "Flydigi Vader 5 Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
   }
 ]

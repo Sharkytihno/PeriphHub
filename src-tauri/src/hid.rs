@@ -471,6 +471,27 @@ pub async fn hid_send_feature(app: AppHandle, handle: u32, report_id: u8, data: 
     off_main(move || exchange(&app, handle, move |d| d.send_feature_report(&frame(report_id, &data)))).await
 }
 
+// Rapport de sortie par le canal de contrôle (HidD_SetOutputReport) : collections sans point de
+// sortie « interrupt » (casque ROG Pelta)
+#[tauri::command]
+pub async fn hid_send_output(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
+    off_main(move || exchange(&app, handle, move |d| d.send_output_report(&frame(report_id, &data)))).await
+}
+
+// Rapport d'entrée lu à la demande (Razer Barracuda X : état du pont radio après chaque envoi)
+#[tauri::command]
+pub async fn hid_get_input(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
+    off_main(move || {
+        exchange(&app, handle, move |d| {
+            let mut buf = vec![0u8; len.min(4096) + 1];
+            buf[0] = report_id;
+            let n = d.get_input_report(&mut buf)?.min(buf.len());
+            Ok(buf.get(1..n).unwrap_or_default().to_vec())
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
     off_main(move || {

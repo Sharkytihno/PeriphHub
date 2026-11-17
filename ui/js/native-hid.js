@@ -72,6 +72,18 @@ class NativeHIDDevice extends EventTarget {
   async sendFeatureReport(reportId, data) {
     await hidCall(this, 'set', reportId, toBytes(data), b => nativeInvoke('hid_send_feature', { handle: this.handle, reportId, data: Array.from(b) }));
   }
+  // Extensions de PeriphHub (absentes de WebHID) : rapport de sortie par le canal de contrôle, et
+  // rapport d'entrée lu à la demande (sans attendre que l'appareil l'envoie)
+  async sendOutputReport(reportId, data) {
+    await hidCall(this, 'out', reportId, toBytes(data), b => nativeInvoke('hid_send_output', { handle: this.handle, reportId, data: Array.from(b) }));
+  }
+  async receiveInputReport(reportId, len = 64) {
+    let bytes;
+    try { bytes = Uint8Array.from(await nativeInvoke('hid_get_input', { handle: this.handle, reportId, len })); }
+    catch (e) { hidTrace(this, 'get', reportId, null, e); throw e; }
+    hidTrace(this, 'get', reportId, bytes);
+    return bytes;
+  }
   // `len` : extension de PeriphHub (WebHID connaît la taille par le descripteur, hidapi non)
   async receiveFeatureReport(reportId, len = 64) {
     let bytes;

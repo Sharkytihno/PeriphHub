@@ -25,7 +25,7 @@ avant d'être lancé.
 
 | Projet | Licence | Ce qui en vient |
 |---|---|---|
-| [WirelessBattery](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor) (krisgfx9) | GPL-3.0 | Widget des batteries dans la barre des tâches : technique et dessin de `src/widget.cpp` (fenêtre transparente enfant de la barre, placement contre la zone de notification, bouton Widgets de Windows 11 cherché dans un fil séparé, icônes de notification avec le niveau) traduits en Rust dans `src-tauri/src/taskbar.rs` |
+| [WirelessBattery](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor) (krisgfx9) | GPL-3.0 | Widget des batteries dans la barre des tâches : technique et dessin de `src/widget.cpp` (fenêtre transparente enfant de la barre, placement contre la zone de notification, bouton Widgets de Windows 11 cherché dans un fil séparé, icônes de notification avec le niveau) traduits en Rust dans `src-tauri/src/taskbar.rs` ; protocoles de lecture de batterie de `src/drivers/*.cpp` (JBL, Jabra, ROG, casques Razer, Arctis Nova Pro 225D, G435 0ADF, Fractal, MOONDROP, Rapoo, MCHOSE, Sprime, RK, Areson, SONiX, Kysona, manettes Steam et Flydigi) réécrits en JavaScript dans `ui/js/drivers/batteries.js` |
 
 ## Protocoles réimplémentés (aucun code copié)
 

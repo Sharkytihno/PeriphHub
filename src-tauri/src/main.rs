@@ -388,6 +388,8 @@ fn main() {
             hid::hid_send,
             hid::hid_send_feature,
             hid::hid_get_feature,
+            hid::hid_get_input,
+            hid::hid_send_output,
             headset_list,
             headset_set,
             openrgb_list,
