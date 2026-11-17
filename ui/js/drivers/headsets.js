@@ -25,7 +25,7 @@ function hsInstance(d) {
     key: `drv-hs-${hex4(vid)}${hex4(pid)}`.toLowerCase(),
     name: d.device && !/headset device/i.test(d.device) ? d.device : [d.vendor, d.product].filter(Boolean).join(' ') || 'Casque',
     kind: 'casque', dev, caps, state: {}, noOrigin: true,
-    source: `Module HeadsetControl ${'4.2.0'} (projet libre, GPL-3.0), pas encore confirmé sur ce modèle. ` +
+    source: `Module HeadsetControl ${'4.3.0'} (projet libre, GPL-3.0), pas encore confirmé sur ce modèle. ` +
       'Ces casques ne permettent pas de relire leurs réglages : PeriphHub retient ceux que vous choisissez et les renvoie quand le casque se rallume.',
     note: null,
     async set(cap, v) {

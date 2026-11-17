@@ -800,8 +800,8 @@ const I18N_EN = {
   'Ne plus afficher dans la barre des tâches': 'Stop showing on the taskbar',
   'Batterie moyenne': 'Battery medium',
   'Batterie pleine': 'Battery full',
-  'XInput, l’interface manettes de Windows : manettes Xbox One / Series / Elite et compatibles (8BitDo, PowerA, Nacon…). Windows ne donne que quatre paliers de batterie.':
-    'XInput, the Windows controller interface: Xbox One / Series / Elite controllers and compatible ones (8BitDo, PowerA, Nacon…). Windows only reports four battery levels.',
+  'XInput, l’interface manettes de Windows : manettes Xbox One / Series / Elite et compatibles (8BitDo, PowerA, Nacon…). Batterie au pour cent près par Windows.Gaming.Input quand la manette le permet, sinon quatre paliers (XInput).':
+    'XInput, Windows’ controller interface: Xbox One / Series / Elite controllers and compatibles (8BitDo, PowerA, Nacon…). Battery to the percent through Windows.Gaming.Input when the controller allows it, otherwise four steps (XInput).',
   'Fait vibrer la manette une demi-seconde pour vérifier qu’elle répond.': 'Makes the controller rumble for half a second to check that it responds.',
 
   // ---------- Mouse and keyboard (Windows settings), Bluetooth batteries ----------

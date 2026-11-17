@@ -15,7 +15,9 @@ for 30 minutes. Battery level (read-only) for many new devices: JBL Quantum, Jab
 ROG Pelta, Razer BlackShark V3 / V3 X / V2 Pro 2023 and Barracuda X, Arctis Nova Pro (225D), Logitech
 G435 (0ADF), Fractal Scape, MOONDROP GM01 Pro, Rapoo VT, ASUS ROG mice and keyboards, MCHOSE, Sprime,
 RK MG6 Pro, Redragon (Areson), HECATE, SONiX 2.4 GHz keyboards, Steam and Flydigi controllers.
-Technique and protocols adapted from WirelessBattery (GPL-3.0).*
+Xbox controllers to the percent (Windows.Gaming.Input), AirPods / Beats (each bud and the case, from
+their Bluetooth broadcast), Galaxy Buds, a phone linked with Phone Link, standard HID battery for any
+brand, HeadsetControl 4.3.0. Technique and protocols adapted from WirelessBattery (GPL-3.0).*
 
 - **Batteries dans la barre des tâches** : à côté de l'horloge, « 🖱 93 %  🎧 30 % » pour chaque
   appareil sans fil connu de PeriphHub. Rouge à 15 % ou moins, éclair bleu en charge, grisé en
@@ -40,6 +42,19 @@ Technique and protocols adapted from WirelessBattery (GPL-3.0).*
   MCHOSE (L7, M7, A7, K7, G3 V2), Sprime PM1, RK MG6 Pro, Redragon M913 / M915 (récepteurs Areson),
   HECATE ; claviers ROG (Azoth, Falchion, Strix Scope) et SONiX en 2,4 GHz (AJAZZ AK820 MAX, AK980 V2,
   AULA F108 Pro) ; manettes Steam et Flydigi Vader 5 Pro. Pas encore confirmés sur le matériel.
+- **Manettes Xbox au pour cent près** (Windows.Gaming.Input) au lieu des quatre paliers de XInput,
+  avec le nom donné par Windows ; aussi les manettes GameSir en mode Xbox.
+- **AirPods et Beats** : batterie de chaque écouteur et du boîtier, lue dans le message Bluetooth
+  qu'ils diffusent pour l'iPhone (Windows ne la lit pas). Rien ne leur est envoyé.
+- **Samsung Galaxy Buds** (Buds à Buds3) : écouteurs gauche, droit et boîtier, lus dans la trame
+  d'état qu'ils envoient à l'ouverture de leur liaison, au plus toutes les 2 minutes.
+- **Téléphone relié par Phone Link** (Lien avec Windows) : sa batterie, telle qu'affichée dans le menu
+  Démarrer, sans accès au téléphone.
+- **Batterie HID standard, toutes marques** : un appareil qu'aucun pilote PeriphHub ne prend mais
+  qui déclare un niveau de batterie normalisé apparaît avec lui (tablettes à stylet exclues).
+- Module casques : **HeadsetControl 4.3.0** (HyperX Cloud Alpha 2 Wireless et Cloud Alpha S, Sony
+  PULSE 3D, Razer BlackShark V2 Pro PlayStation, Logitech G PRO X 3 LIGHTSPEED, MCHOSE V9 Pro,
+  fifine HT6, Sennheiser GSP370 ; Arctis 7 corrigé sous Windows). Signature du mainteneur vérifiée.
 - Technique et protocoles repris du projet libre WirelessBattery (krisgfx9, GPL-3.0), réécrits pour
   PeriphHub.
 

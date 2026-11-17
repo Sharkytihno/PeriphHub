@@ -29,7 +29,52 @@ pub fn list() -> Value {
             "battery": battery,
         }));
     }
+    // Vrai pourcentage par Windows.Gaming.Input. Pas de lien fiable entre un emplacement XInput et
+    // une manette WGI : rattaché seulement s'il n'y en a qu'une de chaque côté.
+    let real = wgi();
+    if out.len() == 1 && real.len() == 1 {
+        if let (Some(o), Some(r)) = (out[0].as_object_mut(), real.into_iter().next()) {
+            o.insert("real".into(), r);
+        }
+    }
     Value::Array(out)
+}
+
+/// Manettes Xbox (et GameSir en mode Xbox) qui donnent leur batterie à Windows.Gaming.Input :
+/// capacité restante / capacité pleine (mWh), état de charge, nom affiché par Windows.
+/// Méthode reprise de WirelessBattery (GPL-3.0, src/drivers/xinput.cpp).
+fn wgi() -> Vec<Value> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows::Gaming::Input::RawGameController;
+    use windows::System::Power::BatteryStatus;
+    static PRIMED: AtomicBool = AtomicBool::new(false);
+    // La liste se remplit en arrière-plan après le premier appel
+    if !PRIMED.swap(true, Ordering::Relaxed) {
+        let _ = RawGameController::RawGameControllers();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    let Ok(list) = RawGameController::RawGameControllers() else { return Vec::new() };
+    let mut out = Vec::new();
+    for raw in list {
+        let vid = raw.HardwareVendorId().unwrap_or(0);
+        if vid != 0x045E && vid != 0x3537 {
+            continue;
+        }
+        let Ok(rep) = raw.TryGetBatteryReport() else { continue };
+        let rem = rep.RemainingCapacityInMilliwattHours().and_then(|v| v.Value()).unwrap_or(0);
+        let full = rep.FullChargeCapacityInMilliwattHours().and_then(|v| v.Value()).unwrap_or(0);
+        let status = rep.Status().unwrap_or(BatteryStatus::NotPresent);
+        if full <= 0 || status == BatteryStatus::NotPresent {
+            continue;
+        }
+        let name = if vid == 0x3537 { "Manette GameSir".to_string() } else { raw.DisplayName().map(|s| s.to_string()).unwrap_or_default() };
+        out.push(json!({
+            "level": (rem.max(0) as i64 * 100 / full as i64).clamp(0, 100),
+            "charging": status == BatteryStatus::Charging,
+            "name": name,
+        }));
+    }
+    out
 }
 
 /// Vibration brève (moteurs gauche et droit, 0-100 %) pour vérifier la manette

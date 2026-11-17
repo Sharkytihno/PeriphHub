@@ -269,6 +269,90 @@ pub fn bluetooth_batteries() -> Vec<BtBattery> {
     out
 }
 
+// ---------- Appareils Bluetooth connectés ----------
+
+const BT_CONNECTED: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x83da6326_97a6_4088_9453_a1923f573b29), pid: 15 };
+
+/// Appareils Bluetooth classiques connectés dont le nom contient `word` (sans casse) : (nom, adresse)
+pub fn connected_bt(word: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for id in device_ids("BTHENUM") {
+        if !id.to_ascii_uppercase().starts_with("BTHENUM\\DEV_") {
+            continue;
+        }
+        let mut node = 0u32;
+        let wid = wide(&id);
+        if unsafe { CM_Locate_DevNodeW(&mut node, wid.as_ptr(), CM_LOCATE_DEVNODE_NORMAL) } != CR_SUCCESS {
+            continue;
+        }
+        // Jamais un appareil déconnecté : il ne ferait qu'attendre
+        if !raw_prop::<1>(node, &BT_CONNECTED).is_some_and(|b| b[0] != 0) {
+            continue;
+        }
+        let name = bt_name(&first(node_prop(node, &DEVPKEY_Device_FriendlyName)));
+        let address = bt_address(&id);
+        if name.to_lowercase().contains(word) && address.len() == 12 {
+            out.push((name, address));
+        }
+    }
+    out
+}
+
+// ---------- Écouteurs Apple (AirPods, Beats) ----------
+
+pub struct AppleAudio {
+    pub name: String,
+    pub address: String,
+    /// Modèle Apple (0x20xx), lu dans les nœuds de service « _VID&0001004C_PID&xxxx » ; 0 si inconnu
+    pub pid: u16,
+}
+
+/// Valeur brute d'une propriété d'un nœud (GUID, booléen…)
+fn raw_prop<const N: usize>(node: u32, key: &DEVPROPKEY) -> Option<[u8; N]> {
+    let (mut ty, mut buf, mut size) = (0u32, [0u8; N], N as u32);
+    (unsafe { CM_Get_DevNode_PropertyW(node, key, &mut ty, buf.as_mut_ptr(), &mut size, 0) } == CR_SUCCESS && size as usize == N)
+        .then_some(buf)
+}
+
+/// Écouteurs Apple connectés en ce moment. Les nœuds Bluetooth d'un même appareil partagent le même
+/// conteneur : le nœud « DEV_ » donne le nom et l'état connecté, les nœuds de service le modèle.
+pub fn apple_audio() -> Vec<AppleAudio> {
+    const CONTAINER: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x8c7ed206_3f8a_4827_b3ab_ae9e1faefc6c), pid: 2 };
+    #[derive(Default)]
+    struct D { name: String, address: String, pid: u16, apple: bool, connected: bool }
+    let mut by: std::collections::HashMap<[u8; 16], D> = Default::default();
+    for id in device_ids("BTHENUM") {
+        let mut node = 0u32;
+        let wid = wide(&id);
+        if unsafe { CM_Locate_DevNodeW(&mut node, wid.as_ptr(), CM_LOCATE_DEVNODE_NORMAL) } != CR_SUCCESS {
+            continue;
+        }
+        let Some(c) = raw_prop::<16>(node, &CONTAINER) else { continue };
+        let d = by.entry(c).or_default();
+        let up = id.to_ascii_uppercase();
+        if let Some(v) = up.find("_VID&0001004C") {
+            d.apple = true;
+            if let Some(p) = hex_after(&up[v..], &["_PID&"]) {
+                d.pid = u16::from_str_radix(&p[..p.len().min(4)], 16).unwrap_or(0);
+            }
+        }
+        if up.starts_with("BTHENUM\\DEV_") {
+            d.name = bt_name(&first(node_prop(node, &DEVPKEY_Device_FriendlyName)));
+            d.address = bt_address(&id);
+            d.connected = raw_prop::<1>(node, &BT_CONNECTED).is_some_and(|b| b[0] != 0);
+        }
+    }
+    by.into_values()
+        .filter(|d| {
+            let n = d.name.to_uppercase();
+            let looks = n.contains("AIRPODS") || n.contains("BEATS");
+            // Les modèles audio d'Apple sont en 0x20xx ; iPhone, iPad et Mac non
+            d.connected && ((d.apple && d.pid & 0xFF00 == 0x2000) || (looks && d.pid == 0))
+        })
+        .map(|d| AppleAudio { name: d.name, address: d.address, pid: d.pid })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

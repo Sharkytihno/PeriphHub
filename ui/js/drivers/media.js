@@ -328,7 +328,7 @@ function padInstance(p) {
     dev: { vendorId: 0x045E, productId: 0, productName: 'Manette XInput' },
     caps: { rumble: true }, state: {},
     source: 'XInput, l’interface manettes de Windows : manettes Xbox One / Series / Elite et compatibles (8BitDo, PowerA, Nacon…). ' +
-      'Windows ne donne que quatre paliers de batterie.',
+      'Batterie au pour cent près par Windows.Gaming.Input quand la manette le permet, sinon quatre paliers (XInput).',
     async set(cap, v) { if (cap === 'rumble') await nativeInvoke('pads_rumble', { slot: p.slot, strength: v }); },
     refresh: () => Promise.resolve(),
     rows() {
@@ -345,7 +345,11 @@ function padUpdate(inst, p) {
   const b = p.battery;
   inst.meta = p.wireless ? 'Sans fil' : 'Filaire';
   // Type 1 = filaire (pas de batterie), 0 = déconnectée
-  if (b && b.type >= 2 && b.type !== 0xFF) inst.state.battery = { ...PAD_LEVEL[Math.min(b.level, 3)] };
+  // Vrai pourcentage quand Windows.Gaming.Input le donne (manettes Xbox récentes), sinon quatre paliers
+  if (p.real) {
+    inst.state.battery = { level: p.real.level, charging: !!p.real.charging };
+    if (p.real.name && !/^xbox (one )?(game )?controller$/i.test(p.real.name)) inst.name = p.real.name;
+  } else if (b && b.type >= 2 && b.type !== 0xFF) inst.state.battery = { ...PAD_LEVEL[Math.min(b.level, 3)] };
   else delete inst.state.battery;
 }
 
@@ -472,23 +476,57 @@ function btSame(a, b) { const x = btNorm(a), y = btNorm(b); return x.length >= 4
 
 function btInstance(b) {
   const inst = {
-    key: 'drv-bt-' + b.address.toLowerCase(), name: b.name, kind: btKind(b.name), chip: MEDIA_CHIP, noOrigin: true, diagId: null,
+    key: 'drv-bt-' + b.address.toLowerCase(), name: b.name, kind: b.kind || btKind(b.name), chip: MEDIA_CHIP, noOrigin: true, diagId: null,
     dev: { vendorId: 0, productId: 0, productName: b.name },
-    caps: {}, state: { battery: { level: b.level } }, meta: 'Bluetooth',
+    caps: {}, state: { battery: btLevel(b) }, meta: btMeta(b),
     source: 'Niveau de batterie que l’appareil annonce lui-même à Windows en Bluetooth (le même que dans Paramètres ▸ Bluetooth et appareils), quelle que soit la marque.',
     note: 'Ses autres réglages passent par le protocole de sa marque : quand PeriphHub le connaît, la page complète de l’appareil s’ouvre d’elle-même.',
     async set() {},
     refresh: () => btPoll(true),
     reapply: () => Promise.resolve(),
-    rows: () => [field('Batterie', h('strong', {}, inst.state.battery.level + ' %'), meter(inst.state.battery.level))],
+    rows() {
+      const bd = inst.buds;
+      if (!bd) return [field('Batterie', h('strong', {}, inst.state.battery.level + ' %'), meter(inst.state.battery.level))];
+      // AirPods / Beats : chaque écouteur et le boîtier
+      return [['Écouteur gauche', bd.left, bd.leftChg], ['Écouteur droit', bd.right, bd.rightChg], ['Boîtier', bd.case, bd.caseChg]]
+        .filter(([, v]) => v >= 0)
+        .map(([label, v, c]) => field(label, h('strong', {}, v + ' %' + (c ? ' ⚡' : '')), meter(v)));
+    },
   };
+  if (b.via === 'Phone Link') {
+    inst.source = 'Téléphone relié par Phone Link (Lien avec Windows) : PeriphHub lit le niveau que Phone Link affiche dans le menu Démarrer, ' +
+      'sans accéder au téléphone. Méthode reprise du projet libre WirelessBattery (GPL-3.0).';
+    inst.note = null;
+  }
+  if (b.buds) {
+    inst.buds = b.buds;
+    inst.source = 'AirPods et Beats : Windows ne lit pas leur batterie ; PeriphHub écoute le message Bluetooth basse consommation qu’ils diffusent ' +
+      'pour l’iPhone (par paliers de 10 %), sans rien leur envoyer. Méthode reprise du projet libre WirelessBattery (GPL-3.0).';
+  }
   return inst;
 }
 
-function btBattery(inst, level) {
+function btLevel(b) {
+  const r = { level: b.level };
+  if (b.charging != null) r.charging = !!b.charging;
+  if (b.stale) r.stale = true; // Phone Link : carte pas mise à jour depuis 3 h
+  return r;
+}
+// AirPods : « G 80 %  D 70 %  Boîtier 50 % »
+function btMeta(b) {
+  if (b.via) return b.via + (b.stale ? ' · dernière valeur connue' : '');
+  if (!b.buds) return 'Bluetooth';
+  const p = (l, v, c) => (v >= 0 ? `${l} ${v} %${c ? ' ⚡' : ''}` : '');
+  return [p('G', b.buds.left, b.buds.leftChg), p('D', b.buds.right, b.buds.rightChg), p('Boîtier', b.buds.case, b.buds.caseChg)].filter(Boolean).join('  ');
+}
+
+function btBattery(inst, b) {
   inst.btBattery = true;
-  if (inst.state.battery?.level === level) return;
-  inst.state.battery = { level };
+  const next = btLevel(b), meta = inst.key.startsWith('drv-bt-') ? btMeta(b) : inst.meta;
+  if (b.buds) inst.buds = b.buds;
+  if (JSON.stringify(inst.state.battery) === JSON.stringify(next) && inst.meta === meta) return;
+  inst.state.battery = next;
+  inst.meta = meta;
   drvRender(inst);
 }
 
@@ -508,10 +546,10 @@ function btPoll(force = false) {
         if (pads && /xbox/i.test(b.name)) continue; // XInput donne déjà sa batterie
         const same = others.filter(i => btSame(i.name, b.name));
         if (same.some(i => !i.chip)) continue; // pilote de la marque : il lit la batterie lui-même
-        if (same.length) { same.forEach(i => { fed.add(i); btBattery(i, b.level); }); continue; }
+        if (same.length) { same.forEach(i => { fed.add(i); btBattery(i, b); }); continue; }
         keep.add(b.address);
         const inst = btLive.get(b.address);
-        if (inst) btBattery(inst, b.level);
+        if (inst) btBattery(inst, b);
         else { const n = btInstance(b); btLive.set(b.address, n); drvAdd(n, { id: 'windows' }); }
       }
       // Appareil éteint ou parti : sa batterie quitte les pages qui l'affichaient

@@ -53,7 +53,7 @@ Statut « expérimental » tant qu'un modèle n'a pas été confirmé par un uti
 ## 0.5 — Casques via HeadsetControl ✅
 
 Plutôt que de réécrire des dizaines de protocoles de casques, PeriphHub livre
-[HeadsetControl](https://github.com/Sapd/HeadsetControl) 4.2.0 (GPL-3.0, maintenu par sa communauté).
+[HeadsetControl](https://github.com/Sapd/HeadsetControl) 4.3.0 (GPL-3.0, maintenu par sa communauté).
 `src-tauri/src/headset.rs` ne le lance que si son empreinte SHA-256 est la bonne, et ne lui passe que
 des options en liste blanche, bornes vérifiées. `ui/js/drivers/headsets.js` construit la page :
 batterie, retour micro, volume et filtre du micro, réduction de bruit, préréglages d'égaliseur,

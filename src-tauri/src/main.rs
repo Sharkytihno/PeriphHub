@@ -1,11 +1,14 @@
 // PeriphHub — un seul logiciel léger pour tous vos périphériques.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod airpods;
 mod audio;
 mod background;
 mod camera;
 mod devices;
 mod feedback;
+mod generic_hid;
+mod galaxybuds;
 mod headset;
 mod hid;
 mod input;
@@ -14,6 +17,7 @@ mod openrgb;
 mod openrgb_off;
 mod openrgb_service;
 mod pads;
+mod phonelink;
 mod pnp;
 mod procs;
 mod scan;
@@ -268,11 +272,57 @@ async fn notify_state() -> Result<String, String> {
 #[tauri::command]
 async fn bt_batteries() -> Result<Value, String> {
     blocking(|| {
-        let list = pnp::bluetooth_batteries();
-        Ok(serde_json::json!(list
+        let mut list: Vec<Value> = pnp::bluetooth_batteries()
             .iter()
             .map(|b| serde_json::json!({ "name": b.name, "address": b.address, "level": b.level }))
-            .collect::<Vec<_>>()))
+            .collect();
+        // AirPods / Beats : Windows ne lit pas leur batterie, elle vient de leurs annonces BLE
+        for b in airpods::batteries() {
+            let a = b.adv;
+            // L'écouteur le plus bas est celui qui s'épuise en premier ; un écouteur rangé dans le boîtier charge
+            let level = match (a.left, a.right) { (l, r) if l < 0 => r, (l, r) if r < 0 => l, (l, r) => l.min(r) };
+            list.retain(|x| x["address"] != b.address.as_str() || b.address.is_empty());
+            list.push(serde_json::json!({
+                "name": b.name, "address": b.address, "level": level,
+                "charging": (a.left < 0 || a.left_chg) && (a.right < 0 || a.right_chg),
+                "buds": { "left": a.left, "right": a.right, "case": a.case,
+                          "leftChg": a.left_chg, "rightChg": a.right_chg, "caseChg": a.case_chg },
+            }));
+        }
+        // Galaxy Buds : trame d'état envoyée à l'ouverture de leur liaison RFCOMM
+        for b in galaxybuds::batteries() {
+            let s = b.status;
+            let level = match (s.left, s.right) { (l, r) if l < 0 => r, (l, r) if r < 0 => l, (l, r) => l.min(r) };
+            if level < 0 {
+                continue;
+            }
+            list.retain(|x| x["address"] != b.address.as_str());
+            list.push(serde_json::json!({
+                "name": b.name, "address": b.address, "level": level,
+                "buds": { "left": s.left, "right": s.right, "case": s.case },
+            }));
+        }
+        // Téléphone relié par Phone Link
+        if let Some(p) = phonelink::phone() {
+            list.push(serde_json::json!({
+                "name": p.name, "address": "phonelink", "level": p.level, "kind": "téléphone", "stale": p.stale, "via": "Phone Link",
+            }));
+        }
+        Ok(Value::Array(list))
+    })
+    .await
+}
+
+/// Batterie HID standard des appareils qu'aucun pilote ne prend (`skip` : « vid:pid » déjà pris)
+#[tauri::command]
+async fn hid_batteries(skip: Vec<String>) -> Result<Value, String> {
+    blocking(move || {
+        Ok(Value::Array(
+            generic_hid::batteries(&skip)
+                .into_iter()
+                .map(|f| serde_json::json!({ "vid": f.vid, "pid": f.pid, "name": f.name, "level": f.level, "usagePage": f.usage_page, "usage": f.usage }))
+                .collect(),
+        ))
     })
     .await
 }
@@ -414,6 +464,7 @@ fn main() {
             input_get,
             input_set,
             bt_batteries,
+            hid_batteries,
             notify_show,
             notify_state,
             thx_state,

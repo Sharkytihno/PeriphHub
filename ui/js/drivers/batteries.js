@@ -746,3 +746,70 @@ registerDriver({
     return [inst];
   },
 });
+
+// ---------- Batterie HID standard (toutes marques) ----------
+// Appareils qu'aucun pilote PeriphHub ne prend mais qui déclarent un champ de batterie normalisé
+// (src-tauri/src/generic_hid.rs : lecture seule, tablettes à stylet exclues). Relu toutes les 5 min.
+const hidBatLive = new Map(); // « vid:pid » → page
+let hidBatAt = 0, hidBatPolling = null;
+const hidBatId = (v, p) => hex4(v).toLowerCase() + ':' + hex4(p).toLowerCase();
+function hidBatKind(f) {
+  if (f.usagePage === 1 && f.usage === 2) return 'souris';
+  if (f.usagePage === 1 && f.usage === 6) return 'clavier';
+  if (f.usagePage === 1 && (f.usage === 4 || f.usage === 5)) return 'manette';
+  if (f.usagePage === 0x0C || f.usagePage === 0x0B) return 'casque';
+  return typeof btKind === 'function' ? btKind(f.name || '') : 'autre';
+}
+function hidBatPoll(force = false) {
+  if (!NATIVE || (!force && Date.now() - hidBatAt < 290000)) return hidBatPolling || Promise.resolve();
+  hidBatAt = Date.now();
+  hidBatPolling ||= (async () => {
+    try {
+      // Déjà pris : appareils ouverts par un pilote et pages des pilotes
+      const skip = new Set();
+      for (const d of nativeHid.byHandle.values()) skip.add(hidBatId(d.vendorId, d.productId));
+      for (const i of drvLive.values()) {
+        if (i.key.startsWith('drv-hidbat-')) continue;
+        for (const d of [i.dev, ...(i.devs || [])]) if (d?.vendorId) skip.add(hidBatId(d.vendorId, d.productId));
+      }
+      const list = await nativeInvoke('hid_batteries', { skip: [...skip] });
+      const keep = new Set();
+      for (const f of list) {
+        const id = hidBatId(f.vid, f.pid), name = (f.name || '').trim() || 'Appareil sans fil';
+        // Même appareil déjà affiché avec sa batterie Bluetooth
+        if ([...drvLive.values()].some(i => !i.key.startsWith('drv-hidbat-') && i.state?.battery && typeof btSame === 'function' && btSame(i.name, name))) continue;
+        keep.add(id);
+        let inst = hidBatLive.get(id);
+        if (!inst) {
+          inst = {
+            key: 'drv-hidbat-' + id.replace(':', ''), name, kind: hidBatKind(f), chip: MEDIA_CHIP, noOrigin: true, diagId: null,
+            dev: { vendorId: f.vid, productId: f.pid, productName: name },
+            caps: {}, state: {}, meta: 'Batterie HID standard',
+            source: 'Niveau de batterie que l’appareil déclare lui-même dans un champ HID normalisé (toutes marques), lu sans rien lui envoyer. ' +
+              'Méthode reprise du projet libre WirelessBattery (GPL-3.0).',
+            async set() {},
+            refresh: () => hidBatPoll(true),
+            reapply: () => Promise.resolve(),
+            rows: () => [field('Batterie', h('strong', {}, inst.state.battery.level + ' %'), meter(inst.state.battery.level))],
+          };
+          inst.state.battery = { level: f.level };
+          hidBatLive.set(id, inst);
+          drvAdd(inst, { id: 'windows' });
+        } else if (inst.state.battery?.level !== f.level) {
+          inst.state.battery = { level: f.level };
+          drvRender(inst);
+        }
+      }
+      for (const [id, inst] of hidBatLive) {
+        if (keep.has(id)) continue;
+        hidBatLive.delete(id);
+        drvRelease(inst.dev, false);
+      }
+    } catch (e) {
+      console.warn('[PeriphHub] batterie HID standard', e);
+    } finally {
+      hidBatPolling = null;
+    }
+  })();
+  return hidBatPolling;
+}

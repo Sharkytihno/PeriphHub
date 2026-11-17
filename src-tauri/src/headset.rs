@@ -13,8 +13,8 @@ use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
 
 const NO_WINDOW: u32 = 0x0800_0000;
-// Version 4.2.0 (à changer avec scripts/fetch-headsetcontrol.ps1)
-const SHA256: &str = "81acae4c083aaa40a2e9c1bce7b3dd9625e74b9d9ee96384bb43b2dff7ff0fa5";
+// Version 4.3.0 (à changer avec scripts/fetch-headsetcontrol.ps1)
+const SHA256: &str = "e371da043710ddb8fc70af77f2ccad1cd03f8c6f49ba423e08764ad7a94a3c40";
 const EXE: &str = "headsetcontrol.exe";
 
 fn locate(app: &AppHandle) -> Option<PathBuf> {

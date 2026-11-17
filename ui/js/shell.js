@@ -23,6 +23,7 @@ const ICONS = {
   manette: 'M7 9h10a4 4 0 0 1 4 4v1a3 3 0 0 1-5.4 1.8L14 14h-4l-1.6 1.8A3 3 0 0 1 3 14v-1a4 4 0 0 1 4-4zM8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01',
   micro: 'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8 21h8',
   webcam: 'M12 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM12 7.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM7 21h10M12 17v4',
+  'téléphone': 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
   autre: 'M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0zM12 17v5',
   chip: 'M6 6h12v12H6zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',
   refroidissement: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M12 10c0-3 1-6 4-6s3 4 0 6M14 12c3 0 6 1 6 4s-4 3-6 0M12 14c0 3-1 6-4 6s-3-4 0-6M10 12c-3 0-6-1-6-4s4-3 6 0',
@@ -765,6 +766,7 @@ function batteryPoll() {
     }
     // Bluetooth et manettes : relus par media.js toutes les 10 s fenêtre ouverte, ici sinon
     if (typeof btPoll === 'function') jobs.push(btPoll().catch(() => {}));
+    if (typeof hidBatPoll === 'function') jobs.push(hidBatPoll().catch(() => {}));
     if (document.hidden && typeof padPoll === 'function') jobs.push(padPoll().catch(() => {}));
     await Promise.allSettled(jobs);
     refreshHome();
