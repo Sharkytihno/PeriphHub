@@ -547,14 +547,7 @@ function driverTiles() {
 
 const driverHas = (vid, pid) => [...drvLive.values()].some(i => devId(i.dev) === vid + ':' + pid);
 
-// Batterie relue toutes les 2 minutes, fenêtre visible ; toutes les 10 minutes dans la zone de
-// notification (infobulle de l'icône)
-let batTick = 0;
-setInterval(() => {
-  if (document.hidden && ++batTick % 5) return;
-  for (const inst of drvLive.values()) inst.refreshBattery?.().then(() => drvRender(inst), () => {});
-  refreshHome();
-}, 120000);
+// Batteries relues chaque minute, fenêtre ouverte ou non : batteryPoll (shell.js)
 
 function driversStart() {
   // Nouveau branchement : on retente tout de suite, y compris les appareils restés muets

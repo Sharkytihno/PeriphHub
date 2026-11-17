@@ -696,22 +696,95 @@ const bgAnswered = () => { try { return localStorage.getItem('bgKeep') != null; 
 let bgInfo = null; // { hidden_start, autostart : 'on' | 'off' | 'bloqué', store }
 let bgBusy = false;
 
-// Infobulle de l'icône : mise à jour disponible, puis batterie de chaque appareil (une ligne chacun)
-// Batteries connues : souris et casque historiques, puis les pages des pilotes (Bluetooth compris)
+// ---------- Batteries : relevé et mémoire ----------
+// Toutes les batteries sont relues chaque minute, fenêtre ouverte ou non (barre des tâches, infobulle,
+// alertes), puis aussitôt après un branchement ou une sortie de veille de l'ordinateur.
+// Un appareil qui ne répond plus (en veille, éteint, hors de portée du récepteur) garde sa dernière
+// valeur, grisée (« stale »), pendant 30 minutes ; elle survit à un redémarrage de PeriphHub.
+const BAT_EVERY = 60000;
+const BAT_KEEP = 30 * 60000;
+const BAT_TIMEOUT = 8000;
+const batFail = new Set(); // clés dont le dernier relevé a échoué : valeur affichée grisée
+var batMemo = (() => { try { return JSON.parse(localStorage.getItem('batMemo') || '{}') || {}; } catch { return {}; } })();
+
+// Batteries connues : souris et casque historiques, puis les pages des pilotes (Bluetooth compris),
+// puis les dernières valeurs des appareils partis depuis moins de 30 minutes
 function batteryList() {
-  const out = [];
-  const add = (key, name, b, kind) => { if (b?.level != null) out.push({ key, name, kind, level: b.level, charging: !!b.charging, label: b.label, stale: !!b.stale }); };
+  const out = [], now = Date.now();
+  const add = (key, name, b, kind) => {
+    if (b?.level == null) return;
+    out.push({ key, name, kind, level: b.level, charging: !!b.charging, label: b.label, stale: !!b.stale || batFail.has(key) });
+  };
   if (mouse) add('mouse', $('mouseTitle')?.textContent || tx('Souris'), mouse.info?.battery, 'souris');
   if (hs?.state?.battery != null) add('headset', $('headsetTitle')?.textContent || tx('Casque'), { level: hs.state.battery, charging: hs.state.charging }, 'casque');
   for (const i of drvDevices()) add(i.key, tx(i.name), i.state.battery, i.kind === 'autre' && i.key.startsWith('drv-bt-') ? 'bluetooth' : i.kind);
-  return out;
+  // Même appareil vu par deux chemins (Bluetooth et pilote de la marque) : une seule ligne, celle du pilote
+  const same = typeof btSame === 'function' ? btSame : (a, b) => a === b;
+  const list = out.filter((b, i) => !(b.key.startsWith('drv-bt-')
+    && out.some((o, j) => j !== i && !o.key.startsWith('drv-bt-') && same(o.name, b.name))));
+  let dirty = false;
+  for (const b of list) {
+    if (b.stale) continue;
+    const m = batMemo[b.key];
+    if (!m || m.level !== b.level || m.charging !== b.charging || m.name !== b.name || now - m.at > 300000) {
+      batMemo[b.key] = { name: b.name, kind: b.kind, level: b.level, charging: b.charging, label: b.label || null, at: now };
+      dirty = true;
+    }
+  }
+  for (const [key, m] of Object.entries(batMemo)) {
+    if (!m || typeof m.level !== 'number' || now - m.at > BAT_KEEP) { delete batMemo[key]; dirty = true; continue; }
+    if (list.some(b => b.key === key || same(b.name, m.name))) continue;
+    list.push({ key, name: m.name, kind: m.kind, level: m.level, charging: false, label: m.label || undefined, stale: true });
+  }
+  if (dirty) try { localStorage.setItem('batMemo', JSON.stringify(batMemo)); } catch {}
+  return list;
 }
+
+// Relevé de toutes les batteries, une seule fois à la fois ; chaque appareil a 8 s pour répondre
+let batPolling = null;
+function batteryPoll() {
+  batPolling ||= (async () => {
+    const jobs = [];
+    const limit = p => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('délai dépassé')), BAT_TIMEOUT))]);
+    const track = (key, run) => jobs.push(limit(Promise.resolve().then(run)).then(() => batFail.delete(key), () => batFail.add(key)));
+    // Souris principale : lue seulement à la connexion jusqu'ici ; en veille, elle ne répond plus
+    if (mouse) track('mouse', async () => {
+      if (!await mouse.isOnline()) throw new Error('en veille');
+      await mouse.refreshBattery();
+    });
+    if (hs?.refreshBattery) track('headset', async () => {
+      await hs.refreshBattery();
+      if (typeof renderHsMeta === 'function') renderHsMeta();
+    });
+    for (const inst of drvLive.values()) {
+      if (!inst.refreshBattery || inst.off) continue;
+      // Seuls les appareils qui ont déjà donné une batterie sont grisés en cas d'échec
+      const run = () => inst.refreshBattery().then(() => drvRender(inst));
+      if (inst.state?.battery) track(inst.key, run);
+      else jobs.push(limit(run()).catch(() => {}));
+    }
+    // Bluetooth et manettes : relus par media.js toutes les 10 s fenêtre ouverte, ici sinon
+    if (typeof btPoll === 'function') jobs.push(btPoll().catch(() => {}));
+    if (document.hidden && typeof padPoll === 'function') jobs.push(padPoll().catch(() => {}));
+    await Promise.allSettled(jobs);
+    refreshHome();
+  })().finally(() => { batPolling = null; });
+  return batPolling;
+}
+setInterval(batteryPoll, BAT_EVERY);
+setTimeout(batteryPoll, 15000); // premier relevé une fois les appareils ouverts
+// Branchement d'un appareil, ordinateur sorti de veille : relevé dès que les pilotes l'ont rouvert
+navigator.hid?.addEventListener('connect', () => setTimeout(batteryPoll, 4000));
+if (typeof nativeHid !== 'undefined') nativeHid.events.addEventListener('resume', () => setTimeout(batteryPoll, 8000));
+
+// Infobulle de l'icône : mise à jour disponible, puis batterie de chaque appareil (une ligne chacun)
 
 function bgTip() {
   const lines = [upd?.available ? tx(`PeriphHub ${upd.version} est disponible`) : 'PeriphHub'];
   for (const b of batteryList()) {
     const n = b.name.length > 26 ? b.name.slice(0, 25) + '…' : b.name;
-    lines.push(b.label ? `${n} : ${tx(b.label).toLowerCase()}` : `${n} : ${b.level} %${b.charging ? ' ⚡' : ''}`);
+    lines.push((b.label ? `${n} : ${tx(b.label).toLowerCase()}` : `${n} : ${b.level} %${b.charging ? ' ⚡' : ''}`)
+      + (b.stale ? ` (${tx('en veille')})` : ''));
   }
   // Limite de Windows : 127 caractères
   let tip = '';
@@ -766,11 +839,7 @@ function taskbarSync() {
     if (st?.shown !== tbShown) { tbShown = st?.shown; if (!$('options').hidden) renderOptions(); }
   }, e => console.warn('[PeriphHub] barre des tâches', e));
 }
-function batteryRefreshAll() {
-  for (const inst of drvLive.values()) inst.refreshBattery?.().then(() => drvRender(inst), () => {});
-  if (hs) hs.refreshBattery?.().then(() => refreshHome(), () => {});
-  refreshHome();
-}
+const batteryRefreshAll = () => batteryPoll();
 if (NATIVE) {
   // Menu du clic droit sur le widget (taskbar.rs)
   window.__TAURI__.event.listen('battery-refresh', () => batteryRefreshAll()).catch(() => {});
@@ -826,6 +895,7 @@ function batAlertText(b) {
 function batAlerts() {
   if (!NATIVE) return;
   for (const b of batteryList()) {
+    if (b.stale) continue; // valeur ancienne (appareil en veille ou parti) : pas d'alerte
     if (b.charging || b.level >= 30) { batWarned.delete(b.key); continue; }
     if (b.level < 1 || b.level > 15 || batWarned.has(b.key)) continue; // 0 % : souvent « inconnu »
     batWarned.add(b.key);

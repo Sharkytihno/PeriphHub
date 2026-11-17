@@ -1214,10 +1214,7 @@ $('hsConnect').onclick = async () => {
   else setStatus('hsStatus', 'Interface de configuration introuvable.', 'err');
 };
 
-// Batterie relue chaque minute (en-tête seulement : ne gêne pas un curseur en cours)
-setInterval(() => {
-  if (hs && !document.hidden) hs.refreshBattery().then(renderHsMeta, () => {});
-}, 60000);
+// Batterie relue chaque minute par batteryPoll (shell.js), en-tête seulement : ne gêne pas un curseur en cours
 // Retour sur la fenêtre après avoir changé la sortie audio : on retente THX
 window.addEventListener('focus', () => { if (hs && thx && !thx.ok && !thx.browser) loadThx(); });
 

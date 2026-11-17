@@ -796,6 +796,7 @@ const I18N_EN = {
     'Windows 11 puts new icons under the ^ arrow: drag them onto the taskbar, or turn them on in Settings > Personalization > Taskbar > Other system tray icons.',
   'Aucune batterie connue pour le moment': 'No battery level known yet',
   'Actualiser les batteries': 'Refresh batteries',
+  'en veille': 'asleep',
   'Ne plus afficher dans la barre des tâches': 'Stop showing on the taskbar',
   'Batterie moyenne': 'Battery medium',
   'Batterie pleine': 'Battery full',

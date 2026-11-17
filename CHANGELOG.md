@@ -9,7 +9,9 @@ Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette vers
 device PeriphHub knows: red at 15% or less, a bolt while charging, dimmed while asleep. Click opens
 PeriphHub, right-click refreshes or hides it. Vertical taskbar, or by choice: one tray icon per
 device with the level drawn in it. Options: show or hide each device, background plate for
-transparent taskbars. Technique adapted from WirelessBattery (GPL-3.0).*
+transparent taskbars. Every battery is now read each minute, window open or not, and right after a
+device is plugged in or the PC wakes up; a device that sleeps or leaves keeps its last level, dimmed,
+for 30 minutes. Technique adapted from WirelessBattery (GPL-3.0).*
 
 - **Batteries dans la barre des tâches** : à côté de l'horloge, « 🖱 93 %  🎧 30 % » pour chaque
   appareil sans fil connu de PeriphHub. Rouge à 15 % ou moins, éclair bleu en charge, grisé en
@@ -20,6 +22,12 @@ transparent taskbars. Technique adapted from WirelessBattery (GPL-3.0).*
   avec le niveau dessiné dedans et une jauge.
 - Réglages (Options) : barre des tâches, icônes ou rien ; appareils affichés un par un ; fond
   derrière le texte pour les barres rendues transparentes (Windhawk, TranslucentTB…).
+- **Batteries relues chaque minute**, fenêtre ouverte ou non, et aussitôt après un branchement ou la
+  sortie de veille de l'ordinateur. La souris Scyrox principale n'était lue qu'à la connexion.
+- **Appareil en veille ou parti** (éteint, hors de portée du récepteur) : sa dernière valeur reste
+  affichée, grisée, pendant 30 minutes, même après un redémarrage de PeriphHub ; pas d'alerte de
+  batterie faible sur une valeur ancienne. Un appareil vu à la fois en Bluetooth et par le pilote de
+  sa marque n'apparaît qu'une fois.
 - Technique reprise du projet libre WirelessBattery (krisgfx9, GPL-3.0), réécrite en Rust.
 
 ## 1.9.0

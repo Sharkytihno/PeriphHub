@@ -559,6 +559,5 @@ function mediaPoll() {
 }
 // Branchements : pas d'événement Windows côté interface, on relit régulièrement (fenêtre visible)
 setInterval(() => { if (!document.hidden) mediaPoll(); }, 10000);
-// Fenêtre cachée (zone de notification) : batteries Bluetooth relues quand même, pour l'infobulle
-setInterval(() => { if (document.hidden) btPoll(); }, 300000);
+// Fenêtre cachée : batteries Bluetooth relues chaque minute par batteryPoll (shell.js)
 if (typeof window !== 'undefined') window.addEventListener('focus', () => mediaPoll());
