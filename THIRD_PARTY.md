@@ -21,6 +21,12 @@ et lancée comme service Windows (`PeriphHubOpenRGB`, `src-tauri/src/openrgb_ser
 fichier par fichier à son arrivée. PawnIO : installeur vérifié par empreinte SHA-256 (`1f519a22…ba3032`)
 avant d'être lancé.
 
+## Code adapté
+
+| Projet | Licence | Ce qui en vient |
+|---|---|---|
+| [WirelessBattery](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor) (krisgfx9) | GPL-3.0 | Widget des batteries dans la barre des tâches : technique et dessin de `src/widget.cpp` (fenêtre transparente enfant de la barre, placement contre la zone de notification, bouton Widgets de Windows 11 cherché dans un fil séparé, icônes de notification avec le niveau) traduits en Rust dans `src-tauri/src/taskbar.rs` |
+
 ## Protocoles réimplémentés (aucun code copié)
 
 | Projet | Licence | Ce qui en vient |

@@ -22,6 +22,7 @@ mod sign;
 mod slim;
 mod startup;
 mod system;
+mod taskbar;
 mod thx;
 mod toast;
 mod update;
@@ -432,6 +433,8 @@ fn main() {
             background::bg_quit,
             background::bg_state,
             background::autostart_set,
+            taskbar::taskbar_set,
+            taskbar::taskbar_state,
             update::update_check,
             update::update_install
         ])

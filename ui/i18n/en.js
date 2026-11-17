@@ -782,6 +782,21 @@ const I18N_EN = {
   'Vibrations': 'Rumble',
   'Batterie presque vide': 'Battery almost empty',
   'Batterie faible': 'Battery low',
+  'Batteries dans la barre des tâches': 'Batteries on the taskbar',
+  'Le niveau de chaque appareil sans fil, toujours visible à côté de l’horloge. Rouge à 15 % ou moins, éclair quand il charge. Clic : ouvrir PeriphHub ; clic droit : actualiser ou masquer.':
+    'The level of each wireless device, always in view next to the clock. Red at 15% or less, a bolt while charging. Click: open PeriphHub; right-click: refresh or hide.',
+  'Barre des tâches': 'Taskbar',
+  'Icônes de notification': 'Tray icons',
+  'Ne pas afficher': 'Don’t show',
+  'Fond derrière le texte': 'Background behind the text',
+  'Pour les barres des tâches rendues transparentes (Windhawk, TranslucentTB…)': 'For taskbars made transparent (Windhawk, TranslucentTB…)',
+  'La barre des tâches est verticale : les batteries s’affichent en icônes de notification à la place.': 'The taskbar is vertical: batteries are shown as tray icons instead.',
+  'La barre des tâches est introuvable : les batteries s’affichent en icônes de notification à la place.': 'The taskbar can’t be found: batteries are shown as tray icons instead.',
+  'Windows 11 range les nouvelles icônes sous la flèche ^ : faites-les glisser sur la barre, ou activez-les dans Paramètres > Personnalisation > Barre des tâches > Autres icônes de la barre d’état système.':
+    'Windows 11 puts new icons under the ^ arrow: drag them onto the taskbar, or turn them on in Settings > Personalization > Taskbar > Other system tray icons.',
+  'Aucune batterie connue pour le moment': 'No battery level known yet',
+  'Actualiser les batteries': 'Refresh batteries',
+  'Ne plus afficher dans la barre des tâches': 'Stop showing on the taskbar',
   'Batterie moyenne': 'Battery medium',
   'Batterie pleine': 'Battery full',
   'XInput, l’interface manettes de Windows : manettes Xbox One / Series / Elite et compatibles (8BitDo, PowerA, Nacon…). Windows ne donne que quatre paliers de batterie.':

@@ -407,6 +407,7 @@ function refreshHome() {
   $('devGroup').hidden = !drvDevices().length && !document.querySelector('nav .pending')
     && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
   bgTipSync();
+  taskbarSync();
   batAlerts();
   if (report) {
     sub('slimSub', report.vendor_bytes ? mo(report.vendor_bytes) + ' en fond' : 'Rien à alléger');
@@ -699,10 +700,10 @@ let bgBusy = false;
 // Batteries connues : souris et casque historiques, puis les pages des pilotes (Bluetooth compris)
 function batteryList() {
   const out = [];
-  const add = (key, name, b) => { if (b?.level != null) out.push({ key, name, level: b.level, charging: !!b.charging, label: b.label }); };
-  if (mouse) add('mouse', $('mouseTitle')?.textContent || tx('Souris'), mouse.info?.battery);
-  if (hs?.state?.battery != null) add('headset', $('headsetTitle')?.textContent || tx('Casque'), { level: hs.state.battery, charging: hs.state.charging });
-  for (const i of drvDevices()) add(i.key, tx(i.name), i.state.battery);
+  const add = (key, name, b, kind) => { if (b?.level != null) out.push({ key, name, kind, level: b.level, charging: !!b.charging, label: b.label, stale: !!b.stale }); };
+  if (mouse) add('mouse', $('mouseTitle')?.textContent || tx('Souris'), mouse.info?.battery, 'souris');
+  if (hs?.state?.battery != null) add('headset', $('headsetTitle')?.textContent || tx('Casque'), { level: hs.state.battery, charging: hs.state.charging }, 'casque');
+  for (const i of drvDevices()) add(i.key, tx(i.name), i.state.battery, i.kind === 'autre' && i.key.startsWith('drv-bt-') ? 'bluetooth' : i.kind);
   return out;
 }
 
@@ -731,6 +732,85 @@ function bgSync() {
 }
 // Appelé à chaque actualisation de l'accueil : l'infobulle suit les batteries
 const bgTipSync = () => { if (NATIVE && bgTip() !== bgTipLast) bgSync(); };
+
+// ---------- Batteries dans la barre des tâches ----------
+// Widget natif à gauche de la zone de notification (src-tauri/src/taskbar.rs) : « 🖱 93 %  🎧 30 % ».
+// Barre verticale ou introuvable : une icône de notification par appareil, comme le mode « Icônes ».
+const tbMode = () => { try { return localStorage.getItem('taskbarMode') || 'taskbar'; } catch { return 'taskbar'; } };
+const tbPlate = () => { try { return localStorage.getItem('taskbarPlate') === 'on'; } catch { return false; } };
+function tbHidden() { try { return new Set(JSON.parse(localStorage.getItem('taskbarHidden') || '[]')); } catch { return new Set(); } }
+function tbSetHidden(key, hide) {
+  const s = tbHidden();
+  hide ? s.add(key) : s.delete(key);
+  try { localStorage.setItem('taskbarHidden', JSON.stringify([...s])); } catch {}
+  taskbarSync();
+}
+let tbLast = '';
+let tbShown = null; // ce que le natif affiche : taskbar, tray, off, vertical, none
+function taskbarSync() {
+  if (!NATIVE) return;
+  const hidden = tbHidden();
+  const cfg = {
+    mode: tbMode(), plate: tbPlate(),
+    items: batteryList().filter(b => !hidden.has(b.key)).map(b => ({
+      key: b.key, name: b.name, kind: b.kind || 'autre', level: b.level ?? -1, charging: b.charging, dim: b.stale,
+      text: b.label ? tx(b.label) : null,
+    })),
+    tip: bgTip().split('\n').slice(1).join('\n') || tx('Aucune batterie connue pour le moment'),
+    menu: [tx('Ouvrir PeriphHub'), tx('Actualiser les batteries'), tx('Ne plus afficher dans la barre des tâches')],
+  };
+  const sig = JSON.stringify(cfg);
+  if (sig === tbLast) return;
+  tbLast = sig;
+  nativeInvoke('taskbar_set', { cfg }).then(st => {
+    if (st?.shown !== tbShown) { tbShown = st?.shown; if (!$('options').hidden) renderOptions(); }
+  }, e => console.warn('[PeriphHub] barre des tâches', e));
+}
+function batteryRefreshAll() {
+  for (const inst of drvLive.values()) inst.refreshBattery?.().then(() => drvRender(inst), () => {});
+  if (hs) hs.refreshBattery?.().then(() => refreshHome(), () => {});
+  refreshHome();
+}
+if (NATIVE) {
+  // Menu du clic droit sur le widget (taskbar.rs)
+  window.__TAURI__.event.listen('battery-refresh', () => batteryRefreshAll()).catch(() => {});
+  window.__TAURI__.event.listen('taskbar-hide', () => {
+    try { localStorage.setItem('taskbarMode', 'off'); } catch {}
+    taskbarSync();
+    if (!$('options').hidden) renderOptions();
+  }).catch(() => {});
+  // État réel (barre verticale…) relu à l'ouverture des réglages
+  window.addEventListener('focus', () => {
+    if ($('options').hidden) return;
+    nativeInvoke('taskbar_state').then(st => { if (st?.shown !== tbShown) { tbShown = st?.shown; renderOptions(); } }, () => {});
+  });
+}
+
+function taskbarField() {
+  const mode = tbMode();
+  const why = {
+    vertical: 'La barre des tâches est verticale : les batteries s’affichent en icônes de notification à la place.',
+    none: 'La barre des tâches est introuvable : les batteries s’affichent en icônes de notification à la place.',
+  }[tbShown];
+  const list = batteryList();
+  const hidden = tbHidden();
+  return field('Batteries dans la barre des tâches',
+    h('div', { class: 'muted small' }, 'Le niveau de chaque appareil sans fil, toujours visible à côté de l’horloge. '
+      + 'Rouge à 15 % ou moins, éclair quand il charge. Clic : ouvrir PeriphHub ; clic droit : actualiser ou masquer.'),
+    segmented([{ v: 'taskbar', label: 'Barre des tâches' }, { v: 'tray', label: 'Icônes de notification' }, { v: 'off', label: 'Ne pas afficher' }], mode, v => {
+      try { localStorage.setItem('taskbarMode', v); } catch {}
+      taskbarSync();
+      renderOptions();
+    }),
+    mode === 'taskbar' && why ? h('p', { class: 'warnline' }, why) : null,
+    mode === 'tray' ? h('div', { class: 'muted small' }, 'Windows 11 range les nouvelles icônes sous la flèche ^ : faites-les glisser sur la barre, '
+      + 'ou activez-les dans Paramètres > Personnalisation > Barre des tâches > Autres icônes de la barre d’état système.') : null,
+    mode === 'taskbar' ? toggle('Fond derrière le texte', tbPlate(), on => {
+      try { localStorage.setItem('taskbarPlate', on ? 'on' : 'off'); } catch {}
+      taskbarSync();
+    }, false, 'Pour les barres des tâches rendues transparentes (Windhawk, TranslucentTB…)') : null,
+    mode !== 'off' && list.length ? h('div', { class: 'toggles' }, ...list.map(b => toggle(b.name, !hidden.has(b.key), on => tbSetHidden(b.key, !on)))) : null);
+}
 
 // ---------- Batterie faible ----------
 // Notification de Windows à 15 % ou moins (hors charge), une fois par appareil jusqu'à ce que la
@@ -1135,6 +1215,7 @@ function renderOptions() {
         h('div', { class: 'muted small' }, 'PeriphHub regarde sur GitHub si une nouvelle version existe et la propose en un clic. '
           + 'Rien sur votre ordinateur ni vos appareils n’est envoyé ; les mises à jour sont signées et vérifiées avant installation.')])) : null,
     NATIVE ? bgField() : null,
+    NATIVE ? taskbarField() : null,
     NATIVE ? batAlertField() : null,
     NATIVE ? field('Son',
       segmented([{ v: 'off', label: 'Périphériques seulement' }, { v: 'on', label: 'Tout afficher' }], audioAll() ? 'on' : 'off', v => {

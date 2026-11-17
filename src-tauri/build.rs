@@ -3,7 +3,13 @@ use std::fmt::Write;
 
 fn main() {
     sensor_files();
-    tauri_build::build()
+    // Manifeste de Windows : celui de Tauri (Common Controls 6) + Windows 10/11 déclaré. Sans cette
+    // déclaration, Windows refuse les fenêtres enfants transparentes (WS_EX_LAYERED), dont le widget
+    // des batteries posé dans la barre des tâches (src/taskbar.rs). ASCII seulement dans ce fichier :
+    // un caractère accentué le rend illisible pour le chargeur (« configuration côte-à-côte incorrecte »).
+    println!("cargo:rerun-if-changed=windows-app-manifest.xml");
+    let windows = tauri_build::WindowsAttributes::new().app_manifest(include_str!("windows-app-manifest.xml"));
+    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows)).expect("tauri-build");
 }
 
 // Module capteurs (scripts/fetch-sensors.ps1) : empreinte de chaque fichier relevée à la compilation.

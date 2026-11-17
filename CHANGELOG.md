@@ -3,6 +3,25 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.0.0
+
+*In English: battery levels on the taskbar. Next to the clock, “🖱 93 %  🎧 30 %” for every wireless
+device PeriphHub knows: red at 15% or less, a bolt while charging, dimmed while asleep. Click opens
+PeriphHub, right-click refreshes or hides it. Vertical taskbar, or by choice: one tray icon per
+device with the level drawn in it. Options: show or hide each device, background plate for
+transparent taskbars. Technique adapted from WirelessBattery (GPL-3.0).*
+
+- **Batteries dans la barre des tâches** : à côté de l'horloge, « 🖱 93 %  🎧 30 % » pour chaque
+  appareil sans fil connu de PeriphHub. Rouge à 15 % ou moins, éclair bleu en charge, grisé en
+  veille ; suit le thème clair ou sombre de la barre et la mise à l'échelle de l'écran. Clic :
+  ouvrir PeriphHub ; clic droit : actualiser les batteries ou ne plus afficher. Infobulle avec le
+  nom de chaque appareil.
+- **Icônes de notification** à la place (barre des tâches verticale, ou au choix) : une par appareil,
+  avec le niveau dessiné dedans et une jauge.
+- Réglages (Options) : barre des tâches, icônes ou rien ; appareils affichés un par un ; fond
+  derrière le texte pour les barres rendues transparentes (Windhawk, TranslucentTB…).
+- Technique reprise du projet libre WirelessBattery (krisgfx9, GPL-3.0), réécrite en Rust.
+
 ## 1.9.0
 
 *In English: VGN mice on VGN's own USB ID (0x391D): Dragonfly 3 Master and MasterGT, Dragonfly Y2 V2
