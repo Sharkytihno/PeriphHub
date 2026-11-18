@@ -798,6 +798,11 @@ const I18N_EN = {
   'Actualiser les batteries': 'Refresh batteries',
   'en veille': 'asleep',
   'Ne plus afficher dans la barre des tâches': 'Stop showing on the taskbar',
+  'Processeur': 'Processor',
+  'Carte graphique': 'Graphics card',
+  'Mémoire (RAM)': 'Memory (RAM)',
+  'Utilisation du PC, relevée toutes les 2 secondes, comme dans le Gestionnaire des tâches. Rouge à 90 % ou plus.':
+    'PC usage, read every 2 seconds, as in Task Manager. Red at 90% or more.',
   'Batterie moyenne': 'Battery medium',
   'Batterie pleine': 'Battery full',
   'XInput, l’interface manettes de Windows : manettes Xbox One / Series / Elite et compatibles (8BitDo, PowerA, Nacon…). Batterie au pour cent près par Windows.Gaming.Input quand la manette le permet, sinon quatre paliers (XInput).':

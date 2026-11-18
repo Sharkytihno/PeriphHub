@@ -54,6 +54,19 @@ pub struct Item {
     /// Texte à la place du pourcentage (niveaux approximatifs : « Faible »…)
     #[serde(default)]
     pub text: Option<String>,
+    /// Mesure du PC (processeur…) : court libellé dessiné à la place de l'icône (« CPU »)
+    #[serde(default)]
+    pub tag: Option<String>,
+}
+
+/// Mesure du PC demandée par l'interface : key = cpu, gpu ou ram
+#[derive(Deserialize, Clone, PartialEq, Default)]
+pub struct Stat {
+    pub key: String,
+    /// Libellé court dans la barre (« CPU »)
+    pub label: String,
+    /// Nom dans l'infobulle (« Processeur »)
+    pub name: String,
 }
 
 #[derive(Deserialize, Clone, PartialEq, Default)]
@@ -70,6 +83,9 @@ pub struct Cfg {
     /// Menu du clic droit, dans la langue de l'interface : Ouvrir / Actualiser / Ne plus afficher
     #[serde(default)]
     pub menu: Vec<String>,
+    /// Mesures du PC à afficher avant les batteries, dans cet ordre
+    #[serde(default)]
+    pub stats: Vec<Stat>,
 }
 
 static CFG: Mutex<Option<Cfg>> = Mutex::new(None);
@@ -104,6 +120,7 @@ pub fn taskbar_set(app: AppHandle, cfg: Cfg) -> Value {
     if !STARTED.swap(true, Ordering::Relaxed) {
         std::thread::Builder::new().name("barre-des-taches".into()).spawn(widget_thread).ok();
         std::thread::Builder::new().name("bouton-widgets".into()).spawn(widgets_button_thread).ok();
+        std::thread::Builder::new().name("mesures-du-pc".into()).spawn(|| crate::usage::run(stats_wanted, stats_changed)).ok();
     }
     if changed.unwrap_or(true) {
         wake();
@@ -115,6 +132,50 @@ pub fn taskbar_set(app: AppHandle, cfg: Cfg) -> Value {
 #[tauri::command]
 pub fn taskbar_state() -> Value {
     json!({ "shown": *SHOWN.lock().unwrap_or_else(|e| e.into_inner()) })
+}
+
+/// Mesures demandées : (processeur, carte graphique, mémoire), rien quand l'affichage est coupé
+fn stats_wanted() -> (bool, bool, bool) {
+    let c = cfg();
+    let on = |k: &str| c.mode != "off" && c.stats.iter().any(|s| s.key == k);
+    (on("cpu"), on("gpu"), on("ram"))
+}
+
+/// Nouvelles valeurs (fil des mesures) : redessiner le widget ou les icônes de notification
+fn stats_changed() {
+    wake();
+    let c = cfg();
+    if c.mode == "tray" || (c.mode == "taskbar" && FALLBACK.load(Ordering::Relaxed)) {
+        post_main(apply_tray);
+    }
+}
+
+fn is_stat(kind: &str) -> bool {
+    matches!(kind, "cpu" | "gpu" | "ram")
+}
+
+/// Mesures du PC puis batteries, dans l'ordre d'affichage
+fn all_items(c: &Cfg) -> Vec<Item> {
+    let u = crate::usage::last();
+    let mut out: Vec<Item> = c
+        .stats
+        .iter()
+        .filter(|s| is_stat(&s.key))
+        .map(|s| Item {
+            key: format!("stat-{}", s.key),
+            name: s.name.clone(),
+            kind: s.key.clone(),
+            level: match s.key.as_str() {
+                "cpu" => u.cpu,
+                "gpu" => u.gpu,
+                _ => u.ram,
+            },
+            tag: Some(s.label.clone()),
+            ..Item::default()
+        })
+        .collect();
+    out.extend(c.items.iter().cloned());
+    out
 }
 
 fn set_shown(s: &'static str) {
@@ -299,6 +360,11 @@ fn level_text(it: &Item) -> String {
 
 fn is_low(it: &Item) -> bool {
     !it.charging && it.level >= 0 && it.level <= 15
+}
+
+/// En rouge : batterie faible, ou mesure du PC à 90 % ou plus
+fn alert(it: &Item) -> bool {
+    if is_stat(&it.kind) { it.level >= 90 } else { is_low(it) }
 }
 
 fn palette(light: bool) -> (Rgb, Rgb, Rgb) {
@@ -523,6 +589,56 @@ fn destroy(w: &mut Widget) {
     HOVER.with(|h| h.set(false));
 }
 
+/// Dessin du widget en mémoire (sans fenêtre : testable) ; d = points par pouce de la barre
+unsafe fn compose(items: &[Item], h: i32, d: i32, light: bool, hover: bool, plate: bool) -> Canvas {
+    let px = |v: i32| v * d / 96;
+    let (fg, red, blue) = palette(light);
+    let icons = make_font(px(16), FW_NORMAL as i32, &["Segoe Fluent Icons", "Segoe MDL2 Assets"]);
+    let boltf = make_font(px(11), FW_NORMAL as i32, &["Segoe Fluent Icons", "Segoe MDL2 Assets"]);
+    let text = make_font(px(13), FW_NORMAL as i32, &["Segoe UI Variable Text", "Segoe UI"]);
+    let tagf = make_font(px(11), FW_SEMIBOLD as i32, &["Segoe UI Variable Text", "Segoe UI"]);
+    // Morceaux : icône (ou libellé « CPU »), niveau, éclair (en charge), espace avant le suivant
+    let mut pieces: Vec<(Mask, Rgb, i32, i32)> = Vec::new();
+    let stat_w = if items.iter().any(|i| is_stat(&i.kind)) { render_mask("88\u{202F}%", text, 0).w } else { 0 };
+    if items.is_empty() {
+        pieces.push((render_mask(&BATTERY_UNKNOWN.to_string(), icons, 0), fg, 110, 0));
+    }
+    for (i, it) in items.iter().enumerate() {
+        let a = if it.dim { 120 } else { 255 };
+        match &it.tag {
+            Some(t) => pieces.push((render_mask(t, tagf, 0), fg, 165, px(4))),
+            None => pieces.push((render_mask(&glyph(&it.kind).to_string(), icons, 0), fg, a, px(5))),
+        }
+        let lv = render_mask(&level_text(it), text, 0);
+        // Mesure du PC : largeur réservée pour deux chiffres, sinon le widget bougerait toutes les 2 s
+        let pad = if is_stat(&it.kind) { (stat_w - lv.w).max(0) } else { 0 };
+        pieces.push((lv, if alert(it) { red } else { fg }, a, pad + if it.charging { px(2) } else { 0 }));
+        if it.charging {
+            pieces.push((render_mask(&BOLT.to_string(), boltf, 0), blue, a, 0));
+        }
+        if let Some(p) = pieces.last_mut() {
+            p.3 += if i + 1 < items.len() { px(14) } else { 0 };
+        }
+    }
+    for f in [icons, boltf, text, tagf] {
+        DeleteObject(f as HGDIOBJ);
+    }
+    let width = px(8) * 2 + pieces.iter().map(|p| p.0.w + p.3).sum::<i32>();
+    let mut cv = Canvas { w: width, h, px: vec![0x0100_0000; (width * h) as usize] }; // presque transparent : reçoit la souris
+    if plate {
+        cv.round_rect(px(4), px(6), if light { Rgb(243, 243, 243) } else { Rgb(32, 32, 32) }, 240);
+    }
+    if hover {
+        cv.round_rect(px(4), px(4), if light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) }, if light { 20 } else { 26 });
+    }
+    let mut x = px(8);
+    for (m, col, a, gap) in &pieces {
+        cv.draw(m, x, (h - m.h) / 2, *col, *a);
+        x += m.w + gap;
+    }
+    cv
+}
+
 unsafe fn paint(w: &mut Widget, c: &Cfg) {
     let light = LIGHT.with(|l| l.get());
     let hover = HOVER.with(|h| h.get());
@@ -530,9 +646,14 @@ unsafe fn paint(w: &mut Widget, c: &Cfg) {
     GetClientRect(w.bar, &mut bar);
     let h = bar.bottom - bar.top;
     let d = dpi(w);
-    // Infobulle
+    let items = all_items(c);
+    // Infobulle : mesures du PC puis batteries
     if !w.tip.is_null() {
-        let t = wide(if c.tip.is_empty() { "PeriphHub" } else { &c.tip });
+        let mut tip: Vec<String> = items.iter().filter(|i| is_stat(&i.kind)).map(|i| format!("{} : {}", i.name, level_text(i))).collect();
+        if !c.items.is_empty() || tip.is_empty() {
+            tip.push(if c.tip.is_empty() { "PeriphHub".into() } else { c.tip.clone() });
+        }
+        let t = wide(&tip.join("\n"));
         if t != w.tip_text {
             w.tip_text = t;
             let mut ti = tool(w);
@@ -540,47 +661,13 @@ unsafe fn paint(w: &mut Widget, c: &Cfg) {
         }
     }
     let sig = format!("{h}|{d}|{light}|{hover}|{}|{}", c.plate,
-        c.items.iter().map(|i| format!("{}:{}:{}:{}:{}:{:?}", i.kind, i.level, i.charging, i.dim, is_low(i), i.text)).collect::<Vec<_>>().join(","));
+        items.iter().map(|i| format!("{}:{}:{}:{}:{}:{:?}:{:?}", i.kind, i.level, i.charging, i.dim, alert(i), i.text, i.tag)).collect::<Vec<_>>().join(","));
     if sig == w.sig || h <= 0 {
         return;
     }
     w.sig = sig;
-    let (fg, red, blue) = palette(light);
-    let icons = make_font(px(w, 16), FW_NORMAL as i32, &["Segoe Fluent Icons", "Segoe MDL2 Assets"]);
-    let boltf = make_font(px(w, 11), FW_NORMAL as i32, &["Segoe Fluent Icons", "Segoe MDL2 Assets"]);
-    let text = make_font(px(w, 13), FW_NORMAL as i32, &["Segoe UI Variable Text", "Segoe UI"]);
-    // Morceaux : icône, niveau, éclair (en charge), espace avant l'appareil suivant
-    let mut pieces: Vec<(Mask, Rgb, i32, i32)> = Vec::new();
-    if c.items.is_empty() {
-        pieces.push((render_mask(&BATTERY_UNKNOWN.to_string(), icons, 0), fg, 110, 0));
-    }
-    for (i, it) in c.items.iter().enumerate() {
-        let a = if it.dim { 120 } else { 255 };
-        pieces.push((render_mask(&glyph(&it.kind).to_string(), icons, 0), fg, a, px(w, 5)));
-        pieces.push((render_mask(&level_text(it), text, 0), if is_low(it) { red } else { fg }, a, if it.charging { px(w, 2) } else { 0 }));
-        if it.charging {
-            pieces.push((render_mask(&BOLT.to_string(), boltf, 0), blue, a, 0));
-        }
-        if let Some(p) = pieces.last_mut() {
-            p.3 = if i + 1 < c.items.len() { px(w, 14) } else { 0 };
-        }
-    }
-    for f in [icons, boltf, text] {
-        DeleteObject(f as HGDIOBJ);
-    }
-    let width = px(w, 8) * 2 + pieces.iter().map(|p| p.0.w + p.3).sum::<i32>();
-    let mut cv = Canvas { w: width, h, px: vec![0x0100_0000; (width * h) as usize] }; // presque transparent : reçoit la souris
-    if c.plate {
-        cv.round_rect(px(w, 4), px(w, 6), if light { Rgb(243, 243, 243) } else { Rgb(32, 32, 32) }, 240);
-    }
-    if hover {
-        cv.round_rect(px(w, 4), px(w, 4), if light { Rgb(0, 0, 0) } else { Rgb(255, 255, 255) }, if light { 20 } else { 26 });
-    }
-    let mut x = px(w, 8);
-    for (m, col, a, gap) in &pieces {
-        cv.draw(m, x, (h - m.h) / 2, *col, *a);
-        x += m.w + gap;
-    }
+    let cv = compose(&items, h, d, light, hover, c.plate);
+    let width = cv.w;
     let screen = GetDC(null_mut());
     let mem = CreateCompatibleDC(screen);
     let mut bi: BITMAPINFO = std::mem::zeroed();
@@ -836,14 +923,14 @@ fn tray_icon(it: &Item, light: bool) -> Vec<u8> {
         let i = ((y * S + x) * 4) as usize;
         out[i..i + 4].copy_from_slice(&[c.0, c.1, c.2, (a * scale / 255) as u8]);
     };
-    let tc = if is_low(it) { red } else { fg };
+    let tc = if alert(it) { red } else { fg };
     let (ox, oy) = ((S - m.w) / 2, (text_h - m.h) / 2);
     for y in 0..m.h {
         for x in 0..m.w {
             put(ox + x, oy + y, tc, m.a[(y * m.w + x) as usize] as i32);
         }
     }
-    let bc = if it.charging { blue } else if is_low(it) { red } else { fg };
+    let bc = if it.charging { blue } else if alert(it) { red } else if is_stat(&it.kind) { blue } else { fg };
     let fill = if it.level < 0 { 0 } else { ((it.level.min(100) * S + 50) / 100).max(if it.level > 0 { 1 } else { 0 }) };
     for y in S - BAR_H..S {
         for x in 0..S {
@@ -867,7 +954,8 @@ pub fn apply_tray(app: &AppHandle) {
         Err(e) => e.into_inner(),
     };
     let trays = guard.get_or_insert_with(HashMap::new);
-    let items: Vec<&Item> = if want { c.items.iter().collect() } else { Vec::new() };
+    let all = all_items(&c);
+    let items: Vec<&Item> = if want { all.iter().collect() } else { Vec::new() };
     let keep: Vec<String> = items.iter().map(|i| format!("ph-bat-{}", i.key)).collect();
     for id in trays.keys().filter(|k| !keep.contains(k)).cloned().collect::<Vec<_>>() {
         let _ = app.remove_tray_by_id(&id);
@@ -875,7 +963,7 @@ pub fn apply_tray(app: &AppHandle) {
     }
     for (it, id) in items.into_iter().zip(keep) {
         let tip = format!("{} : {}{}", it.name, level_text(it), if it.charging { " ⚡" } else { "" });
-        let sig = format!("{light}|{}|{}|{}|{:?}|{tip}", it.level, it.charging, it.dim, it.text);
+        let sig = format!("{light}|{}|{}|{}|{:?}|{:?}|{tip}", it.level, it.charging, it.dim, it.text, it.tag);
         if trays.get(&id) == Some(&sig) {
             continue;
         }
@@ -907,7 +995,7 @@ mod tests {
     use super::*;
 
     fn item(level: i32, charging: bool, dim: bool) -> Item {
-        Item { key: "k".into(), name: "n".into(), kind: "souris".into(), level, charging, dim, text: None }
+        Item { key: "k".into(), name: "n".into(), kind: "souris".into(), level, charging, dim, text: None, tag: None }
     }
 
     #[test]
@@ -931,5 +1019,35 @@ mod tests {
         assert!(!is_low(&item(15, true, false)));
         assert!(!is_low(&item(-1, false, false)));
         assert!(!is_low(&item(16, false, false)));
+    }
+
+    #[test]
+    fn mesures_du_pc() {
+        let cpu = |level| Item { kind: "cpu".into(), level, tag: Some("CPU".into()), ..Item::default() };
+        assert!(!alert(&cpu(10)));
+        assert!(alert(&cpu(95)));
+        assert_eq!(level_text(&cpu(-1)), "?");
+        let c = Cfg { mode: "taskbar".into(), stats: vec![Stat { key: "ram".into(), label: "RAM".into(), name: "Mémoire".into() }], items: vec![item(50, false, false)], ..Cfg::default() };
+        let all = all_items(&c);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].kind, "ram");
+        assert_eq!(all[1].kind, "souris");
+        assert_eq!(tray_icon(&cpu(42), false).len(), 32 * 32 * 4);
+    }
+
+    #[test]
+    fn widget_dessine() {
+        let stat = |k: &str, l: &str, level| Item { kind: k.into(), level, tag: Some(l.into()), ..Item::default() };
+        let items = vec![stat("cpu", "CPU", 23), stat("gpu", "GPU", 94), stat("ram", "RAM", 61), item(80, false, false), Item { kind: "casque".into(), ..item(40, true, false) }];
+        for (light, d) in [(false, 96), (true, 144)] {
+            let cv = unsafe { compose(&items, 48 * d / 96, d, light, false, false) };
+            assert!(cv.w > 200 * d / 96, "{}", cv.w);
+            assert!(cv.px.iter().filter(|p| *p >> 24 > 128).count() > 300);
+            // PERIPHHUB_ICONS=dossier : ARGB prémultiplié brut (largeur, hauteur dans le nom), pour le regarder
+            if let Ok(dir) = std::env::var("PERIPHHUB_ICONS") {
+                let raw: Vec<u8> = cv.px.iter().flat_map(|p| p.to_le_bytes()).collect();
+                std::fs::write(format!("{dir}/widget-{light}-{}x{}.argb", cv.w, cv.h), raw).unwrap();
+            }
+        }
     }
 }

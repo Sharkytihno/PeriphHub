@@ -820,6 +820,19 @@ function tbSetHidden(key, hide) {
   try { localStorage.setItem('taskbarHidden', JSON.stringify([...s])); } catch {}
   taskbarSync();
 }
+// Mesures du PC (taskbar.rs + usage.rs) : aucune par défaut, l'utilisateur choisit lesquelles
+const TB_STATS = [
+  { key: 'cpu', label: 'CPU', name: 'Processeur' },
+  { key: 'gpu', label: 'GPU', name: 'Carte graphique' },
+  { key: 'ram', label: 'RAM', name: 'Mémoire (RAM)' },
+];
+function tbStats() { try { return new Set(JSON.parse(localStorage.getItem('taskbarStats') || '[]')); } catch { return new Set(); } }
+function tbSetStat(key, on) {
+  const s = tbStats();
+  on ? s.add(key) : s.delete(key);
+  try { localStorage.setItem('taskbarStats', JSON.stringify([...s])); } catch {}
+  taskbarSync();
+}
 let tbLast = '';
 let tbShown = null; // ce que le natif affiche : taskbar, tray, off, vertical, none
 function taskbarSync() {
@@ -833,6 +846,7 @@ function taskbarSync() {
     })),
     tip: bgTip().split('\n').slice(1).join('\n') || tx('Aucune batterie connue pour le moment'),
     menu: [tx('Ouvrir PeriphHub'), tx('Actualiser les batteries'), tx('Ne plus afficher dans la barre des tâches')],
+    stats: TB_STATS.filter(s => tbStats().has(s.key)).map(s => ({ key: s.key, label: s.label, name: tx(s.name) })),
   };
   const sig = JSON.stringify(cfg);
   if (sig === tbLast) return;
@@ -865,6 +879,7 @@ function taskbarField() {
   }[tbShown];
   const list = batteryList();
   const hidden = tbHidden();
+  const stats = tbStats();
   return field('Batteries dans la barre des tâches',
     h('div', { class: 'muted small' }, 'Le niveau de chaque appareil sans fil, toujours visible à côté de l’horloge. '
       + 'Rouge à 15 % ou moins, éclair quand il charge. Clic : ouvrir PeriphHub ; clic droit : actualiser ou masquer.'),
@@ -880,7 +895,9 @@ function taskbarField() {
       try { localStorage.setItem('taskbarPlate', on ? 'on' : 'off'); } catch {}
       taskbarSync();
     }, false, 'Pour les barres des tâches rendues transparentes (Windhawk, TranslucentTB…)') : null,
-    mode !== 'off' && list.length ? h('div', { class: 'toggles' }, ...list.map(b => toggle(b.name, !hidden.has(b.key), on => tbSetHidden(b.key, !on)))) : null);
+    mode !== 'off' && list.length ? h('div', { class: 'toggles' }, ...list.map(b => toggle(b.name, !hidden.has(b.key), on => tbSetHidden(b.key, !on)))) : null,
+    mode !== 'off' ? h('div', { class: 'muted small' }, 'Utilisation du PC, relevée toutes les 2 secondes, comme dans le Gestionnaire des tâches. Rouge à 90 % ou plus.') : null,
+    mode !== 'off' ? h('div', { class: 'toggles' }, ...TB_STATS.map(s => toggle(s.name, stats.has(s.key), on => tbSetStat(s.key, on)))) : null);
 }
 
 // ---------- Batterie faible ----------

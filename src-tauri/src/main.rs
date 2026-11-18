@@ -27,6 +27,7 @@ mod slim;
 mod startup;
 mod system;
 mod taskbar;
+mod usage;
 mod thx;
 mod toast;
 mod update;
