@@ -894,6 +894,22 @@
     "plugin": "batteries"
   },
   {
+    "vid": "0B05",
+    "pid": "1AFA",
+    "name": "ROG Delta II (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0B05",
+    "pid": "1CAC",
+    "name": "ROG Cetra Open Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
     "vid": "0ECB",
     "pid": "2125",
     "name": "JBL Quantum 650 Wireless (batterie)",
@@ -1001,6 +1017,14 @@
     "vid": "0ECB",
     "pid": "219B",
     "name": "JBL Quantum 850 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0ECB",
+    "pid": "206B",
+    "name": "JBL Quantum 350 Wireless (batterie)",
     "kind": "casque",
     "status": "experimental",
     "plugin": "batteries"
@@ -1135,7 +1159,23 @@
   },
   {
     "vid": "1532",
+    "pid": "0528",
+    "name": "Razer BlackShark V2 Pro (2020) (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
     "pid": "0550",
+    "name": "Razer Barracuda X (2022) (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "0552",
     "name": "Razer Barracuda X (2022) (batterie)",
     "kind": "casque",
     "status": "experimental",
@@ -1184,6 +1224,46 @@
   {
     "vid": "5253",
     "pid": "*",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "100C",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "100B",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "100A",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "1001",
+    "name": "Souris MCHOSE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "1012",
     "name": "Souris MCHOSE (batterie)",
     "kind": "souris",
     "status": "experimental",
@@ -1311,7 +1391,31 @@
   },
   {
     "vid": "35BB",
-    "pid": "*",
+    "pid": "D3FA",
+    "name": "Souris HECATE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "35BB",
+    "pid": "D3FB",
+    "name": "Souris HECATE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "35BB",
+    "pid": "D3FC",
+    "name": "Souris HECATE (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "35BB",
+    "pid": "D3FD",
     "name": "Souris HECATE (batterie)",
     "kind": "souris",
     "status": "experimental",
@@ -1362,6 +1466,518 @@
     "pid": "2401",
     "name": "Flydigi Vader 5 Pro (batterie)",
     "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "37D7",
+    "pid": "2501",
+    "name": "Flydigi Apex 5 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "413C",
+    "pid": "A515",
+    "name": "Alienware AW920H (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "0009",
+    "name": "Arbiter Studio Akitsu (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "000A",
+    "name": "Arbiter Studio Akitsu (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "0038",
+    "name": "Arbiter Studio Akitsu 3950 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "0039",
+    "name": "Arbiter Studio Akitsu 3950 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "0066",
+    "name": "Arbiter Studio Akitsu Medium (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "373E",
+    "pid": "0067",
+    "name": "Arbiter Studio Akitsu Medium (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1532",
+    "pid": "053A",
+    "name": "Razer Barracuda Pro (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "20BC",
+    "pid": "5128",
+    "name": "BEITONG KP20 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "20BC",
+    "pid": "515C",
+    "name": "BEITONG KP40D (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "046A",
+    "pid": "00E3",
+    "name": "CHERRY MX 3.0S Wireless (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "046A",
+    "pid": "00EA",
+    "name": "CHERRY MX 3.0S Wireless (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "248A",
+    "pid": "FF30",
+    "name": "Darmoshark M3 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "248A",
+    "pid": "FF31",
+    "name": "Darmoshark M3S (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "202E",
+    "name": "8BitDo Ultimate 3-mode (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "202F",
+    "name": "8BitDo Ultimate 3-mode (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "3012",
+    "name": "8BitDo Ultimate 2.4G (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "3013",
+    "name": "8BitDo Ultimate 2.4G (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "301A",
+    "name": "8BitDo Ultimate 2C Wireless (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "301B",
+    "name": "8BitDo Ultimate 2C Wireless (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "3109",
+    "name": "8BitDo Ultimate 2.4G (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "310A",
+    "name": "8BitDo Ultimate 2C Wireless (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "310B",
+    "name": "8BitDo Ultimate 2 Wireless (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6000",
+    "name": "8BitDo SF30 Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6001",
+    "name": "8BitDo SN30 Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6003",
+    "name": "8BitDo Pro 2 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6006",
+    "name": "8BitDo Pro 2 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6007",
+    "name": "8BitDo Ultimate Bluetooth (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6009",
+    "name": "8BitDo Pro 3 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6012",
+    "name": "8BitDo Ultimate 2 (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6013",
+    "name": "8BitDo Ultimate 2 Wireless (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6100",
+    "name": "8BitDo SF30 Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "2DC8",
+    "pid": "6101",
+    "name": "8BitDo SN30 Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "248A",
+    "pid": "FF4C",
+    "name": "Machenike L7 Arctic / L7 Mix (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "248A",
+    "pid": "FF4E",
+    "name": "Machenike L7 Arctic / L7 Mix (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "352F",
+    "pid": "040E",
+    "name": "Micro MAONO PD200W (batterie)",
+    "kind": "autre",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "3837",
+    "pid": "6011",
+    "name": "MCHOSE V9 Pro 2 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0DB0",
+    "pid": "0D3B",
+    "name": "MSI Clutch GM31 Lightweight Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0DB0",
+    "pid": "0D3C",
+    "name": "MSI Clutch GM31 Lightweight Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0DB0",
+    "pid": "0D4B",
+    "name": "MSI Clutch GM41 Lightweight Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0DB0",
+    "pid": "0D4C",
+    "name": "MSI Clutch GM41 Lightweight Wireless (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "0DB0",
+    "pid": "9E22",
+    "name": "MSI VERSA 300 ELITE WIRELESS (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "248A",
+    "pid": "FA02",
+    "name": "Niceboy MW400 (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1E71",
+    "pid": "2101",
+    "name": "NZXT Lift Elite (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1E71",
+    "pid": "2129",
+    "name": "NZXT Lift Elite (batterie)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1A2C",
+    "pid": "8FFF",
+    "name": "Clavier sans fil (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1A2C",
+    "pid": "A034",
+    "name": "Attack Shark X98 (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1A2C",
+    "pid": "A036",
+    "name": "AJAZZ AK820 Max Plus (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "1038",
+    "pid": "2244",
+    "name": "SteelSeries Arctis Nova Elite (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "057E",
+    "pid": "2009",
+    "name": "Manette Switch Pro (batterie)",
+    "kind": "manette",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "320F",
+    "pid": "5055",
+    "name": "ATK V75X (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "320F",
+    "pid": "5088",
+    "name": "ATK V75X (batterie)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0015",
+    "name": "ASTRO A50 Gen 3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0014",
+    "name": "ASTRO A50 Gen 3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0018",
+    "name": "ASTRO A50 Gen 3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "001D",
+    "name": "ASTRO A50 Gen 3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0026",
+    "name": "ASTRO A50 Gen 3 (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0037",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0038",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0039",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0043",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0044",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
+    "status": "experimental",
+    "plugin": "batteries"
+  },
+  {
+    "vid": "9886",
+    "pid": "0045",
+    "name": "ASTRO A20 Wireless (batterie)",
+    "kind": "casque",
     "status": "experimental",
     "plugin": "batteries"
   }

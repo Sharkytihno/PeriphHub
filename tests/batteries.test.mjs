@@ -154,3 +154,111 @@ test('Logitech G435 : millivolts convertis selon la courbe de la batterie', () =
   assert.equal(pct(3775), 50);
   assert.equal(pct(3300), 0);
 });
+
+// ----- Ajouts de WirelessBattery 1.0.7 / 1.0.8 -----
+
+test('Semico (Attack Shark X98) : AA 55 CC 33 0E, état 0 = clavier éteint', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x1A2C, productId: 0xA034, usagePage: 0xFF02, usage: 2 });
+  let state = 1;
+  dev.onReport = (id, b) => {
+    assert.equal(id, 0);
+    assert.deepEqual([...b], [0xAA, 0x55, 0xCC, 0x33, 0x0E]);
+    dev.emit(0, [0xAA, 0x55, 0xCC, 0x33, 0x0E, 67, state]);
+  };
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'Attack Shark X98');
+  assert.deepEqual({ ...inst.state.battery }, { level: 67, charging: false });
+  state = 0;
+  await assert.rejects(inst.refreshBattery(), /en veille/);
+});
+
+test('ATK V75X : numéro de séquence repris dans la réponse, nom du produit vérifié', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x320F, productId: 0x5055, usagePage: 0xFF1C, usage: 0x92 });
+  dev.productName = 'Clavier quelconque';
+  assert.ok(!drv.match(dev)); // même vid:pid, autre produit : pas interrogé
+  dev.productName = 'ATK V75X';
+  dev.onReport = (id, b) => {
+    assert.equal(id, 0x04);
+    assert.equal(b[2], 0x1A);
+    // Une réponse à une autre question (numéro différent) est ignorée
+    dev.emit(0x04, [b[0] ^ 1, b[1], 0x1A, 0, 0, 0, 0, 5, 0]);
+    dev.emit(0x04, [b[0], b[1], 0x1A, 0, 0, 0, 0, 81, 2]);
+  };
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'ATK V75X');
+  assert.deepEqual({ ...inst.state.battery }, { level: 81, charging: true });
+});
+
+test('ASTRO A50 Gen 3 : 54 (base / liaison) puis 7C (%), sur la base = en charge', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x9886, productId: 0x0026, usagePage: 0xFF32, usage: 0x74 });
+  let st = 0x01;
+  dev.onReport = (id, b) => {
+    assert.equal(id, 0x02);
+    if (b[0] === 0x54) dev.emit(0x02, [0x02, 0x01, st]);
+    if (b[0] === 0x7C) dev.emit(0x02, [0x02, 0x01, 73]);
+  };
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'ASTRO A50 Gen 3');
+  assert.deepEqual({ ...inst.state.battery }, { level: 73, charging: true });
+  st = 0; // ni sur la base ni relié
+  await assert.rejects(inst.refreshBattery(), /en veille/);
+});
+
+test('BEITONG : octets chiffrés par quartets, requête [02 enc(15)]', async () => {
+  const { drv } = load();
+  // Table relevée par WirelessBattery (iControl 1.0.5) : quartet haut substitué, quartet bas ^ 8
+  const S = [0x0, 0xA, 0x6, 0xF, 0x1, 0xC, 0x2, 0x9, 0xE, 0x3, 0x7, 0xD, 0x4, 0xB, 0x5, 0x8];
+  const enc = x => (S[x >> 4] << 4) | ((x & 0x0F) ^ 0x08);
+  const dec = x => (S.indexOf(x >> 4) << 4) | ((x & 0x0F) ^ 0x08);
+  const dev = new Dev({ vendorId: 0x20BC, productId: 0x5128, usagePage: 0x00FF, usage: 3 });
+  dev.onReport = (id, b) => {
+    assert.equal(id, 0x02);
+    assert.equal(dec(b[0]), 0x15);
+    dev.emit(0x02, [enc(0x15), enc(46), enc(0), enc(1)]);
+  };
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'BEITONG KP20');
+  assert.deepEqual({ ...inst.state.battery }, { level: 46, charging: true });
+});
+
+test('Razer BlackShark V2 Pro (2020) : feature FF, réponse fraîche reconnue à son en-tête', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x1532, productId: 0x0528, usagePage: 0xFF00, usage: 1, iface: 3 });
+  dev.onFeature = (id, b) => assert.deepEqual([id, ...b.slice(0, 8)], [0xFF, 0x0A, 0x00, 0xFD, 0x04, 0x12, 0xF1, 0x02, 0x05]);
+  // [FF 0F 05 FE 12 04 1F 08 05 .. .. [11] état [12..13] mV [14] %] (sans l'octet d'ID)
+  dev.featureReply = () => { const r = new Array(63).fill(0); r.splice(0, 14, 0x0F, 0x05, 0xFE, 0x12, 0x04, 0x1F, 0x08, 0x05, 0, 0, 0x01, 0x0F, 0x50, 62); return r; };
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'Razer BlackShark V2 Pro (2020)');
+  assert.deepEqual({ ...inst.state.battery }, { level: 62, charging: false });
+});
+
+test('JBL Quantum 350 : features 68 (liaison) et 49 (%), rien n’est écrit', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x0ECB, productId: 0x206B, usagePage: 0x0001, usage: 0, iface: 3 });
+  let linked = 1;
+  dev.featureReply = id => (id === 0x68 ? [linked] : [55]);
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.deepEqual({ ...inst.state.battery }, { level: 55, charging: false });
+  assert.equal(dev.sent.length + dev.features.length, 0);
+  linked = 0;
+  await assert.rejects(inst.refreshBattery(), /en veille/);
+});
+
+test('MCHOSE sur dongle Realtek 3837 : champ vid 41E4 accepté, 5253 refusé', async () => {
+  const { drv } = load();
+  const dev = new Dev({ vendorId: 0x3837, productId: 0x100C, usagePage: 0xFF01, usage: 1 });
+  dev.productName = 'MCHOSE A5 V2 Ultra';
+  dev.featureReply = () => [0xF9, ...[0xE4, 0x41, 0, 0, 0, 0, 0, 0, 0x09, 88, 0].map(x => x ^ 0xFF)];
+  const [inst] = await drv.connect(dev, [dev]);
+  assert.equal(inst.name, 'MCHOSE A5 V2 Ultra');
+  assert.deepEqual({ ...inst.state.battery }, { level: 88, charging: false });
+});
+
+test('HECATE : les casques G2 (35BB:A009) ne reçoivent plus de trames de souris', () => {
+  const { drv } = load();
+  assert.ok(!drv.match(new Dev({ vendorId: 0x35BB, productId: 0xA009, usagePage: 0xFF02, usage: 2 })));
+  assert.ok(drv.match(new Dev({ vendorId: 0x35BB, productId: 0xD3FB, usagePage: 0xFF02, usage: 2 })));
+});

@@ -3,6 +3,35 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.0
+
+*In English: CPU, GPU and RAM usage on the taskbar, next to the batteries: pick any of the three in
+Options (none by default), read every 2 seconds like Task Manager, red at 90% or more. Battery level
+(read-only) for about 80 more devices, from the latest WirelessBattery releases: 8BitDo, BEITONG,
+Switch Pro and Flydigi Apex 5 controllers; ASTRO A50 Gen 3 / A20, Alienware AW920H, Arctis Nova
+Elite, Razer Barracuda Pro, BlackShark V2 Pro (2020), Barracuda X on the 0552 receiver, ROG Delta II,
+ROG Cetra Open, JBL Quantum 350 headsets; Arbiter, Darmoshark, Machenike, MSI, NZXT Lift, Niceboy mice
+and MCHOSE on 3837 dongles; CHERRY, ATK V75X, Attack Shark X98 / AJAZZ AK820 Max Plus keyboards; MAONO
+PD200W microphone. HECATE headsets no longer receive mouse frames.*
+
+- **Processeur, carte graphique et mémoire dans la barre des tâches** : à côté des batteries, au
+  choix dans Options (un, deux, les trois ou aucun ; rien par défaut). Relevé toutes les 2 secondes,
+  comme dans le Gestionnaire des tâches (carte graphique : moteur le plus occupé) ; rouge à 90 % ou
+  plus. Aussi dans les icônes de notification et l'infobulle.
+- **Batterie de nombreux nouveaux appareils** (lecture seule, protocoles repris des dernières
+  versions de WirelessBattery) :
+  - manettes 8BitDo (Ultimate 2 / 2C / 3-mode / 2.4G / Bluetooth, Pro 2 / 3, SN30 Pro, SF30 Pro),
+    BEITONG KP20 / KP40D, Switch Pro (en écoute seulement), Flydigi Apex 5 ;
+  - casques ASTRO A50 Gen 3 et A20 Wireless, Alienware AW920H, SteelSeries Arctis Nova Elite, Razer
+    Barracuda Pro, BlackShark V2 Pro (2020), Barracuda X sur le récepteur 0552, ROG Delta II,
+    écouteurs ROG Cetra Open, JBL Quantum 350 ;
+  - souris Arbiter Studio Akitsu, Darmoshark M3 / M3S, Machenike L7, MSI Clutch GM31 / GM41 et VERSA
+    300 Elite, NZXT Lift Elite, Niceboy MW400, MCHOSE sur les dongles Realtek 3837 ;
+  - claviers CHERRY MX 3.0S Wireless, ATK V75X, Attack Shark X98, AJAZZ AK820 Max Plus ;
+  - micro MAONO PD200W.
+- Correctifs repris de WirelessBattery : les casques HECATE (35BB) ne reçoivent plus de trames
+  destinées aux souris ; Rapoo VT9 (Gen 2) nommée correctement.
+
 ## 2.0.0
 
 *In English: battery levels on the taskbar. Next to the clock, “🖱 93 %  🎧 30 %” for every wireless
