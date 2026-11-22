@@ -109,9 +109,10 @@ async function rescan() {
   document.body.classList.add('scanning');
   $('rescan').disabled = true;
   setStatus('slimStatus', 'Analyse…');
+  let timeout;
   try {
     // Garde-fou : l'analyse a ses propres délais côté Rust, mais l'écran ne doit jamais tourner à l'infini
-    const late = new Promise((_, no) => setTimeout(() => no(new Error('l’analyse ne répond pas (plus de 60 s)')), 60000));
+    const late = new Promise((_, no) => { timeout = setTimeout(() => no(new Error('l’analyse ne répond pas (plus de 60 s)')), 60000); });
     [report, journal] = await Promise.race([Promise.all([nativeInvoke('scan'), nativeInvoke('slim_journal')]), late]);
     setStatus('slimStatus', '');
     $('copyReport').disabled = false;
@@ -119,6 +120,7 @@ async function rescan() {
     console.error('[PeriphHub]', e);
     setStatus('slimStatus', 'Analyse impossible : ' + e, 'err');
   } finally {
+    clearTimeout(timeout);
     scanning = false;
     document.body.classList.remove('scanning');
     $('rescan').disabled = false;
@@ -290,8 +292,8 @@ const STATUS = { supported: 'Pris en charge', experimental: 'Expérimental', par
 const WEB_TOOL = { '31E3': 'wootility.io', '03EB': 'wootility.io', '3434': 'launcher.keychron.com' };
 
 // Ce que l'utilisateur peut faire pour un appareil que PeriphHub ne règle pas (encore)
-function deviceHint(d) {
-  return [h('div', { class: 'muted small' }, deviceHintText(d)), deviceTool(d), d.status === 'rgb' ? orgbTool() : '', d.status === 'rgb' && typeof orgbAdminRow === 'function' ? orgbAdminRow() : ''];
+function deviceHint(d, text) {
+  return [h('div', { class: 'muted small device-message' }, text), deviceTool(d), d.status === 'rgb' ? orgbTool() : '', d.status === 'rgb' && typeof orgbAdminRow === 'function' ? orgbAdminRow() : ''];
 }
 
 function deviceTool(d) {
@@ -330,23 +332,39 @@ function orgbTool() {
 // presque tous les protocoles de réglage) → Windows le gère seul, rien à corriger côté PeriphHub
 function diagStandard(d) { return d.status === 'unknown' && d.vendor_page === false; }
 
-function deviceHintText(d) {
-  if (diagStandard(d)) return d.kind === 'souris' || d.kind === 'clavier'
-    ? 'Appareil standard, sans protocole du fabricant : Windows le gère seul. Pointeur, molette et répétition des touches se règlent dans « Souris et clavier ».'
-    : 'Appareil standard, sans protocole du fabricant : Windows le gère seul, PeriphHub n’y trouve aucun réglage à piloter.';
-  if (d.status === 'experimental') return 'Un pilote expérimental le connaît, mais la connexion n’a pas abouti. Fermez son logiciel d’origine, rebranchez-le, puis Actualiser. Si ça ne marche toujours pas : « Copier le diagnostic », puis envoyez-le pour qu’on corrige.';
-  if (d.status === 'rgb') return 'Son éclairage est réglable avec OpenRGB, livré avec PeriphHub et lancé tout seul (onglet Éclairage). Ses autres réglages restent dans son logiciel d’origine.';
-  if (d.status === 'planned') return 'Prise en charge prévue : son logiciel d’origine reste nécessaire pour l’instant.';
-  return 'Son logiciel d’origine reste nécessaire pour le régler.';
+const deviceId = d => (d.vid + ':' + d.pid).toUpperCase();
+const lastDeviceError = d => drvErrors.get(deviceId(d))?.at(-1);
+const awaitingDriver = d => ['experimental', 'supported', 'partial'].includes(d.status);
+
+function deviceSummary(d, error) {
+  if (diagStandard(d)) return ['Appareil standard', 'Utilisable avec les réglages de Windows.', 'unknown'];
+  if (awaitingDriver(d)) {
+    if (!error) return ['Connexion en attente', 'PeriphHub essaie de joindre l’appareil.', 'partial'];
+    if (/récepteur trouvé, aucun appareil allumé|\ben veille\b/i.test(error)) {
+      return ['Appareil en veille', 'Bougez la souris ou appuyez sur une touche pour le réveiller.', 'experimental'];
+    }
+    if (/aucun pilote ne correspond à ses interfaces/i.test(error)) {
+      return ['Interface non reconnue', 'Essayez le câble USB ou le récepteur fourni avec l’appareil.', 'experimental'];
+    }
+    if (/ne répond pas|aucune réponse|timeout|timed out/i.test(error)) {
+      return ['Appareil sans réponse', 'Réveillez ou rebranchez l’appareil, puis cliquez sur Actualiser.', 'experimental'];
+    }
+    return ['Connexion impossible', 'Fermez le logiciel du fabricant, puis rebranchez l’appareil et cliquez sur Actualiser.', 'experimental'];
+  }
+  if (d.status === 'rgb') return [STATUS.rgb, 'Ouvrez Éclairage pour régler les couleurs.', 'rgb'];
+  if (d.status === 'planned') return [STATUS.planned, 'Utilisez le logiciel du fabricant pour le régler.', 'planned'];
+  return [STATUS[d.status] || d.status, 'Utilisez le logiciel du fabricant pour le régler.', 'unknown'];
 }
+
+const searchKey = text => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
 let inventorySignature = '';
 function renderInventory(others) {
   const host = $('homeInventory');
   host.hidden = !others.length;
-  if (!others.length) { inventorySignature = ''; host.replaceChildren(); return; }
+  if (!others.length) { inventorySignature = ''; if (host.firstChild) host.replaceChildren(); return; }
 
-  const signature = JSON.stringify(others.map(d => [d, drvErrors.get(d.vid + ':' + d.pid)?.at(-1)]));
+  const signature = JSON.stringify(others.map(d => [d, lastDeviceError(d)]));
   if (signature === inventorySignature) return;
   const previous = $('othersBox');
   const open = previous?.open ?? others.some(d => ['experimental', 'supported', 'partial'].includes(d.status));
@@ -355,25 +373,33 @@ function renderInventory(others) {
   const search = h('input', { id: 'deviceSearch', type: 'search', placeholder: 'Nom, fabricant ou VID:PID', oninput: filter });
   search.value = previousSearch?.value || '';
   const empty = h('p', { class: 'muted small', role: 'status', hidden: true }, 'Aucun appareil ne correspond à la recherche.');
-  const rows = others.map(d => h('div', { class: 'dev', id: 'dev-' + (d.vid + d.pid).toUpperCase() },
-      h('div', { class: 'tico' }, kindIcon(d.kind)),
+  const keys = others.map(d => searchKey([d.product, d.catalog_name, d.brand, d.manufacturer,
+    d.vid + ':' + d.pid, d.vid + d.pid, d.vid + ' ' + d.pid].filter(Boolean).join(' ')));
+  const rows = others.map(d => {
+    const id = deviceId(d);
+    const name = d.catalog_name || d.product || `Appareil ${id}`;
+    const error = lastDeviceError(d);
+    const [status, hint, tone] = deviceSummary(d, error);
+    return h('article', { class: 'dev', id: 'dev-' + id.replace(':', '') },
+      h('div', { class: 'tico', 'aria-hidden': 'true' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
-        h('div', { class: 'dname' }, d.catalog_name || d.product || `Appareil ${d.vid}:${d.pid}`),
-        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', tx(KIND_NAME[d.kind] || d.kind), `${d.vid}:${d.pid}`].join(' · ')),
+        h('div', { class: 'device-heading' }, h('div', { class: 'dname' }, name),
+          h('span', { class: 'chip ' + tone }, status)),
+        h('div', { class: 'muted small device-meta' }, [d.brand || d.manufacturer || 'Fabricant inconnu',
+          tx(KIND_NAME[d.kind] || d.kind), id].join(' · ')),
         d.units > 1 ? h('div', { class: 'muted small' }, `${d.units} exemplaires détectés`) : null,
-        ...deviceHint(d),
-        drvReason(d)),
-      h('div', { class: 'dside' },
-        h('span', { class: 'chip ' + d.status }, diagStandard(d) ? 'Appareil standard' : STATUS[d.status] || d.status),
-        NATIVE ? h('button', { class: 'mini ghost', title: 'Envoie (ou copie) le diagnostic de cet appareil, avec ce qui ne marche pas',
-          onclick: () => diagDialog((d.vid + ':' + d.pid).toUpperCase()) }, 'Signaler') : null)));
+        ...deviceHint(d, hint),
+        error ? h('details', { class: 'device-error' }, h('summary', {}, 'Détails techniques'),
+          h('div', { class: 'muted small' }, error)) : null),
+      NATIVE ? h('div', { class: 'dside' },
+        h('button', { class: 'mini ghost', 'data-device-report': true, onclick: () => diagDialog(id) }, 'Signaler'),
+        h('button', { class: 'mini ghost', onclick: () => copyDiag(id) }, 'Copier le diagnostic')) : null);
+  });
   function filter() {
-    const query = search.value.trim().toLowerCase();
+    const query = searchKey(search.value.trim());
     let visible = 0;
     rows.forEach((row, index) => {
-      const d = others[index];
-      row.hidden = ![d.product, d.catalog_name, d.brand, d.manufacturer, `${d.vid}:${d.pid}`]
-        .some(value => value?.toLowerCase().includes(query));
+      row.hidden = !keys[index].includes(query);
       if (!row.hidden) visible++;
     });
     empty.hidden = visible > 0;
@@ -387,18 +413,11 @@ function renderInventory(others) {
   if (focusedSearch) search.focus({ preventScroll: true });
 }
 
-// Pourquoi aucun pilote ne l'a pris : affiché tel quel, pour qu'on puisse le recopier même sans le diagnostic
-function drvReason(d) {
-  const errs = drvErrors.get((d.vid + ':' + d.pid).toUpperCase());
-  if (!NATIVE || !errs?.length) return null;
-  return h('div', { class: 'muted small' }, 'Dernier essai : ' + errs[errs.length - 1]);
-}
-
 // Souris, clavier, casque ou manette qu'un pilote de PeriphHub connaît mais qui n'est pas (encore) connecté :
 // gardé dans « Mes appareils », point orange, au lieu de disparaître de la barre latérale. Le clic mène à
 // sa fiche sur l'accueil (pourquoi, que faire, Signaler). Retiré dès qu'un pilote le prend.
-function pendingNav() {
-  const want = new Map((report ? undetected() : [])
+function pendingNav(others) {
+  const want = new Map(others
     .filter(d => ['experimental', 'supported', 'partial'].includes(d.status) && ['souris', 'clavier', 'casque', 'manette'].includes(d.kind))
     .map(d => [(d.vid + d.pid).toUpperCase(), d]));
   for (const b of document.querySelectorAll('nav .pending')) if (!want.has(b.dataset.pending)) b.remove();
@@ -417,12 +436,20 @@ function pendingNav() {
         search.value = '';
         search.dispatchEvent(new Event('input'));
         const row = $('dev-' + id);
-        row?.querySelector('button')?.focus({ preventScroll: true });
+        row?.querySelector('[data-device-report]')?.focus({ preventScroll: true });
         row?.scrollIntoView({ block: 'nearest' });
       } },
-      icon || '', h('span', { class: 'nl' }, (KIND_NAME?.[d.kind] || d.kind[0].toUpperCase() + d.kind.slice(1)), h('small', { title: name }, name + ' · non connecté')),
+      icon || '', h('span', { class: 'nl' }, (KIND_NAME?.[d.kind] || d.kind[0].toUpperCase() + d.kind.slice(1)), h('small', { title: name }, name + ' · détecté')),
       h('span', { class: 'dot warn' })));
   }
+}
+
+let homePcSignature;
+function renderHomePc() {
+  const signature = report ? JSON.stringify([report.vendor_bytes, report.vendors.filter(v => v.bytes > 0).map(v => v.name), gained()]) : '';
+  if (signature === homePcSignature) return;
+  homePcSignature = signature;
+  $('homePc').replaceChildren(pcCard());
 }
 
 function refreshHome() {
@@ -434,13 +461,17 @@ function refreshHome() {
   const hb = hs?.state?.battery;
   sub('hsSub', hs ? (hb != null ? hb + ' %' + (hs.state.charging ? ' · en charge' : '') : 'Connecté') : 'Non connecté');
   sub('rgbSub', rgb ? 'Connecté' : 'Carte mère');
-  pendingNav();
+  const others = undetected();
+  pendingNav(others);
   navTitles();
   $('devGroup').hidden = !drvDevices().length && !document.querySelector('nav .pending')
     && ![...document.querySelectorAll('nav [data-tab]')].some(b => PLUGIN_TAB_VALUES.has(b.dataset.tab) && !b.hidden);
-  bgTipSync();
-  taskbarSync();
-  batAlerts();
+  if (NATIVE) {
+    const batteries = batteryList();
+    bgTipSync(batteries);
+    taskbarSync(batteries);
+    batAlerts(batteries);
+  }
   if (report) {
     sub('slimSub', report.vendor_bytes ? mo(report.vendor_bytes) + ' en fond' : 'Rien à alléger');
     const n = report.vendors.filter(v => v.bytes > 0).length;
@@ -450,13 +481,12 @@ function refreshHome() {
   if ($('home').hidden) return;
 
   const tiles = deviceTiles();
-  const others = undetected();
   renderInventory(others);
   const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
-  $('homeLead').textContent = live ? plural(live, 'appareil disponible', 'appareils disponibles') : 'Vos appareils et votre PC, en un coup d’œil.';
+  sub('homeLead', live ? plural(live, 'appareil disponible', 'appareils disponibles') : 'Vos appareils et votre PC, en un coup d’œil.');
+  renderHomePc();
   $('homeBody').replaceChildren(...[
     hidBlockedNotice(),
-    pcCard(),
     h('section', { class: 'block' },
       h('div', { class: 'bhead' }, h('h3', {}, 'Mes appareils'),
         tiles.length ? h('span', { class: 'muted small' }, 'Cliquez sur un appareil pour le régler') : null),
@@ -471,15 +501,20 @@ function refreshHome() {
   const diagnostics = $('homeDiagnostics');
   diagnostics.hidden = !NATIVE || !report;
   if (diagnostics.hidden) return;
-  diagnostics.replaceChildren(h('section', { class: 'card homediag' },
+  if (!diagnostics.firstChild) diagnostics.append(h('section', { class: 'card homediag' },
       h('div', {},
         h('strong', {}, 'Un souci, une idée ? Envoyez le diagnostic du PC'),
         h('div', { class: 'muted small' }, 'En un clic, sans rien écrire : appareils, capteurs, ventilateurs et réglages de Windows partent au développeur, '
           + 'qui s’en sert pour corriger ou ajouter ce qui manque. Ni numéro de série, ni nom d’utilisateur, ni fichier.')),
       h('div', { class: 'row-inline' },
-        h('button', { disabled: diagBusy, onclick: sendPcDiag }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic du PC'),
-        h('button', { class: 'ghost', disabled: diagBusy, title: 'Choisir un appareil et dire ce qui ne marche pas', onclick: () => diagDialog() }, 'Signaler un problème…'),
+        h('button', { 'data-diag-pc': true, onclick: sendPcDiag }, 'Envoyer le diagnostic du PC'),
+        h('button', { class: 'ghost', 'data-diag-issue': true, title: 'Choisir un appareil et dire ce qui ne marche pas', onclick: () => diagDialog() }, 'Signaler un problème…'),
         h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier'))));
+  const send = diagnostics.querySelector('[data-diag-pc]');
+  send.disabled = diagBusy;
+  const label = tx(diagBusy ? 'Envoi…' : 'Envoyer le diagnostic du PC');
+  if (send.textContent !== label) send.textContent = label;
+  diagnostics.querySelector('[data-diag-issue]').disabled = diagBusy;
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment
@@ -816,9 +851,9 @@ if (typeof nativeHid !== 'undefined') nativeHid.events.addEventListener('resume'
 
 // Infobulle de l'icône : mise à jour disponible, puis batterie de chaque appareil (une ligne chacun)
 
-function bgTip() {
+function bgTip(batteries = batteryList()) {
   const lines = [upd?.available ? tx(`PeriphHub ${upd.version} est disponible`) : 'PeriphHub'];
-  for (const b of batteryList()) {
+  for (const b of batteries) {
     const n = b.name.length > 26 ? b.name.slice(0, 25) + '…' : b.name;
     lines.push((b.label ? `${n} : ${tx(b.label).toLowerCase()}` : `${n} : ${b.level} %${b.charging ? ' ⚡' : ''}`)
       + (b.stale ? ` (${tx('en veille')})` : ''));
@@ -830,9 +865,9 @@ function bgTip() {
 }
 
 let bgTipLast = '';
-function bgSync() {
+function bgSync(tip) {
   if (!NATIVE) return;
-  bgTipLast = bgTip();
+  bgTipLast = typeof tip === 'string' ? tip : bgTip();
   nativeInvoke('bg_set', {
     keep: bgKeep(), ask: !bgAnswered(),
     open: tx('Ouvrir PeriphHub'), quit: tx('Quitter PeriphHub'),
@@ -841,7 +876,10 @@ function bgSync() {
   }).catch(e => console.warn('[PeriphHub] arrière-plan', e));
 }
 // Appelé à chaque actualisation de l'accueil : l'infobulle suit les batteries
-const bgTipSync = () => { if (NATIVE && bgTip() !== bgTipLast) bgSync(); };
+function bgTipSync(batteries) {
+  const tip = bgTip(batteries);
+  if (tip !== bgTipLast) bgSync(tip);
+}
 
 // ---------- Batteries dans la barre des tâches ----------
 // Widget natif à gauche de la zone de notification (src-tauri/src/taskbar.rs) : « 🖱 93 %  🎧 30 % ».
@@ -870,18 +908,20 @@ function tbSetStat(key, on) {
 }
 let tbLast = '';
 let tbShown = null; // ce que le natif affiche : taskbar, tray, off, vertical, none
-function taskbarSync() {
+function taskbarSync(batteries) {
   if (!NATIVE) return;
   const hidden = tbHidden();
+  const items = batteries || batteryList();
+  const stats = tbStats();
   const cfg = {
     mode: tbMode(), plate: tbPlate(),
-    items: batteryList().filter(b => !hidden.has(b.key)).map(b => ({
+    items: items.filter(b => !hidden.has(b.key)).map(b => ({
       key: b.key, name: b.name, kind: b.kind || 'autre', level: b.level ?? -1, charging: b.charging, dim: b.stale,
       text: b.label ? tx(b.label) : null,
     })),
-    tip: bgTip().split('\n').slice(1).join('\n') || tx('Aucune batterie connue pour le moment'),
+    tip: bgTip(items).split('\n').slice(1).join('\n') || tx('Aucune batterie connue pour le moment'),
     menu: [tx('Ouvrir PeriphHub'), tx('Actualiser les batteries'), tx('Ne plus afficher dans la barre des tâches')],
-    stats: TB_STATS.filter(s => tbStats().has(s.key)).map(s => ({ key: s.key, label: s.label, name: tx(s.name) })),
+    stats: TB_STATS.filter(s => stats.has(s.key)).map(s => ({ key: s.key, label: s.label, name: tx(s.name) })),
   };
   const sig = JSON.stringify(cfg);
   if (sig === tbLast) return;
@@ -946,9 +986,9 @@ function batAlertOn() { try { return localStorage.getItem('batAlert') !== 'off';
 function batAlertText(b) {
   return b.name + (LANG === 'fr' ? ' : ' : ': ') + (b.label ? tx(b.label).toLowerCase() : tx(`plus que ${b.level} %`));
 }
-function batAlerts() {
+function batAlerts(batteries) {
   if (!NATIVE) return;
-  for (const b of batteryList()) {
+  for (const b of batteries || batteryList()) {
     if (b.stale) continue; // valeur ancienne (appareil en veille ou parti) : pas d'alerte
     if (b.charging || b.level >= 30) { batWarned.delete(b.key); continue; }
     if (b.level < 1 || b.level > 15 || batWarned.has(b.key)) continue; // 0 % : souvent « inconnu »

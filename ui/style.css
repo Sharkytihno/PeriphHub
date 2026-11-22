@@ -420,6 +420,7 @@ a { color: var(--info); }
 nav .nl { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 nav button[hidden], .ngroup[hidden] { display: none; }
 #homeBody, #slimBody { display: grid; gap: 22px; }
+#homePc { margin-bottom: 22px; }
 #homeInventory, #homeDiagnostics { margin-top: 22px; }
 .device-search { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 14px; }
 .device-search input { flex: 1 1 220px; min-width: 0; max-width: 360px; }
@@ -465,7 +466,19 @@ nav button[hidden], .ngroup[hidden] { display: none; }
 .devlist { display: grid; gap: 8px; }
 .dev { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 11px 14px;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
-.dside { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#homeInventory .dev { align-items: start; }
+.device-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; }
+#homeInventory .dname { white-space: normal; overflow-wrap: anywhere; }
+.device-meta { margin-top: 2px; }
+.device-message { margin-top: 5px; }
+.device-error { margin-top: 6px; }
+.device-error summary { width: fit-content; color: var(--muted); font-size: 12px; }
+.device-error div { padding-top: 4px; overflow-wrap: anywhere; }
+.dside { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+@media (max-width: 850px) {
+  #homeInventory .dev { grid-template-columns: auto minmax(0, 1fr); }
+  #homeInventory .dside { grid-column: 2; justify-content: flex-start; }
+}
 .dev .tico { width: 34px; height: 34px; border-radius: 10px; }
 .dname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip.supported { color: var(--ok); background: var(--okbg); }

@@ -3,6 +3,14 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.5
+
+- Les fiches d'appareils détectés affichent un état et une action selon la réponse du pilote.
+  Les détails techniques sont repliés et le diagnostic de chaque appareil se copie directement.
+- La recherche accepte les noms sans accents et les identifiants USB sans séparateur.
+- L'accueil réutilise un seul relevé de batteries par actualisation et conserve ses panneaux PC
+  et diagnostic tant que leur contenu est identique.
+
 ## 2.1.4
 
 - OpenMouse passe en 0.60.0. L'import conserve les corrections PeriphHub pour les souris VGN

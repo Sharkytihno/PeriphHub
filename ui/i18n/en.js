@@ -6,6 +6,20 @@
 // Missing a text? Add the French on the left, the English on the right, and open a pull request.
 
 const I18N_EN = {
+  'Connexion en attente': 'Waiting to connect',
+  'PeriphHub essaie de joindre l’appareil.': 'PeriphHub is trying to reach the device.',
+  'Appareil en veille': 'Device asleep',
+  'Bougez la souris ou appuyez sur une touche pour le réveiller.': 'Move the mouse or press a key to wake the device.',
+  'Interface non reconnue': 'Unrecognized interface',
+  'Essayez le câble USB ou le récepteur fourni avec l’appareil.': 'Try the USB cable or the receiver supplied with the device.',
+  'Appareil sans réponse': 'Device not responding',
+  'Réveillez ou rebranchez l’appareil, puis cliquez sur Actualiser.': 'Wake or reconnect the device, then click Refresh.',
+  'Connexion impossible': 'Could not connect',
+  'Fermez le logiciel du fabricant, puis rebranchez l’appareil et cliquez sur Actualiser.': 'Close the manufacturer’s software, reconnect the device, then click Refresh.',
+  'Utilisable avec les réglages de Windows.': 'Works with Windows settings.',
+  'Ouvrez Éclairage pour régler les couleurs.': 'Open Lighting to adjust the colors.',
+  'Utilisez le logiciel du fabricant pour le régler.': 'Use the manufacturer’s software to change settings.',
+  'Détails techniques': 'Technical details',
   'Lecture seule': 'Read-only',
   'Paliers de sensibilité (DPI)': 'Sensitivity stages (DPI)',
   'commande refusée sur cette interface en lecture seule': 'Command denied on this read-only interface',
@@ -1117,6 +1131,7 @@ const I18N_EN = {
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  '{} · détecté': '{} · detected',
   '{} appareil disponible': '{} device available',
   '{} appareils disponibles': '{} devices available',
   '{} exemplaires détectés': '{} units detected',
