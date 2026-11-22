@@ -253,6 +253,30 @@ for key, drivers in json.loads(probe.stdout).items():
     if real:
         add(v, p, "", "", "openmouse", "openmouse-kb" if real[0].startswith("kb:") else "openmouse", "experimental")
 
+# Ces identifiants sont documentés dans le catalogue de PeriHub. La reconnaissance
+# seule n'active aucun pilote.
+for vid, pid, name, kind in (
+    ("2E3C", "C368", "Wraith W60", "clavier"),
+    ("3710", "1401", "Pulsar Xlite (filaire)", "souris"),
+    ("3710", "1402", "Pulsar X2 (filaire)", "souris"),
+    ("3710", "1403", "Pulsar X2H Medium (filaire)", "souris"),
+    ("3710", "1404", "Pulsar X2A Medium (filaire)", "souris"),
+    ("3710", "3401", "Pulsar Xlite v4", "souris"),
+    ("3710", "3414", "Pulsar X2 CrazyLight (filaire)", "souris"),
+    ("3710", "3527", "Pulsar X3 LHD CrazyLight (filaire)", "souris"),
+):
+    add(vid, pid, name, kind, "perihub")
+
+# Les noms Cooler Master ne contiennent pas toujours le type du périphérique.
+for kind, pids in (
+    ("souris", ("0065", "0097", "0101", "0141", "0165", "0169")),
+    ("clavier", ("003B", "003C", "0047", "0067", "0069", "007F", "0089", "008F", "009F",
+                 "0145", "0147", "0149", "014B", "0157", "0159")),
+):
+    for pid in pids:
+        if ("2516", pid) in cat:
+            cat["2516", pid]["kind"] = kind
+
 out = sorted(cat.values(), key=lambda e: (e["vid"], e["pid"]))
 for e in out:
     if not e["name"]:

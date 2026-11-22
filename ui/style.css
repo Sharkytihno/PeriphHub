@@ -420,6 +420,10 @@ a { color: var(--info); }
 nav .nl { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 nav button[hidden], .ngroup[hidden] { display: none; }
 #homeBody, #slimBody { display: grid; gap: 22px; }
+#homeInventory, #homeDiagnostics { margin-top: 22px; }
+.device-search { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 14px; }
+.device-search input { flex: 1 1 220px; min-width: 0; max-width: 360px; }
+#homeInventory .dev[hidden] { display: none; }
 .block { display: grid; gap: 12px; }
 .bhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .bhead h3 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }

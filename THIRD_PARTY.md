@@ -54,3 +54,6 @@ et les noms de modèles de ces projets ; aucun code n'en est repris :
 [OpenMouse](https://github.com/OpenMouse-Project/openmouse) (AGPL-3.0),
 [liquidctl](https://github.com/liquidctl/liquidctl) (GPL-3.0).
 Les noms de fabricants complètent [usb.ids](http://www.linux-usb.org/usb-ids.html).
+
+Les identifiants de plusieurs souris Pulsar et du clavier Wraith W60 proviennent du
+[catalogue de PeriHub](https://github.com/hex-dump/perihub/blob/main/docs/devices.md).

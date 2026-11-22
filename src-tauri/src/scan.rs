@@ -133,13 +133,10 @@ pub fn run() -> Value {
     let out_devices: Vec<Value> = devs
         .iter()
         .map(|d| {
-            // entrée exacte, sinon pilote générique de la marque (pid « * »)
-            let s = support
+            let exact = support
                 .iter()
-                .find(|s| hex(&s.vid) == Some(d.vid) && hex(&s.pid) == Some(d.pid))
-                .or_else(|| support.iter().find(|s| hex(&s.vid) == Some(d.vid) && s.pid == "*"));
+                .find(|s| hex(&s.vid) == Some(d.vid) && hex(&s.pid) == Some(d.pid));
             let maker = usb.get(&d.vid);
-            let exact = s.filter(|s| s.pid != "*");
             // Pas d'entrée précise dans devices.json : le catalogue des projets libres prend le relais
             let k = if exact.is_none() {
                 known.iter().find(|k| hex(&k.vid) == Some(d.vid) && hex(&k.pid) == Some(d.pid))
@@ -153,11 +150,16 @@ pub fn run() -> Value {
             } else {
                 k.map(|k| k.name.clone()).unwrap_or_default()
             };
-            let kind = s
-                .and_then(|s| s.kind.clone())
-                .or_else(|| k.filter(|k| k.kind != "autre").map(|k| k.kind.clone()))
-                .unwrap_or_else(|| d.kind.to_string());
-            let (status, plugin) = match (exact, s, k) {
+            let kind = exact
+                .and_then(|s| s.kind.as_deref())
+                .or_else(|| k.filter(|k| k.kind != "autre").map(|k| k.kind.as_str()))
+                .unwrap_or(d.kind);
+            let generic = support.iter().find(|s| {
+                hex(&s.vid) == Some(d.vid) && s.pid == "*" && d.vendor_page
+                    && matches!(kind, "souris" | "clavier" | "casque" | "manette")
+                    && s.kind.as_deref().is_none_or(|expected| expected == kind)
+            });
+            let (status, plugin) = match (exact, generic, k) {
                 (Some(e), _, _) => (e.status.clone(), Some(e.plugin.clone())),
                 (None, _, Some(k)) if k.status != "known" => (k.status.clone(), Some(k.via.clone())),
                 (None, Some(g), _) => (g.status.clone(), Some(g.plugin.clone())),
@@ -168,13 +170,13 @@ pub fn run() -> Value {
                 "vid": format!("{:04X}", d.vid), "pid": format!("{:04X}", d.pid),
                 "product": name, "catalog_name": k.map(|k| k.name.clone()),
                 "manufacturer": d.manufacturer, "interfaces": d.interfaces, "vendor_page": d.vendor_page,
-                "kind": kind,
+                "kind": kind, "units": d.units,
                 "brand": maker.map(|m| m.name.clone()),
                 "brand_note": maker.map(|m| m.note.clone()).filter(|n| !n.is_empty()),
                 "status": status,
                 "plugin": plugin,
                 "sources": k.map(|k| k.src.clone()).unwrap_or_default(),
-                "missing": s.map(|s| s.missing.clone()).unwrap_or_default(),
+                "missing": exact.or(generic).map(|s| s.missing.clone()).unwrap_or_default(),
             })
         })
         .collect();

@@ -6,6 +6,24 @@ Réduire d'au moins **la moitié** la mémoire occupée en permanence par les lo
 périphériques, sans perdre les réglages utiles. Le gain est **mesuré** sur la machine de chaque
 utilisateur (avant / après), jamais estimé.
 
+## Prochains lots
+
+1. **Détection et inventaire.** Vérifier les catégories et les branchements USB, Bluetooth
+   et récepteurs partagés sur plusieurs PC. Utiliser les rapports ciblés pour reproduire les
+   modèles qui manquent encore.
+2. **Compatibilité.** Pour chaque modèle demandé, relever le VID:PID, le transport et la collection
+   de configuration. Recouper avec OpenMouse, HeadsetControl et les fiches PeriHub. Tester
+   la connexion et les lectures, puis valider les écritures sur matériel avec relecture et restauration.
+3. **Performances et ergonomie.** Mesurer le démarrage, le retour de veille et l'activité au repos
+   avec les mêmes appareils sur deux versions. Vérifier au clavier les parcours de réglage et de
+   diagnostic à la taille minimale de fenêtre dans les deux langues.
+4. **Firmware.** Étudier un modèle pilote disposant d'une image officielle vérifiable, d'une
+   correspondance fiable avec la révision matérielle, d'une procédure de récupération documentée
+   et d'un appareil de test. LVFS cible Linux. Microsoft documente les limites des capsules UEFI
+   pour les périphériques externes.
+   [LVFS](https://lvfs.readthedocs.io/en/latest/intro.html) ·
+   [Plateforme de mise à jour Microsoft](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/windows-uefi-firmware-update-platform)
+
 ## 0.1 — Analyseur ✅
 
 - Processus des logiciels constructeurs et leur mémoire (y compris les services système et les

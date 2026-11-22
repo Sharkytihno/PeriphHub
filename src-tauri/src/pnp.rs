@@ -16,7 +16,7 @@ use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
 use windows_sys::Win32::Devices::HumanInterfaceDevice::GUID_DEVINTERFACE_HID;
 use windows_sys::Win32::Devices::Properties::{
     DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_FriendlyName, DEVPKEY_Device_HardwareIds,
-    DEVPKEY_Device_InstanceId, DEVPROPTYPE,
+    DEVPKEY_Device_InstanceId, DEVPKEY_Device_ContainerId, DEVPROPTYPE,
 };
 use windows_sys::Win32::Foundation::DEVPROPKEY;
 
@@ -30,6 +30,7 @@ pub struct HidIface {
     /// Numéro d'interface USB (MI_xx), -1 si l'appareil n'en a qu'une
     pub interface: i32,
     pub product: String,
+    pub container: Option<[u8; 16]>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -112,6 +113,8 @@ fn iface(path: &str) -> Option<HidIface> {
     let mut out = parse_ids(&ids)?;
     out.path = path.to_string();
     out.product = product_name(node);
+    out.container = raw_prop::<16>(node, &DEVPKEY_Device_ContainerId)
+        .filter(|id| *id != [0; 16] && *id != [0xff; 16]);
     Some(out)
 }
 
@@ -173,7 +176,7 @@ pub fn parse_ids(ids: &[String]) -> Option<HidIface> {
         usage_page = u16::from_str_radix(&u[..n], 16).unwrap_or(0);
         usage = hex_after(u, &["_U:"]).and_then(|x| u16::from_str_radix(x, 16).ok()).unwrap_or(0);
     }
-    Some(HidIface { path: String::new(), vid, pid, usage_page, usage, interface, product: String::new() })
+    Some(HidIface { path: String::new(), vid, pid, usage_page, usage, interface, product: String::new(), container: None })
 }
 
 // ---------- Batterie des appareils Bluetooth ----------

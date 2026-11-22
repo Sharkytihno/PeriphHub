@@ -152,7 +152,7 @@ function keptScan() {
 }
 
 // Appareils qui ont des réglages (le reste : hubs, puces internes, webcams…)
-const interesting = d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb', 'refroidissement'].includes(d.kind);
+const interesting = d => d.status !== 'unknown' || ['souris', 'clavier', 'casque', 'manette', 'rgb', 'refroidissement', 'mixte'].includes(d.kind);
 // Détectés mais sans page dans PeriphHub
 var undetected = () => (report?.devices || []).filter(d => interesting(d) && !(PLUGIN_TAB[d.plugin] && d.status !== 'unknown') && !driverHas(d.vid, d.pid));
 
@@ -340,27 +340,51 @@ function deviceHintText(d) {
   return 'Son logiciel d’origine reste nécessaire pour le régler.';
 }
 
-var othersOpen = null; // « Autres appareils détectés » ouvert ou replié (gardé d'un rendu à l'autre)
-function otherDevices() {
-  if (!report) return null;
-  const others = undetected();
-  if (!others.length) return null;
-  // Replié par défaut (détails pour les curieux) ; ouvert si un appareil connu n'a pas pu se connecter
-  if (othersOpen == null) othersOpen = others.some(d => ['experimental', 'supported', 'partial'].includes(d.status));
-  return h('details', { class: 'more', id: 'othersBox', open: othersOpen, ontoggle: e => { othersOpen = e.target.open; } },
-    h('summary', {}, 'Autres appareils détectés', h('span', { class: 'chip unknown' }, String(others.length)),
-      h('span', { class: 'muted small' }, 'pas encore réglables ici')),
-    h('div', { class: 'devlist' }, others.map(d => h('div', { class: 'dev', id: 'dev-' + (d.vid + d.pid).toUpperCase() },
+let inventorySignature = '';
+function renderInventory(others) {
+  const host = $('homeInventory');
+  host.hidden = !others.length;
+  if (!others.length) { inventorySignature = ''; host.replaceChildren(); return; }
+
+  const signature = JSON.stringify(others.map(d => [d, drvErrors.get(d.vid + ':' + d.pid)?.at(-1)]));
+  if (signature === inventorySignature) return;
+  const previous = $('othersBox');
+  const open = previous?.open ?? others.some(d => ['experimental', 'supported', 'partial'].includes(d.status));
+  const previousSearch = $('deviceSearch');
+  const focusedSearch = !!previousSearch && document.activeElement === previousSearch;
+  const search = h('input', { id: 'deviceSearch', type: 'search', placeholder: 'Nom, fabricant ou VID:PID', oninput: filter });
+  search.value = previousSearch?.value || '';
+  const empty = h('p', { class: 'muted small', role: 'status', hidden: true }, 'Aucun appareil ne correspond à la recherche.');
+  const rows = others.map(d => h('div', { class: 'dev', id: 'dev-' + (d.vid + d.pid).toUpperCase() },
       h('div', { class: 'tico' }, kindIcon(d.kind)),
       h('div', { class: 'dmain' },
         h('div', { class: 'dname' }, d.product || `Appareil ${d.vid}:${d.pid}`),
-        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', (KIND_NAME?.[d.kind] || d.kind).toLowerCase(), `USB ${d.vid}:${d.pid}`].join(' · ')),
+        h('div', { class: 'muted small' }, [d.brand || d.manufacturer || 'Fabricant inconnu', KIND_NAME[d.kind] || d.kind, `${d.vid}:${d.pid}`].join(' · ')),
+        d.units > 1 ? h('div', { class: 'muted small' }, `${d.units} exemplaires détectés`) : null,
         ...deviceHint(d),
         drvReason(d)),
       h('div', { class: 'dside' },
         h('span', { class: 'chip ' + d.status }, diagStandard(d) ? 'Appareil standard' : STATUS[d.status] || d.status),
         NATIVE ? h('button', { class: 'mini ghost', title: 'Envoie (ou copie) le diagnostic de cet appareil, avec ce qui ne marche pas',
-          onclick: () => diagDialog((d.vid + ':' + d.pid).toUpperCase()) }, 'Signaler') : null)))));
+          onclick: () => diagDialog((d.vid + ':' + d.pid).toUpperCase()) }, 'Signaler') : null)));
+  function filter() {
+    const query = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row, index) => {
+      const d = others[index];
+      row.hidden = ![d.product, d.catalog_name, d.brand, d.manufacturer, `${d.vid}:${d.pid}`]
+        .some(value => value?.toLowerCase().includes(query));
+      if (!row.hidden) visible++;
+    });
+    empty.hidden = visible > 0;
+  }
+  host.replaceChildren(h('details', { class: 'more', id: 'othersBox', open },
+    h('summary', {}, 'Autres appareils détectés', h('span', { class: 'muted small' }, String(others.length))),
+    h('label', { class: 'device-search', for: 'deviceSearch' }, 'Rechercher un appareil', search),
+    empty, h('div', { class: 'devlist' }, rows)));
+  filter();
+  inventorySignature = signature;
+  if (focusedSearch) search.focus({ preventScroll: true });
 }
 
 // Pourquoi aucun pilote ne l'a pris : affiché tel quel, pour qu'on puisse le recopier même sans le diagnostic
@@ -385,9 +409,16 @@ function pendingNav() {
     const name = d.product || d.catalog_name || `${d.vid}:${d.pid}`;
     document.querySelector('nav .nfoot').before(h('button', { class: 'pending', 'data-pending': id, title: name + ' · ' + 'Détecté, pas encore connecté : voir pourquoi',
       onclick: () => {
-        othersOpen = true;
         showTab('home');
-        setTimeout(() => { if ($('othersBox')) $('othersBox').open = true; $('dev-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
+        const details = $('othersBox');
+        if (!details) return;
+        details.open = true;
+        const search = $('deviceSearch');
+        search.value = '';
+        search.dispatchEvent(new Event('input'));
+        const row = $('dev-' + id);
+        row?.querySelector('button')?.focus({ preventScroll: true });
+        row?.scrollIntoView({ block: 'nearest' });
       } },
       icon || '', h('span', { class: 'nl' }, (KIND_NAME?.[d.kind] || d.kind[0].toUpperCase() + d.kind.slice(1)), h('small', { title: name }, name + ' · non connecté')),
       h('span', { class: 'dot warn' })));
@@ -419,9 +450,10 @@ function refreshHome() {
   if ($('home').hidden) return;
 
   const tiles = deviceTiles();
-  const others = otherDevices();
+  const others = undetected();
+  renderInventory(others);
   const live = [mouse, kb, hs, rgb].filter(Boolean).length + drvDevices().length;
-  $('homeLead').textContent = live ? plural(live, 'appareil connecté', 'appareils connectés') : 'Vos appareils et votre PC, en un coup d’œil.';
+  $('homeLead').textContent = live ? plural(live, 'appareil disponible', 'appareils disponibles') : 'Vos appareils et votre PC, en un coup d’œil.';
   $('homeBody').replaceChildren(...[
     hidBlockedNotice(),
     pcCard(),
@@ -430,13 +462,16 @@ function refreshHome() {
         tiles.length ? h('span', { class: 'muted small' }, 'Cliquez sur un appareil pour le régler') : null),
       tiles.length ? h('div', { class: 'tiles' }, tiles)
         : h('div', { class: 'empty' }, !report ? loading('Recherche des appareils…')
-          : others ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
+          : others.length ? 'Aucun de vos appareils n’est encore réglable ici. Ceux que PeriphHub a trouvés sont juste en dessous.'
           : 'Aucun appareil pris en charge n’est branché. Branchez-en un : il apparaît ici tout seul.')),
     diagAsk(),
     typeof confirmAsk === 'function' ? confirmAsk() : null,
     typeof orgbBoardHint === 'function' ? orgbBoardHint() : null,
-    others,
-    NATIVE && report ? h('section', { class: 'card homediag' },
+  ].filter(Boolean));
+  const diagnostics = $('homeDiagnostics');
+  diagnostics.hidden = !NATIVE || !report;
+  if (diagnostics.hidden) return;
+  diagnostics.replaceChildren(h('section', { class: 'card homediag' },
       h('div', {},
         h('strong', {}, 'Un souci, une idée ? Envoyez le diagnostic du PC'),
         h('div', { class: 'muted small' }, 'En un clic, sans rien écrire : appareils, capteurs, ventilateurs et réglages de Windows partent au développeur, '
@@ -444,7 +479,7 @@ function refreshHome() {
       h('div', { class: 'row-inline' },
         h('button', { disabled: diagBusy, onclick: sendPcDiag }, diagBusy ? 'Envoi…' : 'Envoyer le diagnostic du PC'),
         h('button', { class: 'ghost', disabled: diagBusy, title: 'Choisir un appareil et dire ce qui ne marche pas', onclick: () => diagDialog() }, 'Signaler un problème…'),
-        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier'))) : null].filter(Boolean));
+        h('button', { class: 'ghost', onclick: () => copyDiag() }, 'Copier'))));
 }
 
 // Un périphérique USB bloque Windows : on l'explique au lieu de chercher indéfiniment

@@ -3,6 +3,17 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.1
+
+- Les collections HID sont regroupées par appareil physique lorsque Windows fournit un conteneur.
+  Les périphériques ambigus sont identifiés comme composites et les règles génériques d'un fabricant
+  ne remplacent plus la catégorie issue des usages HID.
+- L'accueil permet de chercher un appareil détecté par nom, fabricant ou VID:PID. Le champ conserve
+  le focus pendant les actualisations ordinaires.
+- Huit identifiants de modèles Pulsar et Wraith sont reconnus. La catégorie de 21 références Cooler
+  Master a été précisée.
+- La configuration WebView2 conserve SmartScreen et les choix de processus par défaut de Microsoft.
+
 ## 2.1.0
 
 *In English: CPU, GPU and RAM usage on the taskbar, next to the batteries: pick any of the three in
