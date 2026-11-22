@@ -27,7 +27,8 @@ pub fn list() -> Vec<Device> {
 fn summarize(ifaces: Vec<crate::pnp::HidIface>) -> Vec<Device> {
     // Classement par conteneur Windows, puis regroupement par modèle dans le rapport.
     type Group = (u16, u16, Option<[u8; 16]>);
-    let mut map: BTreeMap<Group, (Device, u8, i32)> = BTreeMap::new();
+    // (appareil, rang retenu, interface retenue, une collection souris a été vue)
+    let mut map: BTreeMap<Group, (Device, u8, i32, bool)> = BTreeMap::new();
     for d in ifaces {
         let (vid, pid) = (d.vid, d.pid);
         if vid == 0 {
@@ -37,6 +38,9 @@ fn summarize(ifaces: Vec<crate::pnp::HidIface>) -> Vec<Device> {
         let (kind, rank) = match (d.usage_page, d.usage) {
             (0x0B, _) => ("casque", 4),
             (0x01, 0x02) => ("souris", 3),
+            // Clavier sans voyants : très souvent celui qu'une souris ou son dongle expose pour ses touches
+            // macro, parfois sur MI_00 (dongles 373B, VXE…). Il ne l'emporte plus sur une vraie souris.
+            (0x01, 0x06) if d.keyboard_leds == Some(false) => ("clavier", 2),
             (0x01, 0x06 | 0x07) => ("clavier", 3),
             (0x01, 0x04 | 0x05 | 0x08) => ("manette", 3),
             (0x0C, _) => ("audio", 1),
@@ -56,8 +60,10 @@ fn summarize(ifaces: Vec<crate::pnp::HidIface>) -> Vec<Device> {
                 },
                 0,
                 i32::MAX,
+                false,
             )
         });
+        e.3 |= (d.usage_page, d.usage) == (0x01, 0x02);
         e.0.interfaces += 1;
         e.0.vendor_page |= d.usage_page >= 0xFF00;
         if e.0.product.is_empty() {
@@ -77,7 +83,13 @@ fn summarize(ifaces: Vec<crate::pnp::HidIface>) -> Vec<Device> {
         }
     }
     let mut models = BTreeMap::<_, Device>::new();
-    for (mut device, _, _) in map.into_values() {
+    for (mut device, _, _, has_mouse) in map.into_values() {
+        // Souris dont le dongle expose aussi un clavier (touches macro) sur une interface plus basse : le nom
+        // qu'elle annonce tranche (« Wireless mouse -1k dongle »). Pas l'inverse : beaucoup de souris
+        // génériques s'annoncent « Gaming Keyboard ».
+        if has_mouse && device.kind == "clavier" && kind_from_name(&device.product) == Some("souris") {
+            device.kind = "souris";
+        }
         if matches!(device.kind, "mixte" | "autre" | "audio") {
             if let Some(kind) = kind_from_name(&device.product) {
                 device.kind = kind;
@@ -156,6 +168,7 @@ mod tests {
             interface,
             product: product.into(),
             container: Some([unit; 16]),
+            keyboard_leds: (usage == 6).then_some(true),
         }
     }
 
@@ -180,4 +193,24 @@ mod tests {
         assert_eq!((result[0].kind, result[0].units), ("mixte", 1));
     }
 
+    #[test]
+    fn clavier_emule_d_un_dongle_de_souris() {
+        // VXE R1 SE+ sur le dongle 373B:1085 : clavier SANS voyants sur MI_00, souris sur MI_01
+        let mut macros = collection(6, 0, "Wireless mouse -1k dongle", 1);
+        macros.keyboard_leds = Some(false);
+        let mouse = collection(2, 1, "Wireless mouse -1k dongle", 1);
+        for devices in [vec![macros.clone(), mouse.clone()], vec![mouse.clone(), macros.clone()]] {
+            assert_eq!(summarize(devices)[0].kind, "souris");
+        }
+        // Vrai clavier (X68HE) : clavier AVEC voyants sur MI_00, souris des macros sur MI_01
+        let keyboard = collection(6, 0, "X68HE", 1);
+        assert_eq!(summarize(vec![collection(2, 1, "X68HE", 1), keyboard])[0].kind, "clavier");
+        // Seul un clavier sans voyants : reste un clavier (pavé macro)
+        assert_eq!(summarize(vec![macros])[0].kind, "clavier");
+        // Clavier AVEC voyants sur MI_00 mais souris annoncée par son nom : souris
+        let dongle = collection(6, 0, "ATTACK SHARK Mouse", 1);
+        assert_eq!(summarize(vec![dongle, collection(2, 1, "ATTACK SHARK Mouse", 1)])[0].kind, "souris");
+        // Sans collection souris, le nom ne suffit pas
+        assert_eq!(summarize(vec![collection(6, 0, "Mouse Keyboard", 1)])[0].kind, "clavier");
+    }
 }

@@ -36,6 +36,11 @@ class NativeHIDDevice extends EventTarget {
       const id = info.usage === 1 ? 0x10 : 0x11;
       r = { input: [id], output: [id], feature: [] };
     }
+    // Contrôleur ITE des cartes mères Gigabyte : la page 0xFF89 a deux collections, usage 0x10 (rapport
+    // 0x5A) et usage 0xCC (rapport 0xCC, l'éclairage, comme dans le détecteur d'OpenRGB). Annoncer 0xCC
+    // sur les deux faisait parfois choisir la première (diagnostic #19, B550 GAMING X V2 : « Fonction
+    // incorrecte » à chaque commande, selon l'ordre dans lequel Windows liste les collections).
+    if (info.usage_page === 0xff89 && info.usage !== 0xcc) r = { input: [], output: [], feature: [] };
     const rep = ids => ids.map(reportId => ({ reportId, items: [] }));
     this.collections = [{ usagePage: info.usage_page, usage: info.usage, children: [],
       inputReports: rep(r.input), outputReports: rep(r.output), featureReports: rep(r.feature) }];

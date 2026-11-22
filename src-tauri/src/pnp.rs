@@ -31,6 +31,10 @@ pub struct HidIface {
     pub interface: i32,
     pub product: String,
     pub container: Option<[u8; 16]>,
+    /// Collection clavier (01:06) : déclare-t-elle un rapport de sortie, celui des voyants Verr. Maj /
+    /// Verr. Num ? Un vrai clavier en a toujours un ; le « clavier » qu'une souris ou son dongle expose
+    /// pour ses touches macro n'en a presque jamais. None : pas un clavier, ou caractéristiques illisibles.
+    pub keyboard_leds: Option<bool>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -115,7 +119,38 @@ fn iface(path: &str) -> Option<HidIface> {
     out.product = product_name(node);
     out.container = raw_prop::<16>(node, &DEVPKEY_Device_ContainerId)
         .filter(|id| *id != [0; 16] && *id != [0xff; 16]);
+    if (out.usage_page, out.usage) == (0x01, 0x06) {
+        out.keyboard_leds = keyboard_leds(&wpath);
+    }
     Some(out)
+}
+
+/// Rapport de sortie déclaré par une collection clavier. Ouverture sans aucun droit (accès 0, comme
+/// generic_hid.rs) : Windows rend les caractéristiques qu'il a gardées au branchement, rien n'est
+/// envoyé à l'appareil, et un clavier reste ouvrable ainsi même quand Windows se le réserve.
+fn keyboard_leds(wpath: &[u16]) -> Option<bool> {
+    use windows_sys::Win32::Devices::HumanInterfaceDevice::{
+        HidD_FreePreparsedData, HidD_GetPreparsedData, HidP_GetCaps, HIDP_CAPS, HIDP_STATUS_SUCCESS,
+    };
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
+    let h = unsafe {
+        CreateFileW(wpath.as_ptr(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, std::ptr::null(), OPEN_EXISTING, 0, std::ptr::null_mut())
+    };
+    if h == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let mut pp = 0isize;
+    let mut out = None;
+    if unsafe { HidD_GetPreparsedData(h, &mut pp) } {
+        let mut caps = HIDP_CAPS::default();
+        if unsafe { HidP_GetCaps(pp, &mut caps) } == HIDP_STATUS_SUCCESS {
+            out = Some(caps.OutputReportByteLength > 0);
+        }
+        unsafe { HidD_FreePreparsedData(pp) };
+    }
+    unsafe { CloseHandle(h) };
+    out
 }
 
 /// Nom du produit tel que l'appareil l'a annoncé au branchement, lu sur les nœuds parents
@@ -176,7 +211,7 @@ pub fn parse_ids(ids: &[String]) -> Option<HidIface> {
         usage_page = u16::from_str_radix(&u[..n], 16).unwrap_or(0);
         usage = hex_after(u, &["_U:"]).and_then(|x| u16::from_str_radix(x, 16).ok()).unwrap_or(0);
     }
-    Some(HidIface { path: String::new(), vid, pid, usage_page, usage, interface, product: String::new(), container: None })
+    Some(HidIface { path: String::new(), vid, pid, usage_page, usage, interface, product: String::new(), container: None, keyboard_leds: None })
 }
 
 // ---------- Batterie des appareils Bluetooth ----------

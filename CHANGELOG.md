@@ -3,6 +3,20 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.6
+
+- Souris sans fil prises pour un clavier : beaucoup de dongles exposent un clavier pour les touches
+  macro, parfois sur leur première interface. Un clavier qui ne déclare pas de voyants (Verr. Maj,
+  Verr. Num) ne l'emporte plus sur la souris, et un appareil qui expose une souris et s'annonce
+  « mouse » reste une souris. Le pilote OpenMouse et les batteries suivent désormais ce type, et
+  la règle générique d'un fabricant de souris (puces CompX…) s'applique de nouveau à ces dongles.
+- Les fiches indiquent « Appareil en veille » ou « Appareil sans réponse » aussi pour les messages
+  en anglais des pilotes OpenMouse et pour les délais dépassés de Windows, au lieu de conseiller de
+  fermer le logiciel du fabricant.
+- Éclairage des cartes mères Gigabyte (RGB Fusion 2) : les commandes partent toujours vers la
+  collection d'éclairage du contrôleur ITE. Selon l'ordre de Windows, elles pouvaient viser l'autre
+  collection et échouer à chaque fois (« Fonction incorrecte »).
+
 ## 2.1.5
 
 - Les fiches d'appareils détectés affichent un état et une action selon la réponse du pilote.

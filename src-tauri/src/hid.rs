@@ -625,6 +625,7 @@ mod tests {
             interface: 1,
             product: "VGN Dragonfly F2 Turbo".into(),
             container: None,
+            keyboard_leds: None,
         };
         assert!(allowed_info(&iface));
         iface.usage = 1;

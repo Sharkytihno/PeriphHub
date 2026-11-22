@@ -130,3 +130,35 @@ test('OpenMouse : AULA valide le modèle puis lit les rapports de 519 octets', a
   assert.equal(device.set, undefined);
   device.release();
 });
+
+// Dongle VXE R1 SE+ (373B:1085, diagnostic #22) : clavier des touches macro SANS voyants sur MI_00,
+// souris sur MI_01. Il apparaissait avec l'icône clavier.
+const kbd = (pid, mi, leds, name) => ({
+  vendorId: 0x373B, productId: pid, productName: name,
+  collections: [{ usagePage: 1, usage: 6, children: [], inputReports: [{ reportId: 0 }], outputReports: leds ? [{ reportId: 0 }] : [], featureReports: [] }],
+  parsed: [{ usagePage: 1, usage: 6, children: [], inputReports: [{ reportId: 0 }], outputReports: leds ? [{ reportId: 0 }] : [], featureReports: [] }],
+  info: { interface: mi, usage_page: 1, usage: 6 },
+});
+const vxe = [kbd(0x1085, 0, false, 'Wireless mouse -1k dongle'),
+  { ...iface(0x1085, 1, 1, 2, 'Wireless mouse -1k dongle'), vendorId: 0x373B },
+  { ...iface(0x1085, 1, 0xFF02, 2, 'Wireless mouse -1k dongle'), vendorId: 0x373B }];
+
+test('OpenMouse : un dongle de souris qui expose un clavier sans voyants reste une souris', () => {
+  globalThis.hidAllCollections = cols => cols;
+  try {
+    assert.equal(om.kind(vxe[2], vxe), 'souris');
+    // Un vrai clavier (voyants) sur MI_00 reste un clavier
+    const real = [kbd(0x2000, 0, true, 'Keyboard'), { ...iface(0x2000, 1, 1, 2, 'Keyboard'), vendorId: 0x373B }];
+    assert.equal(om.kind(real[1], real), 'clavier');
+  } finally { delete globalThis.hidAllCollections; }
+});
+
+test('OpenMouse : le type de l’analyse Windows l’emporte sur les collections visibles', () => {
+  globalThis.report = { devices: [{ vid: '373B', pid: '1085', kind: 'souris' }] };
+  try {
+    const kb = [{ ...kbd(0x1085, 0, true, 'Keyboard'), parsed: undefined }];
+    assert.equal(om.kind(kb[0], kb), 'souris');
+    globalThis.report.devices[0].kind = 'clavier';
+    assert.equal(om.kind(vxe[2], vxe), 'clavier');
+  } finally { delete globalThis.report; }
+});

@@ -1285,6 +1285,11 @@ const hidBatLive = new Map(); // « vid:pid » → page
 let hidBatAt = 0, hidBatPolling = null;
 const hidBatId = (v, p) => hex4(v).toLowerCase() + ':' + hex4(p).toLowerCase();
 function hidBatKind(f) {
+  // Type de l'appareil entier selon l'analyse (devices.rs) : la collection qui porte la batterie peut être
+  // le clavier des touches macro d'une souris
+  const scan = (typeof report !== 'undefined' && report?.devices || [])
+    .find(r => r.vid === hex4(f.vid) && r.pid === hex4(f.pid))?.kind;
+  if (['souris', 'clavier', 'casque', 'manette'].includes(scan)) return scan;
   if (f.usagePage === 1 && f.usage === 2) return 'souris';
   if (f.usagePage === 1 && f.usage === 6) return 'clavier';
   if (f.usagePage === 1 && (f.usage === 4 || f.usage === 5)) return 'manette';

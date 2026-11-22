@@ -33,13 +33,16 @@ const omPeers = (d, group) => group.filter(other =>
 
 // Clavier : son interface principale (le plus petit numéro, l'interface « boot ») porte un clavier
 // et pas de souris. Beaucoup de claviers exposent aussi une souris (macros) sur une autre interface.
+// Un clavier sans rapport de sortie (pas de voyants Verr. Maj / Verr. Num) ne compte pas : c'est celui
+// qu'une souris ou son dongle expose pour ses touches macro, parfois sur MI_00 (dongles 373B, VXE…).
+const omHasLeds = d => !d.parsed?.length || typeof hidAllCollections !== 'function' || hidAllCollections(d.parsed).some(c => c.outputReports?.length);
 function omIsKeyboard(group) {
   const ifs = group.filter(d => Number.isInteger(d.info?.interface) && d.info.interface >= 0);
   if (!ifs.length) return false;
   const first = Math.min(...ifs.map(d => d.info.interface));
   const top = ifs.filter(d => d.info.interface === first)
-    .map(d => [d.info.usage_page ?? d.collections?.[0]?.usagePage, d.info.usage ?? d.collections?.[0]?.usage]);
-  return top.some(([p, u]) => p === 1 && u === 6) && !top.some(([p, u]) => p === 1 && u === 2);
+    .map(d => [d.info.usage_page ?? d.collections?.[0]?.usagePage, d.info.usage ?? d.collections?.[0]?.usage, d]);
+  return top.some(([p, u, d]) => p === 1 && u === 6 && omHasLeds(d)) && !top.some(([p, u]) => p === 1 && u === 2);
 }
 // 0x3151 est l'identifiant d'un fabricant (MicLink/mlzn) partagé par des souris Fantech et GearHub
 // ET par des dizaines de claviers (Akko, MonsGeek, Attack Shark X68HE…) qui ont la même interface
@@ -54,8 +57,15 @@ const omScanKind = d => (typeof report !== 'undefined' && report?.devices || [])
 // prochain lancement : la page CompX de PeriphHub (js/devices.js) la reprend.
 const omMismatch = new Set();
 const OM_MISMATCH = /corrupt|checksum|unexpected|malformed/i;
+// Type de l'appareil physique : celui de l'analyse (devices.rs, qui voit toutes les interfaces, y compris
+// celles que Windows se réserve) quand il est net, sinon les collections visibles ici et le nom.
+function omKind(d, group) {
+  const scan = omScanKind(d);
+  if (scan === 'souris' || scan === 'clavier') return scan;
+  return (group && omIsKeyboard(group)) || /keyboard|clavier/i.test(d.productName || '') ? 'clavier' : 'souris';
+}
 const omKeyboardOnOdm = (d, group) => d.vendorId === OM_ODM_MICE
-  && (omScanKind(d) === 'clavier' || (group ? omIsKeyboard(group) : false));
+  && (omScanKind(d) === 'clavier' || (omScanKind(d) !== 'souris' && group ? omIsKeyboard(group) : false));
 
 // ---------- Interface USB complète, comme WebHID la présente dans Chrome ----------
 // Sous Windows, chaque « collection » d'une interface est un périphérique à part pour hidapi ;
@@ -332,7 +342,7 @@ async function omTry(dev, group) {
   const inst = {
     key: 'om-' + omHex(dev.vendorId) + omHex(dev.productId),
     name: dev.productName || 'Souris',
-    kind: omIsKeyboard(group) || omScanKind(dev) === 'clavier' || /keyboard|clavier/i.test(dev.productName || '') ? 'clavier' : 'souris',
+    kind: omKind(dev, group),
     dev: group[0], devs: group, client, state: {}, caps: {},
     restoreCaps: Object.keys(OM_SETTERS).filter(k => !['dpi', 'rate'].includes(k)),
     source: 'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. ' +
@@ -664,6 +674,7 @@ const omReadOnly = {
 
 window.omApi = {
   readOnlyDriver: omReadOnly,
+  kind: omKind,
   vids: OM_VIDS,
   // La page Scyrox (CompX) laisse à OpenMouse les souris qu'il reconnaît
   claims(dev, all) {

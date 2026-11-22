@@ -336,17 +336,21 @@ const deviceId = d => (d.vid + ':' + d.pid).toUpperCase();
 const lastDeviceError = d => drvErrors.get(deviceId(d))?.at(-1);
 const awaitingDriver = d => ['experimental', 'supported', 'partial'].includes(d.status);
 
+const DEV_ASLEEP = /récepteur trouvé, aucun appareil allumé|\ben veille\b|\basleep\b|out of range|\bis (?:off|sleeping)\b/i;
+const DEV_SILENT = /ne répond pas|aucune réponse|délai .*expiré|timeout|timed out|\bno (?:answer|response|reply)\b|did not (?:answer|respond|reply)|not responding/i;
+
 function deviceSummary(d, error) {
   if (diagStandard(d)) return ['Appareil standard', 'Utilisable avec les réglages de Windows.', 'unknown'];
   if (awaitingDriver(d)) {
     if (!error) return ['Connexion en attente', 'PeriphHub essaie de joindre l’appareil.', 'partial'];
-    if (/récepteur trouvé, aucun appareil allumé|\ben veille\b/i.test(error)) {
+    // Les pilotes OpenMouse répondent en anglais (« got no answer — the mouse may be asleep or out of range »)
+    if (DEV_ASLEEP.test(error)) {
       return ['Appareil en veille', 'Bougez la souris ou appuyez sur une touche pour le réveiller.', 'experimental'];
     }
     if (/aucun pilote ne correspond à ses interfaces/i.test(error)) {
       return ['Interface non reconnue', 'Essayez le câble USB ou le récepteur fourni avec l’appareil.', 'experimental'];
     }
-    if (/ne répond pas|aucune réponse|timeout|timed out/i.test(error)) {
+    if (DEV_SILENT.test(error)) {
       return ['Appareil sans réponse', 'Réveillez ou rebranchez l’appareil, puis cliquez sur Actualiser.', 'experimental'];
     }
     return ['Connexion impossible', 'Fermez le logiciel du fabricant, puis rebranchez l’appareil et cliquez sur Actualiser.', 'experimental'];
