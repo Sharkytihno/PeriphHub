@@ -8,6 +8,8 @@
 // PeriphHub n'appelle que la lecture de l'état et les réglages courants : jamais de
 // mise à jour de firmware, de remise à zéro d'usine ni d'appairage.
 import { createSupportedClient, clientSupportScore, deviceBrand } from '../../vendor/openmouse/drivers/registry.js';
+import { RoccatHidClient } from '../../vendor/openmouse-readonly/drivers/roccat/hid.js';
+import { AulaSc380ProHidClient } from '../../vendor/openmouse-readonly/drivers/aula/hid.js';
 import * as kbReg from '../../vendor/openmouse-kb/drivers/registry.js';
 import { LamzuAtlantisHidClient } from '../../vendor/openmouse/drivers/lamzu-atlantis/hid.js';
 
@@ -54,9 +56,10 @@ const omKeyboardOnOdm = (d, group) => d.vendorId === OM_ODM_MICE
 // Chrome les réunit en un seul HIDDevice et envoie chaque rapport à la bonne collection.
 
 class OmHIDDevice extends EventTarget {
-  constructor(members) {
+  constructor(members, featureLength) {
     super();
     this.members = members;
+    this.featureLength = featureLength;
     const m0 = members[0];
     this.vendorId = m0.vendorId;
     this.productId = m0.productId;
@@ -95,7 +98,7 @@ class OmHIDDevice extends EventTarget {
   // Comme Chrome sous Windows : l'ID du rapport est le 1er octet de la réponse (rapports numérotés)
   async receiveFeatureReport(id) {
     const m = this.owner('featureReports', id);
-    const len = hidReportBytes(m.parsed || [], 'featureReports', id) || 64;
+    const len = this.featureLength || hidReportBytes(m.parsed || [], 'featureReports', id) || 64;
     const v = await m.receiveFeatureReport(id, len);
     const body = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
     if (!id) return new DataView(body.slice().buffer);
@@ -585,7 +588,75 @@ export async function compxDump(dev, { end = COMPX_FLASH_END, budgetMs = 9000 } 
   },
 });
 
+// Les deux familles sont interrogées sur leur seule collection de configuration.
+const OM_READERS = new Map([
+  ['1E7D:2C8E', { Client: RoccatHidClient, page: 0xFF00, usage: 1, iface: 2 }],
+  ['1E7D:2C92', { Client: RoccatHidClient, page: 0xFF00, usage: 1, iface: 1 }],
+  ['258A:0138', { Client: AulaSc380ProHidClient, page: 0xFF02, usage: 2, featureLength: 519 }],
+]);
+
+function omReader(d) {
+  const spec = OM_READERS.get(omId(d));
+  if (!spec) return null;
+  const cols = d.parsed?.length ? d.parsed : d.collections;
+  if (window.__TAURI__ && (!d.parsed?.length
+    || d.info.usage_page !== spec.page || d.info.usage !== spec.usage
+    || (spec.iface != null && d.info.interface !== spec.iface))) return null;
+  const collection = cols.some(c => c.usagePage === spec.page && c.usage === spec.usage);
+  return collection && spec.Client.isSupported({ vendorId: d.vendorId, productId: d.productId, collections: cols })
+    ? spec : null;
+}
+
+const omReadOnly = {
+  id: 'openmouse-readonly',
+  priority: 16,
+  match: d => !!omReader(d),
+  async connect(d) {
+    const spec = omReader(d);
+    if (!spec) throw new Error('Collection de configuration non reconnue');
+    const dev = window.__TAURI__ ? new OmHIDDevice([d], spec.featureLength) : d;
+    const client = new spec.Client(dev);
+    const inst = {
+      key: 'om-read-' + omId(d).replace(':', '').toLowerCase(),
+      kind: 'souris', dev: d, state: {}, caps: {}, noOrigin: true,
+      meta: 'Lecture seule',
+      source: 'PeriphHub lit les informations de la souris. Les réglages se font dans son logiciel habituel.',
+      refresh: async () => {
+        const status = await client.readStatus();
+        inst.name = status.name;
+        inst.state = {
+          dpi: status.dpi || null, stages: status.dpiStages, stagesY: status.dpiStagesY,
+          rate: status.pollingRateHz || null,
+          battery: status.batteryPercent == null ? null : { level: status.batteryPercent, charging: false },
+        };
+      },
+      rows: () => {
+        const { dpi, stages, stagesY, rate } = inst.state;
+        return [
+          dpi ? field('Sensibilité (DPI)', String(dpi)) : null,
+          stages?.length ? field('Paliers de sensibilité (DPI)', stages.map((x, i) => {
+            const y = stagesY?.[i];
+            return y != null && x !== y ? x + ' × ' + y : String(x);
+          }).join(' · ')) : null,
+          rate ? field('Fréquence d’interrogation', rate + ' Hz') : null,
+          !dpi && !stages?.length && !rate ? h('p', { class: 'muted' }, 'Réveillez la souris pour lire ses réglages.') : null,
+        ];
+      },
+      release: () => { void client.close().catch(() => {}); },
+    };
+    inst.refreshBattery = inst.refresh;
+    try {
+      await inst.refresh();
+    } catch (error) {
+      await client.close().catch(() => {});
+      throw error;
+    }
+    return [inst];
+  },
+};
+
 window.omApi = {
+  readOnlyDriver: omReadOnly,
   vids: OM_VIDS,
   // La page Scyrox (CompX) laisse à OpenMouse les souris qu'il reconnaît
   claims(dev, all) {

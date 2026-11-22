@@ -1554,7 +1554,7 @@ const keptReport = NATIVE ? keptScan() : null;
 if (keptReport) { report = keptReport.report; journal = keptReport.journal || []; $('copyReport').disabled = false; }
 showTab((() => { try { return localStorage.getItem('tab'); } catch { return null; } })() || 'home');
 if (keptReport) applyReport(); else rescan();
-if (window.omApi) [window.omApi.driver, ...(window.omApi.keyboardDrivers || [])].forEach(registerDriver);
+if (window.omApi) [window.omApi.driver, window.omApi.readOnlyDriver, ...(window.omApi.keyboardDrivers || [])].filter(Boolean).forEach(registerDriver);
 driversStart();
 // Batterie et état relus régulièrement sur l'accueil (fenêtre visible seulement)
 setInterval(() => { if (!document.hidden && !$('home').hidden) refreshHome(); }, 30000);

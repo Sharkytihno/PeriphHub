@@ -10,6 +10,11 @@ Le paquet est publié pour un bundler : ses imports « @openmouse/protocol/xxx �
 en chemins relatifs (la page de PeriphHub charge des modules ES natifs, sans import map
 puisque la CSP interdit les scripts en ligne). Les fichiers .map et .d.ts ne sont pas copiés.
 Le code n'est pas modifié autrement.
+
+    python scripts/vendor-openmouse.py package --lecture-seule
+
+Cette option extrait les pilotes ROCCAT et AULA du paquet souris 0.60.0 dans un dossier
+distinct. L'intégration principale et ses adaptations locales restent indépendantes.
 """
 import json
 import os
@@ -23,6 +28,16 @@ repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 pkg = json.load(open(os.path.join(src, "package.json"), encoding="utf-8"))
 name = pkg["name"]
 dst = os.path.join(repo, "ui", "vendor", {"@openmouse/protocol": "openmouse", "@openmouse/keyboard-protocol": "openmouse-kb"}[name])
+selected = None
+if sys.argv[2:] == ["--lecture-seule"]:
+    if name != "@openmouse/protocol" or pkg["version"] != "0.60.0":
+        raise SystemExit("Le lot en lecture seule exige @openmouse/protocol 0.60.0.")
+    dst = os.path.join(repo, "ui", "vendor", "openmouse-readonly")
+    selected = {"dist/aula/index.js", "dist/drivers/aula/hid.js",
+                "dist/roccat/index.js", "dist/drivers/roccat/hid.js"}
+elif sys.argv[2:]:
+    raise SystemExit("Option inconnue.")
+
 exports = {}
 for key, val in pkg["exports"].items():
     target = val["import"] if isinstance(val, dict) else val
@@ -30,7 +45,7 @@ for key, val in pkg["exports"].items():
 
 IMPORT = re.compile(r'((?:from|import)\s*\(?\s*")(' + re.escape(name) + r'(?:/[^"]*)?)(")')
 
-if os.path.isdir(dst):
+if selected is None and os.path.isdir(dst):
     shutil.rmtree(dst)
 count = 0
 for dirpath, _, files in os.walk(os.path.join(src, "dist")):
@@ -38,6 +53,8 @@ for dirpath, _, files in os.walk(os.path.join(src, "dist")):
         if not f.endswith(".js"):
             continue
         rel = os.path.relpath(os.path.join(dirpath, f), src).replace(os.sep, "/")  # dist/...
+        if selected is not None and rel not in selected:
+            continue
         text = open(os.path.join(dirpath, f), encoding="utf-8").read()
 
         def fix(m):
@@ -54,10 +71,14 @@ for dirpath, _, files in os.walk(os.path.join(src, "dist")):
         open(out, "w", encoding="utf-8", newline="\n").write(text)
         count += 1
 
+if selected is not None and count != len(selected):
+    raise SystemExit("Le paquet ne contient pas tous les pilotes attendus.")
+
 shutil.copy(os.path.join(src, "LICENSE"), os.path.join(dst, "LICENSE"))
 open(os.path.join(dst, "VERSION"), "w", encoding="utf-8", newline="\n").write(
     f"{name} {pkg['version']}\n"
-    "https://github.com/OpenMouse-Project\n"
+    + ("Import limité aux pilotes ROCCAT et AULA.\n" if selected is not None else "")
+    + "https://github.com/OpenMouse-Project\n"
     "Licence : AGPL-3.0-or-later (voir LICENSE). Copié par scripts/vendor-openmouse.py, non modifié\n"
     "à part les chemins d'import.\n")
 print(f"{count} fichiers copiés dans {dst} ({pkg['version']})")

@@ -3,6 +3,14 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.3
+
+- Lecture des paliers DPI de la ROCCAT Kone Pro Air, sur câble et dongle. L'éclairage reste
+  accessible dans OpenRGB.
+- Lecture des DPI, de la fréquence et de la batterie de l'AULA SC380 Pro sur son dongle.
+- Prise en charge expérimentale en lecture seule. Windows filtre les requêtes de configuration
+  de ces deux pilotes pour éviter toute écriture de réglages.
+
 ## 2.1.2
 
 - La passerelle Windows transmet désormais au pilote OpenMouse la collection de configuration

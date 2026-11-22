@@ -2108,5 +2108,13 @@
     "kind": "souris",
     "status": "experimental",
     "plugin": "openmouse"
+  },
+  {
+    "vid": "258A",
+    "pid": "0138",
+    "name": "AULA SC380 Pro (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse-readonly"
   }
 ]

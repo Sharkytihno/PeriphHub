@@ -21,6 +21,12 @@ et lancée comme service Windows (`PeriphHubOpenRGB`, `src-tauri/src/openrgb_ser
 fichier par fichier à son arrivée. PawnIO : installeur vérifié par empreinte SHA-256 (`1f519a22…ba3032`)
 avant d'être lancé.
 
+Les pilotes ROCCAT Kone Pro Air et AULA SC380 Pro sont également importés de
+[OpenMouse 0.60.0](https://github.com/OpenMouse-Project/mouse-protocol/releases/tag/v0.60.0).
+PeriphHub ouvre uniquement leur collection de configuration et la passerelle Windows filtre
+les commandes autorisées à la lecture. Le reste de l'intégration OpenMouse reste en 0.49.0, avec
+les adaptations PeriphHub des souris Scyrox, Attack Shark et VGN.
+
 ## Code adapté
 
 | Projet | Licence | Ce qui en vient |

@@ -50,9 +50,62 @@ fn bootloader(d: &HidIface) -> bool {
     ["boot", "dfu", "isp ", "firmware update"].iter().any(|w| p.contains(w))
 }
 
+#[derive(Clone, Copy)]
+enum ReadOnlyDevice {
+    Roccat { interface: i32 },
+    Aula,
+}
+
+fn read_only_device(vid: u16, pid: u16) -> Option<ReadOnlyDevice> {
+    match (vid, pid) {
+        (0x1E7D, 0x2C8E) => Some(ReadOnlyDevice::Roccat { interface: 2 }),
+        (0x1E7D, 0x2C92) => Some(ReadOnlyDevice::Roccat { interface: 1 }),
+        (0x258A, 0x0138) => Some(ReadOnlyDevice::Aula),
+        _ => None,
+    }
+}
+
+enum HidRequest<'a> {
+    InterruptOutput(u8, &'a [u8]),
+    FeatureOutput(u8, &'a [u8]),
+    FeatureInput(u8, usize),
+    Other,
+}
+
+impl ReadOnlyDevice {
+    fn matches_collection(self, d: &HidIface) -> bool {
+        match self {
+            Self::Roccat { interface } => (d.interface, d.usage_page, d.usage) == (interface, 0xFF00, 1),
+            Self::Aula => (d.usage_page, d.usage) == (0xFF02, 2),
+        }
+    }
+
+    fn permits(self, request: HidRequest<'_>) -> bool {
+        match (self, request) {
+            (Self::Roccat { .. }, HidRequest::InterruptOutput(0, data)) => {
+                data.len() == 64 && data[..3] == [0x10, 0x50, 0x14] && data[3..].iter().all(|&b| b == 0)
+            }
+            (Self::Aula, HidRequest::FeatureInput(9, 519)) => true,
+            (Self::Aula, HidRequest::FeatureOutput(9, data)) => {
+                // Identification, état de la liaison, paliers DPI, batterie. Aucun bloc de réglage.
+                let [checksum, cmd, arg, 1, 0, lo, hi, payload @ ..] = data else { return false };
+                data.len() == 519
+                    && matches!((*cmd, *arg, u16::from_le_bytes([*lo, *hi])),
+                        (0x05, 1, 6) | (0x07, 0, 1) | (0x44, 0, 400) | (0x09, 1, 1))
+                    && data[1..7].iter().copied().fold(0u8, u8::wrapping_add) == *checksum
+                    && payload.iter().all(|&b| b == 0)
+            }
+            _ => false,
+        }
+    }
+}
+
 fn allowed_info(d: &HidIface) -> bool {
     if bootloader(d) || d.usage_page == FIDO_PAGE {
         return false;
+    }
+    if let Some(protocol) = read_only_device(d.vid, d.pid) {
+        return protocol.matches_collection(d);
     }
     // Souris VGN CompX : le pilote ne connaît que les modèles et la collection déclarés.
     if d.vid == 0x391D {
@@ -100,6 +153,7 @@ pub struct HidInfo {
 }
 
 struct Open {
+    read_only: Option<ReadOnlyDevice>,
     dev: Mutex<hidapi::HidDevice>,
     stop: Arc<AtomicBool>,
     path: String,
@@ -360,9 +414,16 @@ pub async fn hid_open(app: AppHandle, path: String, unnumbered: bool) -> Result<
 fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, String> {
     let hid = app.state::<Hid>();
     // Seulement les périphériques des fabricants pris en charge (comme la liste de hid_devices)
-    if !crate::pnp::hid_interfaces().iter().any(|d| d.path.eq_ignore_ascii_case(&path) && allowed_info(d)) {
-        return Err("périphérique non pris en charge".into());
-    }
+    let interface = crate::pnp::hid_interfaces()
+        .into_iter()
+        .find(|d| d.path.eq_ignore_ascii_case(&path) && allowed_info(d))
+        .ok_or("périphérique non pris en charge")?;
+    let read_only = read_only_device(interface.vid, interface.pid);
+    let unnumbered = match read_only {
+        Some(ReadOnlyDevice::Roccat { .. }) => true,
+        Some(ReadOnlyDevice::Aula) => false,
+        None => unnumbered,
+    };
     if lk(&hid.stuck).contains(&path) {
         return Err(WEDGED.into());
     }
@@ -401,7 +462,7 @@ fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, Strin
             // `reader` est fermé ici, dans ce fil : si Windows tarde à rendre la lecture, rien d'autre n'attend
         })
         .map_err(|e| e.to_string())?;
-    let open = Open { dev: Mutex::new(writer), stop, path, busy: Mutex::new(None), stuck: AtomicBool::new(false) };
+    let open = Open { read_only, dev: Mutex::new(writer), stop, path, busy: Mutex::new(None), stuck: AtomicBool::new(false) };
     lk(&hid.open).insert(handle, Arc::new(open));
     Ok(handle)
 }
@@ -428,10 +489,14 @@ fn frame(report_id: u8, data: &[u8]) -> Vec<u8> {
 fn exchange<T: Send + 'static>(
     app: &AppHandle,
     handle: u32,
+    request: HidRequest<'_>,
     f: impl FnOnce(&hidapi::HidDevice) -> hidapi::HidResult<T> + Send + 'static,
 ) -> Result<T, String> {
     let hid = app.state::<Hid>();
     let o = lk(&hid.open).get(&handle).cloned().ok_or("périphérique fermé")?;
+    if o.read_only.is_some_and(|protocol| !protocol.permits(request)) {
+        return Err("commande refusée sur cette interface en lecture seule".into());
+    }
     if o.stuck.load(Ordering::Relaxed) {
         return Err(WEDGED.into());
     }
@@ -467,26 +532,32 @@ fn exchange<T: Send + 'static>(
 
 #[tauri::command]
 pub async fn hid_send(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    off_main(move || exchange(&app, handle, move |d| d.write(&frame(report_id, &data)).map(|_| ()))).await
+    off_main(move || {
+        let bytes = frame(report_id, &data);
+        exchange(&app, handle, HidRequest::InterruptOutput(report_id, &data), move |d| d.write(&bytes).map(|_| ()))
+    }).await
 }
 
 #[tauri::command]
 pub async fn hid_send_feature(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    off_main(move || exchange(&app, handle, move |d| d.send_feature_report(&frame(report_id, &data)))).await
+    off_main(move || {
+        let bytes = frame(report_id, &data);
+        exchange(&app, handle, HidRequest::FeatureOutput(report_id, &data), move |d| d.send_feature_report(&bytes))
+    }).await
 }
 
 // Rapport de sortie par le canal de contrôle (HidD_SetOutputReport) : collections sans point de
 // sortie « interrupt » (casque ROG Pelta)
 #[tauri::command]
 pub async fn hid_send_output(app: AppHandle, handle: u32, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    off_main(move || exchange(&app, handle, move |d| d.send_output_report(&frame(report_id, &data)))).await
+    off_main(move || exchange(&app, handle, HidRequest::Other, move |d| d.send_output_report(&frame(report_id, &data)))).await
 }
 
 // Rapport d'entrée lu à la demande (Razer Barracuda X : état du pont radio après chaque envoi)
 #[tauri::command]
 pub async fn hid_get_input(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
     off_main(move || {
-        exchange(&app, handle, move |d| {
+        exchange(&app, handle, HidRequest::Other, move |d| {
             let mut buf = vec![0u8; len.min(4096) + 1];
             buf[0] = report_id;
             let n = d.get_input_report(&mut buf)?.min(buf.len());
@@ -499,7 +570,7 @@ pub async fn hid_get_input(app: AppHandle, handle: u32, report_id: u8, len: usiz
 #[tauri::command]
 pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: usize) -> Result<Vec<u8>, String> {
     off_main(move || {
-        exchange(&app, handle, move |d| {
+        exchange(&app, handle, HidRequest::FeatureInput(report_id, len), move |d| {
             let mut buf = vec![0u8; len.min(4096) + 1];
             buf[0] = report_id;
             // Rapport 0 : hidapi compte l'octet d'ID en plus ; une réponse vide ne doit pas faire paniquer
@@ -513,6 +584,30 @@ pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn roccat_et_aula_autorisent_uniquement_les_requetes_de_lecture() {
+        let roccat = read_only_device(0x1E7D, 0x2C8E).unwrap();
+        let mut query = [0; 64];
+        query[..3].copy_from_slice(&[0x10, 0x50, 0x14]);
+        assert!(roccat.permits(HidRequest::InterruptOutput(0, &query)));
+        assert!(!roccat.permits(HidRequest::FeatureOutput(0, &query)));
+        query[3] = 1;
+        assert!(!roccat.permits(HidRequest::InterruptOutput(0, &query)));
+
+        let aula = read_only_device(0x258A, 0x0138).unwrap();
+        let mut query = [0; 519];
+        query[..7].copy_from_slice(&[0xD6, 0x44, 0, 1, 0, 0x90, 1]);
+        assert!(aula.permits(HidRequest::FeatureOutput(9, &query)));
+        assert!(aula.permits(HidRequest::FeatureInput(9, 519)));
+        assert!(!aula.permits(HidRequest::FeatureInput(9, 64)));
+        query[1] = 4;
+        assert!(!aula.permits(HidRequest::FeatureOutput(9, &query)));
+        query[1] = 0x44;
+        query[7] = 1;
+        assert!(!aula.permits(HidRequest::FeatureOutput(9, &query)));
+        assert!(!aula.permits(HidRequest::Other));
+    }
 
     #[test]
     fn vgn_seuls_les_modeles_connus_et_la_collection_de_configuration() {

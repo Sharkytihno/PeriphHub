@@ -6,6 +6,12 @@
 // Missing a text? Add the French on the left, the English on the right, and open a pull request.
 
 const I18N_EN = {
+  'Lecture seule': 'Read-only',
+  'Paliers de sensibilité (DPI)': 'Sensitivity stages (DPI)',
+  'commande refusée sur cette interface en lecture seule': 'Command denied on this read-only interface',
+  'PeriphHub lit les informations de la souris. Les réglages se font dans son logiciel habituel.': 'PeriphHub reads the mouse information. Use its original software to change settings.',
+  'Réveillez la souris pour lire ses réglages.': 'Wake the mouse to read its settings.',
+  'Collection de configuration non reconnue': 'Configuration collection not recognized',
   // ---------- Shell ----------
   'Accueil': 'Home',
   'Vue d’ensemble': 'Overview',
