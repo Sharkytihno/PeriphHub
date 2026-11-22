@@ -1,3 +1,4 @@
+import { isKeychronConfigurableReceiver, KeychronReceiverControls } from "./receiver-hid.js";
 import { KEYCHRON_8K_NORDIC_PRODUCT_IDS, KEYCHRON_M6_COMMAND_REPORT_ID as COMMAND_REPORT_ID, KEYCHRON_M6_SETTINGS_REPORT_ID as SETTINGS_REPORT_ID, KEYCHRON_M6_STATUS_COMMAND as STATUS_COMMAND, KEYCHRON_M6_STATUS_PACKET_LENGTH as PACKET_LENGTH, KEYCHRON_M6_USAGE as USAGE, KEYCHRON_M6_USAGE_PAGE as USAGE_PAGE, KEYCHRON_RECEIVERS, KEYCHRON_VENDOR_ID, } from "../../keychron/index.js";
 import { KEYCHRON_DEBOUNCE_MAX_MS as DEBOUNCE_MAX_MS, KEYCHRON_DEFAULT_DPI as DEFAULT_DPI, KEYCHRON_DPI_STAGE_COUNT as DPI_STAGE_COUNT, KEYCHRON_DPI_STEP as DEFAULT_DPI_STEP, KEYCHRON_POLLING_RATES as POLLING_RATES, KEYCHRON_SET, KEYCHRON_SLEEP_MINUTES as SLEEP_MINUTES, KEYCHRON_STANDARD_LOD as STANDARD_LOD, keychronActiveGear, keychronActiveStage, keychronButtonOptions, keychronButtons, keychronDecodeButton, keychronDecodeConnectedMouse, keychronDecodeSettings, keychronEncodeAngle, keychronEncodeButton, keychronEncodeDebounce, keychronEncodeDpi, keychronEncodeLighting, keychronEncodeSensor, keychronLauncherFirmware, keychronLauncherMouse, keychronLighting, keychronLiftOff, keychronLiftOffStops, readU16, writeU16, } from "./launcher-mouse.js";
 const QUERY_TIMEOUT_MS = 1200;
@@ -80,6 +81,17 @@ export class Keychron8kHidClient {
     constructor(device) {
         this.device = device;
     }
+    receiverControls() {
+        if (!isKeychronConfigurableReceiver(this.device))
+            throw new Error("No configurable Keychron receiver is connected.");
+        return new KeychronReceiverControls(this.query.bind(this), this.sendWithoutReply.bind(this));
+    }
+    async setKeychronReceiverButton(value) {
+        await this.receiverControls().setButtonMapping(value.button, value.action);
+    }
+    async setKeychronReceiverLighting(value) {
+        return await this.receiverControls().setLighting(value);
+    }
     /** Launcher treats any Keychron device with this collection as an "8k" mouse, so this does too. */
     static isSupported(device) {
         // The G3 Air and its Ultra-Link receivers speak the 8K Nordic protocol
@@ -103,6 +115,10 @@ export class Keychron8kHidClient {
         }
     }
     async close() {
+        if (this.depthTimer)
+            clearInterval(this.depthTimer);
+        this.depthTimer = null;
+        this.depthListeners.clear();
         if (this.openedListener) {
             this.device.removeEventListener("inputreport", this.onInputReport);
             this.openedListener = false;
@@ -140,6 +156,11 @@ export class Keychron8kHidClient {
             return this.unreachableStatus(identity);
         }
         const buttons = await this.readButtons().catch(() => null);
+        const receiver = isKeychronConfigurableReceiver(this.device)
+            ? await this.receiverControls().readStatus().catch(() => null) : null;
+        const pairing = status.features.pairing ? await this.readPairingShortcut().catch(() => null) : null;
+        const dynamicDpi = status.features.dynamicDpi ? await this.readDynamicDpi(status.profile).catch(() => null) : null;
+        const magnetic = status.features.triggerSense ? await this.readMagneticStatus(status.features.switchChoice).catch(() => null) : null;
         const light = model?.light ? await this.readLight().catch(() => null) : null;
         const pollingRateHz = POLLING_RATES[polling.table[polling.level] ?? 2] ?? 1000;
         const liftOff = this.liftOffChoices(status);
@@ -150,8 +171,13 @@ export class Keychron8kHidClient {
         return {
             brand: "Keychron",
             name,
+            ...(receiver ? { keychronReceiver: receiver } : {}),
+            keychronMouse: { pairing, dynamicDpi, factoryReset: true },
+            scrollDirection: status.scrollReversed ? "Reverse" : "Forward",
+            ...(magnetic ? { magneticButtons: magnetic } : {}),
             ui: {
                 family: "keychron-8k",
+                receiverControls: isKeychronConfigurableReceiver(this.device),
                 defaultDisplayName: name,
                 hideUnsupportedPollingRates: true,
                 forceShowBattery: true,
@@ -195,6 +221,174 @@ export class Keychron8kHidClient {
             ...(light && model?.light ? { lighting: keychronLighting(light, model.light) } : {}),
             firmware: [identity.firmware ?? "Firmware unavailable"],
         };
+    }
+    depthTimer = null;
+    depthListeners = new Set();
+    magneticWrite = false;
+    heEditTail = Promise.resolve();
+    /** Launcher polls 0x65 every 50 ms only while its travel view is visible. */
+    onButtonDepth(listener) {
+        this.depthListeners.add(listener);
+        if (!this.depthTimer)
+            this.depthTimer = setInterval(() => {
+                if (this.queryPending || this.magneticWrite || (typeof document !== "undefined" && document.hidden))
+                    return;
+                void this.readHeRecords().then((records) => {
+                    for (const notify of this.depthListeners)
+                        notify(readU16(records[0], 10) / 65 * 100, readU16(records[1], 10) / 65 * 100);
+                }).catch(() => { for (const notify of this.depthListeners)
+                    notify(NaN, NaN); });
+            }, 50);
+        return () => {
+            this.depthListeners.delete(listener);
+            if (!this.depthListeners.size && this.depthTimer) {
+                clearInterval(this.depthTimer);
+                this.depthTimer = null;
+            }
+        };
+    }
+    async readHeRecords() {
+        const reply = await this.query(COMMAND_REPORT_ID, PACKET_LENGTH, [0x65], bytes => bytes[0] === 0x65);
+        if (reply[1] !== 2 || reply.length < 46)
+            throw new Error("Invalid magnetic button report.");
+        const records = [reply.slice(2, 24), reply.slice(24, 46)];
+        const ordered = [records.find(r => r[0] === 0), records.find(r => r[0] === 2)];
+        if (!ordered[0] || !ordered[1])
+            throw new Error("Missing magnetic button record.");
+        return ordered;
+    }
+    async readMagneticStatus(choice) {
+        const records = await this.readHeRecords();
+        return {
+            buttons: records.map(r => ({
+                switchType: (r[12] & 15) === 1 ? "optical" : (r[12] & 15) === 2 ? "magnetic" : null,
+                triggerPoint: heTravelLevel(readU16(r, 5)),
+                rapidTriggerEnabled: (r[12] >> 4) <= 1 ? (r[12] >> 4) === 1 : null,
+                rapidTrigger: readU16(r, 13) >= 5 && readU16(r, 13) <= 55 && readU16(r, 13) % 5 === 0 ? readU16(r, 13) / 5 : null,
+            })),
+            triggerPointRange: { min: 1, max: 12 }, rapidTriggerRange: { min: 1, max: 11 },
+            rapidTriggerUnit: "level", rapidTriggerSwitch: true, canChooseSwitchType: choice,
+            calibration: null, liveDepth: true,
+        };
+    }
+    editHe(edit) {
+        const result = this.heEditTail.then(() => this.performHeEdit(edit));
+        this.heEditTail = result.catch(() => { });
+        return result;
+    }
+    async performHeEdit(edit) {
+        this.magneticWrite = true;
+        try {
+            const records = await this.readHeRecords();
+            edit(records);
+            const packet = new Uint8Array(PACKET_LENGTH);
+            packet.set([0x55, 2]);
+            records.forEach((r, i) => {
+                // Launcher writes configuration only; ADC and optical input bytes are read-only.
+                packet.set(r.slice(0, 17), 2 + 22 * i);
+            });
+            const reply = await this.query(COMMAND_REPORT_ID, PACKET_LENGTH, Array.from(packet), bytes => bytes[0] === ACK && bytes[2] === 0x55);
+            if (reply[1] !== 0)
+                throw new Error("The mouse rejected magnetic button settings.");
+            const confirmed = await this.readHeRecords();
+            if (confirmed.some((r, i) => r.slice(0, 9).some((v, j) => v !== records[i][j]) || r.slice(12, 17).some((v, j) => v !== records[i][12 + j]))) {
+                throw new Error("The mouse did not keep the magnetic button settings.");
+            }
+            return confirmed;
+        }
+        finally {
+            this.magneticWrite = false;
+        }
+    }
+    async setMagneticTriggerPoint(button, point) {
+        if (!Number.isInteger(point) || point < 1 || point > 12)
+            throw new Error("Actuation must be level 1 to 12.");
+        await this.editHe(records => {
+            const r = records[button];
+            const travel = 10 + (point - 1) * 5;
+            writeU16(r, 5, travel);
+            writeU16(r, 7, Math.max(5, travel - 10));
+            const rapid = Math.min(readU16(r, 13), 65 - travel);
+            r[12] = (r[12] & 15) | (rapid > 0 && (r[12] >> 4) === 1 ? 16 : 0);
+            writeU16(r, 13, rapid || 1);
+            writeU16(r, 15, rapid || 1);
+        });
+        return point;
+    }
+    async setMagneticRapidTrigger(button, enabled, level) {
+        if (!Number.isInteger(level) || level < 1 || level > 11)
+            throw new Error("Rapid trigger must be level 1 to 11.");
+        await this.editHe(records => {
+            const r = records[button];
+            if (enabled && level * 5 > 65 - readU16(r, 5))
+                throw new Error("Rapid trigger exceeds the remaining button travel.");
+            r[12] = (r[12] & 15) | (enabled ? 16 : 0);
+            writeU16(r, 13, level * 5);
+            writeU16(r, 15, level * 5);
+        });
+        return { enabled, level };
+    }
+    async setMagneticSwitchTypes(types) {
+        await this.editHe(records => records.forEach((r, i) => { r[12] = (r[12] & 240) | (types[i] === "optical" ? 1 : 2); }));
+    }
+    async setScrollDirection(direction) {
+        if (direction !== "Forward" && direction !== "Reverse")
+            throw new Error("Invalid scroll direction.");
+        const confirmed = await this.writeSensor({ ...(await this.readSettings()), scrollReversed: direction === "Reverse" });
+        if (confirmed.scrollReversed !== (direction === "Reverse"))
+            throw new Error("The mouse did not keep the scroll direction.");
+        return direction;
+    }
+    async readPairingShortcut() {
+        const r = await this.querySettings(0x0b, [2]);
+        if (r.length < 4 || (r[2] & 0xe0))
+            throw new Error("Invalid pairing shortcut.");
+        return { mask: r[2] || 9, holdTime: r[3] };
+    }
+    async setKeychronPairingShortcut(value) {
+        const count = value.mask.toString(2).replaceAll("0", "").length;
+        if (!Number.isInteger(value.mask) || value.mask < 1 || value.mask > 31 || count > 3
+            || !Number.isInteger(value.holdTime) || value.holdTime < 0 || value.holdTime > 255)
+            throw new Error("Choose one to three pairing buttons.");
+        const current = await this.readPairingShortcut();
+        const p = new Uint8Array(20);
+        p.set([0x0b, 1, value.mask, current.holdTime]);
+        await this.writeSettings(p);
+        if ((await this.readPairingShortcut()).mask !== value.mask)
+            throw new Error("The mouse did not keep the pairing shortcut.");
+    }
+    async readDynamicDpi(profile) {
+        const r = await this.query(COMMAND_REPORT_ID, PACKET_LENGTH, [0x4f, profile], b => b[0] === 0x4f && b[1] === profile);
+        const count = r[5];
+        if (!count || count > 14 || r.length < 6 + count * 4 || r[3] > 3)
+            throw new Error("Invalid dynamic DPI report.");
+        return { profile, enabled: !!(r[2] & 1), mode: r[3], points: Array.from({ length: count }, (_, i) => ({ speed: readU16(r, 6 + 4 * i), gain: r[8 + 4 * i] })) };
+    }
+    async setKeychronDynamicDpi(value) {
+        const status = await this.readSettings();
+        if (!status.features.dynamicDpi || value.profile !== status.profile)
+            throw new Error("The active dynamic DPI profile changed. Refresh first.");
+        if (!Number.isInteger(value.mode) || value.mode < 0 || value.mode > 3 || !value.points.length || value.points.length > 14
+            || value.points.some((p, i) => !Number.isInteger(p.speed) || p.speed < 0 || p.speed > 200
+                || !Number.isInteger(p.gain) || p.gain < 0 || p.gain > 56 || (i > 0 && p.speed <= value.points[i - 1].speed)))
+            throw new Error("Invalid dynamic DPI curve.");
+        const packet = new Uint8Array(PACKET_LENGTH);
+        packet.set([0x4e, value.profile, +value.enabled, value.mode, 0, value.points.length]);
+        value.points.forEach((p, i) => { writeU16(packet, 6 + 4 * i, p.speed); packet[8 + 4 * i] = p.gain; });
+        // Launcher does not wait for an ACK for 0x4e. Serialize the send, then verify with 0x4f.
+        await this.sendWithoutReply(COMMAND_REPORT_ID, packet);
+        const confirmed = await this.readDynamicDpi(value.profile);
+        if (confirmed.profile !== value.profile || confirmed.enabled !== value.enabled || confirmed.mode !== value.mode
+            || confirmed.points.length !== value.points.length || confirmed.points.some((point, i) => point.speed !== value.points[i].speed || point.gain !== value.points[i].gain)) {
+            throw new Error("The mouse did not keep the dynamic DPI settings.");
+        }
+    }
+    async resetKeychronMouse() {
+        await this.setDebounceTime(8);
+        const packet = new Uint8Array(20);
+        packet.set([0x0f, 0xff]);
+        await this.writeSettings(packet);
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
     async setDpi(dpi) {
         const current = await this.readDpi(await this.readSettings(), await this.readIdentity());
@@ -696,7 +890,41 @@ export class Keychron8kHidClient {
             throw new Error(`The ${this.label} rejected command 0x${command.toString(16)} (code ${reply[1]}).`);
         }
     }
+    queryTail = Promise.resolve();
+    queryPending = 0;
+    async sendWithoutReply(reportId, packet) {
+        const previous = this.queryTail;
+        let release;
+        this.queryPending++;
+        this.queryTail = new Promise(resolve => { release = resolve; });
+        try {
+            await previous;
+            if (!this.device.opened)
+                throw new Error("The mouse was disconnected.");
+            await this.device.sendReport(reportId, packet.buffer);
+        }
+        finally {
+            this.queryPending--;
+            release();
+        }
+    }
     async query(reportId, length, payload, match) {
+        this.queryPending++;
+        const previous = this.queryTail;
+        let release;
+        this.queryTail = new Promise(resolve => { release = resolve; });
+        try {
+            await previous;
+            return await this.executeQuery(reportId, length, payload, match);
+        }
+        finally {
+            this.queryPending--;
+            release();
+        }
+    }
+    async executeQuery(reportId, length, payload, match) {
+        if (!this.device.opened)
+            throw new Error("The mouse was disconnected.");
         if (this.responseWaiter)
             throw new Error(`Another ${this.label} request is already in progress.`);
         const packet = new Uint8Array(length);
@@ -740,6 +968,10 @@ function decodeFeatures(feature1, feature2, feature3, feature4) {
         pollingGears: (feature1 & 0x10) !== 0,
         fps20k: (feature1 & 0x80) !== 0,
         angle: (feature2 & 0x04) !== 0,
+        triggerSense: (feature2 & 0x68) !== 0,
+        switchChoice: (feature2 & 0x08) !== 0,
+        pairing: (feature2 & 0x02) !== 0,
+        dynamicDpi: (feature4 & 0x20) !== 0,
         separateDpi: (feature3 & 0x01) !== 0,
         separatePolling: (feature3 & 0x02) !== 0,
         lodLevel: (feature4 & 0x10) !== 0,
@@ -750,4 +982,7 @@ function decodeFirmwareNibbles(bytes) {
     if (bytes.length < 9)
         return null;
     return `v${bytes[8]}.${(bytes[7] ?? 0) >> 4}.${(bytes[7] ?? 0) & 0x0f}`;
+}
+function heTravelLevel(raw) {
+    return raw >= 10 && raw <= 65 && (raw - 10) % 5 === 0 ? 1 + (raw - 10) / 5 : null;
 }

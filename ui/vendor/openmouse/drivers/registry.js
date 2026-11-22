@@ -1,3 +1,4 @@
+import { RedgearX13HidClient } from "./redgear/hid.js";
 import { AsusHidClient } from "./asus/hid.js";
 import { AtkBitmouseHidClient } from "./atk/bitmouse-hid.js";
 import { AtkHidClient } from "./atk/hid.js";
@@ -84,19 +85,28 @@ import { MicrosoftHidClient } from "./microsoft/hid.js";
 import { MotospeedHidClient } from "./motospeed/hid.js";
 import { DareuHidClient } from "./dareu/hid.js";
 import { RedragonHidClient } from "./redragon/hid.js";
+import { AulaSc380ProHidClient } from "./aula/hid.js";
 import { RedragonM690ProHidClient } from "./redragon/m690-pro-hid.js";
+import { RedragonM719ProHidClient } from "./redragon/m719-pro-hid.js";
 import { FaterHidClient } from "./fater/hid.js";
+import { ThermaltakeHidClient, thermaltakeChannel } from "./thermaltake/hid.js";
 import { IncottHidClient } from "./incott/hid.js";
 import { HyperXHidClient } from "./hyperx/hid.js";
 import { MchoseV3HidClient } from "./mchose/v3-hid.js";
 import { KyuProMx1Client } from "./ryunix/kyu-pro-mx1-hid.js";
+import { AmketteXsHidClient } from "./amkette/xs-hid.js";
 import { BytechHidClient } from "./bytech/hid.js";
 import { RapooHidClient } from "./rapoo/hid.js";
 import { CoolerMasterHidClient } from "./coolermaster/hid.js";
 import { AjazzHidClient } from "./ajazz/hid.js";
+import { AjazzAj200pHidClient } from "./ajazz/aj200p-hid.js";
 import { AjazzAk820HidClient } from "./ajazz/ak820-hid.js";
+import { RoccatHidClient } from "./roccat/hid.js";
 import { HitscanHidClient } from "./hitscan/hid.js";
+import { HitscanXviHidClient } from "./hitscan/xvi-hid.js";
 export const DEVICE_DRIVERS = [
+    { brand: "AULA", supports: (device) => AulaSc380ProHidClient.isSupported(device), create: (device) => new AulaSc380ProHidClient(device), score: () => 9 },
+    { brand: "Redgear", supports: (device) => RedgearX13HidClient.isSupported(device), create: (device) => new RedgearX13HidClient(device), score: () => 7 },
     { brand: "IPI", supports: (device) => BytechHidClient.isSupported(device), create: (device) => new BytechHidClient(device), score: () => 9 },
     { brand: "ASUS", supports: (device) => AsusHidClient.isSupported(device), create: (device) => new AsusHidClient(device), score: () => 10, },
     { brand: "Dareu", supports: (device) => DareuHidClient.isSupported(device), create: (device) => new DareuHidClient(device), score: () => 9 },
@@ -105,6 +115,9 @@ export const DEVICE_DRIVERS = [
     // product id, and the client refuses a settings block that is not the
     // M690 PRO's.
     { brand: "Redragon", supports: (device) => RedragonM690ProHidClient.isSupported(device), create: (device) => new RedragonM690ProHidClient(device), score: () => 9 },
+    // Shares Compx/Areson's 0x25a7 with AttackSharkHidClient; disjoint by
+    // product id (0xfa7e/0xfab0) and usage page (0xff02/0xff01 vs 0xffff).
+    { brand: "Redragon", supports: (device) => RedragonM719ProHidClient.isSupported(device), create: (device) => new RedragonM719ProHidClient(device), score: (device) => RedragonM719ProHidClient.supportScore(device) },
     // Shares Holtek's 0x04d9 with Redragon; disjoint by product id and by usage
     // page (0xff00 here, 0xffa0 there).
     { brand: "Fater", supports: (device) => FaterHidClient.isSupported(device), create: (device) => new FaterHidClient(device), score: () => 7 },
@@ -213,21 +226,38 @@ export const DEVICE_DRIVERS = [
     // Shares VIDs 0xA8A4/0xA8A5 and the 0xFF01:0x10 collection with K-snake; the
     // two stay disjoint by product id (K-snake owns 0x2255).
     { brand: "AJAZZ", supports: (device) => AjazzHidClient.isSupported(device), create: (device) => new AjazzHidClient(device), score: () => 7 },
+    { brand: "AJAZZ", supports: (device) => AjazzAj200pHidClient.isSupported(device), create: (device) => new AjazzAj200pHidClient(device), score: () => 7 },
     { brand: "Microsoft", supports: (device) => MicrosoftHidClient.isSupported(device), create: (device) => new MicrosoftHidClient(device), score: () => 5 },
     // Shares vendor id 0x093a with Glorious (see vendors.ts), but claims only
     // its own two product ids, so the two drivers never contend for a device.
     { brand: "Incott", supports: (device) => IncottHidClient.isSupported(device), create: (device) => new IncottHidClient(device), score: () => 8 },
     { brand: "HyperX", supports: (device) => HyperXHidClient.isSupported(device), create: (device) => new HyperXHidClient(device), score: () => 5 },
     { brand: "Ryunix", supports: (device) => KyuProMx1Client.isSupported(device), create: (device) => new KyuProMx1Client(device), score: () => 7 },
+    // Shares VID 0x04F3 and both Ryunix product IDs; disjoint by the configuration
+    // collection's usage (0x00 here, 0xC7 for the Kyu Pro MX1).
+    { brand: "Amkette", supports: (device) => AmketteXsHidClient.isSupported(device), create: (device) => new AmketteXsHidClient(device), score: () => 7 },
     // Rapoo owns vendor id 0x24AE and the 0xFF00:0x000E configuration
     // collection, neither of which another driver claims, so the two product ids
     // can be the whole matcher.
     { brand: "Rapoo", supports: (device) => RapooHidClient.isSupported(device), create: (device) => new RapooHidClient(device), score: () => 7 },
     { brand: "Cooler Master", supports: (device) => CoolerMasterHidClient.isSupported(device), create: (device) => new CoolerMasterHidClient(device), score: () => 7 },
     { brand: "AJAZZ", supports: (device) => AjazzAk820HidClient.isSupported(device), create: (device) => new AjazzAk820HidClient(device), score: () => 7 },
-    // Hitscan owns vendor id 0x3770, which no other driver claims.
+    // Hitscan owns vendor id 0x3770, which no other driver claims. Two protocol
+    // generations coexist: the current web/control.hitscan.com channel is a
+    // 64-byte feature report 0, while the native Utility uses report 8. The
+    // shapes are disjoint, so each interface reaches its own client.
+    { brand: "Hitscan", supports: (device) => HitscanXviHidClient.isSupported(device), create: (device) => new HitscanXviHidClient(device), score: () => 10 },
     { brand: "Hitscan", supports: (device) => HitscanHidClient.isSupported(device), create: (device) => new HitscanHidClient(device), score: () => 7 },
+    // ROCCAT shares no vendor id entry with any driver above, and its 0xFF00:1
+    // output channel is claimed by product id so the wired generation can add
+    // its own entry without contending.
+    { brand: "ROCCAT", supports: (device) => RoccatHidClient.isSupported(device), create: (device) => new RoccatHidClient(device), score: () => 6 },
+    // Thermaltake owns vendor id 0x264a, which no other driver claims. Chrome on
+    // Windows hides the config collection; the mouse interface still switches
+    // profiles, and the keyboard interface alone is status only.
+    { brand: "Thermaltake", supports: (device) => ThermaltakeHidClient.isSupported(device), create: (device) => new ThermaltakeHidClient(device), score: (device) => THERMALTAKE_CHANNEL_SCORE[thermaltakeChannel(device) ?? "none"] },
 ];
+const THERMALTAKE_CHANNEL_SCORE = { config: 7, short: 5, none: 2 };
 function driverFor(device) {
     return DEVICE_DRIVERS.find((driver) => driver.supports(device));
 }
@@ -247,6 +277,8 @@ export function deviceBrand(client) {
     if (client instanceof DeluxHidClient)
         return client.deviceBrand();
     if (client instanceof AttackSharkHidClient)
+        return client.deviceBrand();
+    if (client instanceof AmketteXsHidClient)
         return client.deviceBrand();
     if (client instanceof KsnakeHidClient && isNoirM2NexDevice(client.device))
         return "Noir Gear";

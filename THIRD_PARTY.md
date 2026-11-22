@@ -6,7 +6,7 @@
 | [OpenRGB](https://openrgb.org) | 1.1 | GPL-2.0 | Livré tel quel (`resources/openrgb/`, version portable officielle pour Windows 64 bits), lancé sans fenêtre comme serveur SDK : éclairage des cartes mères, ventilateurs, mémoire, cartes graphiques… | [release_1.1](https://codeberg.org/OpenRGB/OpenRGB/releases/tag/release_1.1) |
 | [PawnIO](https://pawnio.eu) | 2.2.0 | GPL-2.0 | Installeur officiel signé livré tel quel (`resources/PawnIO_setup.exe`), lancé sans fenêtre seulement quand l'utilisateur active l'éclairage de la mémoire (une validation Windows) : pilote qui donne à OpenRGB l'accès au bus SMBus (barrettes de mémoire, puces de la carte mère) | [PawnIO](https://github.com/namazso/PawnIO) |
 | [G-Helper](https://github.com/seerge/g-helper) | — | GPL-3.0 | Référence seulement (aucun code copié) : identifiants de l'interface ATK de l'ACPI des portables ASUS (vitesse des ventilateurs, profils, courbes de 8 points), réécrits dans `sensors/PeriphHubSensors.cs` | [app/AsusACPI.cs](https://github.com/seerge/g-helper/blob/main/app/AsusACPI.cs) |
-| [OpenMouse protocol](https://github.com/OpenMouse-Project/mouse-protocol) (`@openmouse/protocol`) | 0.49.0 | AGPL-3.0-or-later | Copié tel quel dans `ui/vendor/openmouse/` (seuls les chemins d'import sont réécrits, par `scripts/vendor-openmouse.py`) : réglages des souris de ~50 marques (Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE…). Les fonctions de mise à jour du firmware ne sont jamais appelées. | [npm](https://www.npmjs.com/package/@openmouse/protocol) |
+| [OpenMouse protocol](https://github.com/OpenMouse-Project/mouse-protocol) (`@openmouse/protocol`) | 0.60.0 | AGPL-3.0-or-later | Importé dans `ui/vendor/openmouse/` par `scripts/vendor-openmouse.py` : réglages des souris de ~50 marques (Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE…). Les fonctions de mise à jour du firmware ne sont jamais appelées. | [npm](https://www.npmjs.com/package/@openmouse/protocol) |
 | [OpenMouse keyboard protocol](https://github.com/OpenMouse-Project) (`@openmouse/keyboard-protocol`) | 1.6.1 | AGPL-3.0-or-later | Copié tel quel dans `ui/vendor/openmouse-kb/` (chemins d'import réécrits) : point d'activation et rapid trigger des claviers Wooting et SteelSeries Apex Pro, fréquence et luminosité Razer / Logitech. | [npm](https://www.npmjs.com/package/@openmouse/keyboard-protocol) |
 
 Exécutable officiel non modifié, téléchargé par `scripts/fetch-headsetcontrol.ps1` et vérifié par
@@ -21,11 +21,10 @@ et lancée comme service Windows (`PeriphHubOpenRGB`, `src-tauri/src/openrgb_ser
 fichier par fichier à son arrivée. PawnIO : installeur vérifié par empreinte SHA-256 (`1f519a22…ba3032`)
 avant d'être lancé.
 
-Les pilotes ROCCAT Kone Pro Air et AULA SC380 Pro sont également importés de
+PeriphHub ouvre uniquement la collection de configuration des souris ROCCAT Kone Pro Air et AULA
+SC380 Pro. La passerelle Windows filtre leurs commandes autorisées à la lecture. Lors de l'import,
+le [correctif CompX et VGN](scripts/patches/openmouse-0.60.0.patch) est appliqué à
 [OpenMouse 0.60.0](https://github.com/OpenMouse-Project/mouse-protocol/releases/tag/v0.60.0).
-PeriphHub ouvre uniquement leur collection de configuration et la passerelle Windows filtre
-les commandes autorisées à la lecture. Le reste de l'intégration OpenMouse reste en 0.49.0, avec
-les adaptations PeriphHub des souris Scyrox, Attack Shark et VGN.
 
 ## Code adapté
 

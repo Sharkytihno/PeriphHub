@@ -36,9 +36,10 @@ const SENDS = 5;
 const POLLING_CODES = new Map([
     [125, 8], [250, 4], [500, 2], [1000, 1], [2000, 32], [4000, 64], [8000, 128],
 ]);
-// ponytail: every XVI model gets the PAW3395 limits (50-26,000 DPI, 1/2 mm
-// lift-off). The 30,000 DPI models (VUK, Fenrir, Fenir Max, HTS Ultra, HT-S2
-// Pro) also offer 0.7 mm; add per-product limits when one of them is tested.
+// ponytail: every XVI model gets the PAW3395 DPI limit (50-26,000). The
+// 30,000 DPI models (VUK, Fenrir, Fenir Max, HTS Ultra, HT-S2 Pro) also offer
+// a 0.7 mm lift-off (`shortLiftOff`), which the web driver writes as
+// mm * 10 when below 1 mm: 0.7 mm is 7, 1 mm is 1, 2 mm is 2.
 const DPI_STEP = 50;
 const DPI_MAX = 26_000;
 // The web driver's sleep slider, in seconds; the mouse reports "never" as
@@ -110,13 +111,18 @@ export class GWolvesXviHidClient {
             values.push(dpi);
         return values;
     }
+    get liftOffCodes() {
+        return this.product.shortLiftOff
+            ? new Map([["Low", 7], ["Medium", 1], ["High", 2]])
+            : new Map([["Low", 1], ["High", 2]]);
+    }
     get supportedPollingRates() {
         // Wired and the ACE models' 1K receivers (PIDs ending 0x03) stop at 1 kHz;
         // the 4K dongles (PIDs ending 0x07, the _4KDongle entries in
         // env-models.json) stop at 4 kHz; every other XVI receiver in that config
         // is its 8K dongle.
         const lowByte = this.device.productId & 0xff;
-        const max = this.isWirelessPath() ? (lowByte === 0x03 ? 1000 : lowByte === 0x07 ? 4000 : 8000) : 1000;
+        const max = this.isWirelessPath() ? (lowByte === 0x03 || lowByte === 0xaa ? 1000 : lowByte === 0x07 ? 4000 : 8000) : 1000;
         return [...POLLING_CODES.keys()].filter((rate) => rate <= max);
     }
     async open() {
@@ -161,7 +167,7 @@ export class GWolvesXviHidClient {
             rippleControl: null,
             performanceMode: null,
             liftOffDistance,
-            supportedLiftOffDistances: ["Low", "High"],
+            supportedLiftOffDistances: [...this.liftOffCodes.keys()],
             firmware: [`Mouse ${firmware.slice(6, 10).join(".")}`],
             ...(buttons ? { buttonMappings: this.decodeButtons(buttons), buttonOptions: [...BUTTON_ACTIONS.keys()] } : {}),
             ui: {
@@ -200,9 +206,10 @@ export class GWolvesXviHidClient {
         return confirmed;
     }
     async setLiftOffDistance(value) {
-        if (value === "Medium")
+        const code = this.liftOffCodes.get(value);
+        if (code === undefined)
             throw new Error(`The ${this.product.model} offers only the 1 mm and 2 mm lift-off distances.`);
-        await this.transact(gwolvesXviLegacy(1, 0x06, this.isWirelessPath(), [value === "Low" ? 1 : 2]));
+        await this.transact(gwolvesXviLegacy(1, 0x06, this.isWirelessPath(), [code]));
         const confirmed = await this.readLiftOffDistance();
         if (confirmed !== value)
             throw new Error(`The ${this.product.model} kept ${confirmed ?? "an unknown"} LOD instead of ${value}.`);
@@ -306,7 +313,7 @@ export class GWolvesXviHidClient {
     }
     async readLiftOffDistance() {
         const raw = (await this.transact(gwolvesXviLegacy(1, 0x86, this.isWirelessPath())))[4];
-        return raw === 1 ? "Low" : raw === 2 ? "High" : null;
+        return [...this.liftOffCodes].find(([, code]) => code === raw)?.[0] ?? null;
     }
     async readDpiStages() {
         const table = await this.transact(gwolvesXviFrame(10, 1, 0x81, [PROFILE, MAX_STAGES]));

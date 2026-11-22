@@ -9,6 +9,7 @@
 use crate::pnp::HidIface;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasher, RandomState};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -140,6 +141,7 @@ type DescSlot = Arc<Mutex<Option<Result<Vec<u8>, String>>>>;
 #[derive(Serialize, Clone)]
 pub struct HidInfo {
     pub path: String,
+    pub unit: Option<String>,
     pub vid: u16,
     pub pid: u16,
     pub usage_page: u16,
@@ -173,6 +175,8 @@ struct Tally {
 
 #[derive(Default)]
 pub struct Hid {
+    // Identité de session pour la WebView. Le conteneur Windows reste côté Rust.
+    units: RandomState,
     open: Mutex<HashMap<u32, Arc<Open>>>,
     next: AtomicU32,
     descriptors: Mutex<HashMap<String, Vec<u8>>>,
@@ -326,6 +330,7 @@ fn devices_now(hid: &Hid) -> Result<Vec<HidInfo>, String> {
         };
         out.push(HidInfo {
             path: d.path,
+            unit: d.container.map(|id| format!("{:016x}", hid.units.hash_one(id))),
             vid: d.vid,
             pid: d.pid,
             usage_page: d.usage_page,

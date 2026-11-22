@@ -1,5 +1,0 @@
-@openmouse/protocol 0.60.0
-Import limité aux pilotes ROCCAT et AULA.
-https://github.com/OpenMouse-Project
-Licence : AGPL-3.0-or-later (voir LICENSE). Copié par scripts/vendor-openmouse.py, non modifié
-à part les chemins d'import.

@@ -3,6 +3,16 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.4
+
+- OpenMouse passe en 0.60.0. L'import conserve les corrections PeriphHub pour les souris VGN
+  et les récepteurs CompX partagés entre Scyrox et Attack Shark.
+- OpenMouse regroupe les collections d'un périphérique par appareil physique, y compris lorsque
+  deux appareils ont les mêmes identifiants USB. Un clavier et une souris qui partagent le
+  même identifiant sont évalués séparément.
+- Les pilotes ROCCAT Kone Pro Air et AULA SC380 Pro utilisent la même bibliothèque et restent en
+  lecture seule avec le même filtrage des commandes dans la passerelle Windows.
+
 ## 2.1.3
 
 - Lecture des paliers DPI de la ROCCAT Kone Pro Air, sur câble et dongle. L'éclairage reste

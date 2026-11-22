@@ -1,7 +1,7 @@
 import { WE_CMD_READ_EEPROM, WE_CMD_WRITE_EEPROM, WE_REPORT_ID, weBuildCmdPayload, wePackScalarPair, weReportChecksum, weUnpackScalarPair, } from "../../endgame-gear/wireless.js";
 import { VENDOR_ID } from "../vendors.js";
 import { ATK_COMPX_COMMAND, ATK_R1_BUTTONS, ATK_R1_PROFILE_COUNT, ATK_SENSOR_PERFORMANCE_REGISTER, ATK_ANTI_MISTOUCH_OFFSET, ATK_VXE_R1_ANGLE_SELECTOR, ATK_VXE_R1_DEBOUNCE_SELECTOR, ATK_VXE_R1_LOD_SELECTOR, ATK_VXE_R1_POLLING_RATES, ATK_VXE_R1_SETTINGS_REGISTER, ATK_SENSORS, ATK_LIFT_OFF_MIN_CODE, ATK_LIFT_OFF_MAX_CODE, atkBuildReceiverPairRequest, atkBuildSetCurrentProfile, atkBuildDongleLight, atkDecodeAntiMistouch, atkDecodeLiftOff, atkDecodeSensorMode, atkDecodeButtonAssignment, atkDecodeCurrentProfile, atkDecodePairingStatus, atkDecodeReceiverStatus, atkDecodeVxeR1PollingCode, atkDpiOptionsForSensor, atkDpiStageLength, atkPackDpiStage, atkPackDpiStageForSensor, atkPackSensorMode, atkPackAntiMistouch, atkPackVxeR1LiveSetting, atkPackVxeR1PollingSetting, atkUnpackDpiStage, atkUnpackDpiStageForSensor, } from "../../atk/index.js";
-import { ATK_COMPX_PRODUCT_IDS, ATK_PRODUCTS, atkCatalogDevice, atkCatalogSensorToSensor } from "./products.js";
+import { ATK_COMPX_PRODUCT_IDS, ATK_PRODUCTS, atkCatalogDevice, atkCatalogSensorForCidMid, atkCatalogSensorToSensor } from "./products.js";
 // ATK mice (A9 family and siblings) use the same OEM framing as the Endgame
 // Gear WE series — 16-byte EEPROM commands on report 0x08 — but carry them on
 // output/input reports rather than feature reports.
@@ -1328,7 +1328,7 @@ export class AtkHidClient {
     sensorKey() {
         if (this.product)
             return this.product.sensor;
-        return atkCatalogSensorToSensor(this.catalogEntry()?.sensor ?? null);
+        return atkCatalogSensorToSensor(this.catalogEntry()?.sensor ?? null) ?? atkCatalogSensorForCidMid(this.cidMid);
     }
     usesSharedR1Transport() {
         return this.device.productId === VXE_R1_RECEIVER_PID

@@ -37,6 +37,24 @@ test('OpenMouse : souris 3151 toujours reconnue', () => {
   assert.equal(om.claims(mouse[2], mouse), true);
 });
 
+test('OpenMouse : clavier et souris du même VID:PID sont isolés par conteneur Windows', t => {
+  window.__TAURI__ = {};
+  t.after(() => delete window.__TAURI__);
+  const tag = (devices, unit) => devices.map((d, i) => ({
+    ...d,
+    productId: 0x502D,
+    info: { ...d.info, path: unit + i, unit },
+  }));
+  const keyboard = tag(x68, 'clavier');
+  const pointer = tag(mouse, 'souris');
+  const all = [...keyboard, ...pointer];
+  assert.equal(om.claims(keyboard[3], all), false);
+  assert.equal(om.claims(pointer[2], all), true);
+
+  const unrelated = { ...pointer[0], info: { ...pointer[0].info, unit: undefined, path: 'autre' } };
+  assert.equal(om.claims(unrelated, [unrelated, ...pointer]), false);
+});
+
 const reader = om.readOnlyDriver;
 const mockReader = (vid, pid, page, usage, mi, featureReports = []) => Object.assign(new EventTarget(), {
   vendorId: vid, productId: pid,
@@ -80,6 +98,7 @@ test('OpenMouse : AULA valide le modèle puis lit les rapports de 519 octets', a
   assert.equal(reader.match(mockReader(0x258A, 0x0138, 0xFF02, 2, 1)), false);
 
   const mouse = mockReader(0x258A, 0x0138, 0xFF02, 2, 1, [{ reportId: 9 }]);
+  assert.equal(om.driver.match(mouse), false);
   const requests = [];
   let request;
   mouse.sendFeatureReport = async (id, data) => {

@@ -1,0 +1,146 @@
+--- a/ui/vendor/openmouse/drivers/scyrox/hid.js
++++ b/ui/vendor/openmouse/drivers/scyrox/hid.js
+@@ -1,5 +1,6 @@
+ import { LamzuAtlantisHidClient } from "../lamzu-atlantis/hid.js";
+ import { SCYROX_V8S_20K_ADDRESS, scyroxProduct } from "../../scyrox/index.js";
++import { LAMZU_ATLANTIS_FLASH as FLASH, LAMZU_ATLANTIS_SENSOR3955_STAGE_STRIDE as SENSOR3955_STAGE_STRIDE, LAMZU_ATLANTIS_STAGE_STRIDE as STAGE_STRIDE, lamzuAtlantisFieldIsIntact, } from "../../lamzu/index.js";
+ /**
+  * Scyrox's CompX generation: the V8S mouse (wired 0x3554:0xf515) and its
+  * "Turbo 8k" dongle (0x3554:0xf517). The Atlantis client does the talking —
+@@ -15,6 +16,14 @@
+  * writes inherit the Atlantis client's write-then-read-back behavior and still
+  * need hardware verification one by one.
+  *
++ * PeriphHub (1.5.3): CompX ships the same 0xf517 dongle with other brands' mice
++ * (an "ATTACK SHARK Mouse" Attack Shark V8, diagnostic #17) whose sensor is not
++ * the 3955: the six-byte records at flash 6912 are blank there and the read
++ * failed with "corrupt DPI stage". The layout is now probed once per session —
++ * the 3955 records when their seal holds, else the legacy four-byte fields
++ * when theirs does — and a non-Scyrox mouse drops the Scyrox-only extras
++ * (20K switch, 3955 lift-off scale, 50,000 DPI ceiling).
++ *
+  * The older V8's "SCYROX 8K Dongle" (0x3554:0xf5f7) answers the same
+  * sequence; its 3950 sensor keeps the stages in the legacy fields, which the
+  * catalog entry selects. Its full read and a polling-rate round trip are
+@@ -23,6 +32,7 @@
+ export class ScyroxHidClient extends LamzuAtlantisHidClient {
+     constructor(device) {
+         super(device, scyroxProduct(device.vendorId, device.productId) ?? null);
++        this.layoutProbed = false;
+     }
+     static isSupported(device) {
+         return scyroxProduct(device.vendorId, device.productId) !== undefined
+@@ -30,6 +40,53 @@
+     }
+     /** The "20K" switch is a Scyrox-only byte, so the catalog cannot carry it. */
+     turboModeAddress() {
+-        return SCYROX_V8S_20K_ADDRESS;
++        return this.isOtherBrand() ? null : SCYROX_V8S_20K_ADDRESS;
++    }
++    isOtherBrand() {
++        return this.productOverride?.otherBrand === true;
++    }
++    async readStatus(live = false) {
++        if (!this.layoutProbed)
++            await this.probeDpiLayout();
++        return await super.readStatus(live);
++    }
++    /** Reads stage 0 in both layouts; keeps the catalog's one unless only the legacy seal holds. */
++    async probeDpiLayout() {
++        await this.open();
++        await this.transaction(async () => {
++            const base = this.productOverride;
++            if (!base || base.dpiLayout !== "sensor3955") {
++                this.layoutProbed = true;
++                return;
++            }
++            const record3955 = await this.readRaw(FLASH.sensor3955DpiValues, SENSOR3955_STAGE_STRIDE);
++            if (lamzuAtlantisFieldIsIntact(record3955)) {
++                this.layoutProbed = true;
++                return;
++            }
++            const legacy = await this.readRaw(FLASH.dpiValues, STAGE_STRIDE);
++            if (lamzuAtlantisFieldIsIntact(legacy) && base.otherBrand) {
++                // Already another brand in the catalog (VGN on 0x391D): keep its identity
++                this.productOverride = { ...base, dpiLayout: "legacy", maxDpi: Math.min(base.maxDpi, 26000), liftOffMillimetres: undefined };
++            }
++            else if (lamzuAtlantisFieldIsIntact(legacy)) {
++                const name = (this.device.productName || "").trim();
++                const brand = /attack\s*shark/i.test(name) ? "Attack Shark" : (name || "CompX");
++                this.productOverride = {
++                    ...base,
++                    brand,
++                    model: brand === "Attack Shark" ? "V8" : "(dongle 8K)",
++                    dpiLayout: "legacy",
++                    verified: false,
++                    otherBrand: true,
++                    // PAW3395/3950-class ceiling; the legacy record itself encodes up to 51,200.
++                    maxDpi: 26000,
++                    liftOffMillimetres: undefined,
++                    supportsAngleTuning: false,
++                };
++            }
++            // Neither seal holds: keep the catalog layout so the read still fails loudly.
++            this.layoutProbed = true;
++        });
+     }
+ }
+--- a/ui/vendor/openmouse/scyrox/index.js
++++ b/ui/vendor/openmouse/scyrox/index.js
+@@ -139,7 +139,56 @@
+             mirrorSleepToPerformanceTime: true,
+         }],
+ ]);
++/**
++ * PeriphHub (1.9.0): VGN's own vendor id 0x391D. VGN's web configurator
++ * (hub.vgnlab.com) drives these mice with the same class it uses for its CompX
++ * models on 0x3554 (family "vgn-y2": report 8 on usage page 0xFF02, flash read
++ * 0x08 / write 0x07, per-field seal, 3955 stage records at 6912 or legacy
++ * fields at 12 chosen by sensor, rate bytes 1000/rate below 1 kHz and
++ * rate/2000*16 above — CompX's "pulsar" family). The stage layout is probed on
++ * the mouse (ScyroxHidClient.probeDpiLayout), never assumed. Not verified on
++ * hardware: every product is unverified and drops the Scyrox-only extras.
++ */
++export const VGN_COMPX_VENDOR_ID = 0x391d;
++const vgnCompx = (model, wireless) => ({
++    brand: "VGN",
++    model,
++    wireless,
++    pollingRates: RATES_V8S,
++    rateFamily: "pulsar",
++    dpiLayout: "sensor3955",
++    verified: false,
++    otherBrand: true,
++    minDpi: 50,
++    maxDpi: 30000,
++    dpiStep: 50,
++    maxDpiStages: 8,
++    supportsHyperMode: false,
++    supportsAngleTuning: false,
++    supportsFactoryReset: false,
++});
++/** From the configurator's device table: wired mouse, then its receiver (receiver: true). */
++export const VGN_COMPX_PRODUCTS = new Map([
++    [0x1005, vgnCompx("Dragonfly 3 Master", false)],
++    [0x1a05, vgnCompx("Dragonfly 3 Master", true)],
++    [0x101d, vgnCompx("Dragonfly 3 MasterGT", false)],
++    [0x1a1a, vgnCompx("Dragonfly 3 MasterGT", true)],
++    [0x1034, vgnCompx("Dragonfly Y2 V2 MasterGT", false)],
++    [0x1a2f, vgnCompx("Dragonfly Y2 V2 MasterGT", true)],
++    [0x1032, vgnCompx("Dragonfly F2 MasterGT", false)],
++    [0x102d, vgnCompx("Dragonfly F2 MasterGT", true)],
++    [0x1038, vgnCompx("Dragonfly F1 V2 SE+", false)],
++    [0x1a32, vgnCompx("Dragonfly F1 V2 SE+", true)],
++    [0x1036, vgnCompx("Dragonfly F2 Turbo+", false)],
++    [0x1a31, vgnCompx("Dragonfly F2 Turbo+", true)],
++    [0x1035, vgnCompx("Dragonfly F2 Turbo", false)],
++    [0x1a30, vgnCompx("Dragonfly F2 Turbo", true)],
++    [0x1039, vgnCompx("Dragonfly 3 MINI SE+", true)],
++    [0x1a33, vgnCompx("Dragonfly 3 MINI SE+", false)],
++]);
+ export function scyroxProduct(vendorId, productId) {
++    if (vendorId === VGN_COMPX_VENDOR_ID)
++        return VGN_COMPX_PRODUCTS.get(productId);
+     if (vendorId !== SCYROX_VENDOR_ID)
+         return undefined;
+     return SCYROX_PRODUCTS.get(productId);

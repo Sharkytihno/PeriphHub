@@ -1,4 +1,4 @@
-import { COMPX_HEADER_LENGTH as HEADER_LENGTH, COMPX_PACKET_LENGTH as PACKET_LENGTH, COMPX_REPORT_ID as REPORT_ID, COMPX_STATUS as STATUS, compaxDecodeDpiStages, compaxDecodeFirmware, compaxDecodeLiftOff, compaxDecodePollingRate, compaxDecodeSleep, compaxEncodeRequest, LAMZU_POLLING_RATES as POLLING_RATES, LAMZU_VENDOR_IDS, lamzuProduct, LUNAFURY_READ, LUNAFURY_WRITE, lunafuryDecodeAngle, lunafuryDecodeLightning, lunafuryDecodeButtonDebounce, lunafuryDecodeWheelGuard, LUNAFURY_ONBOARD_READ, LUNAFURY_ONBOARD_WRITE, LUNAFURY_DPI_DEFAULTS, lunafuryDecodeButtonRate, lunafuryDecodeSeparateAxes, lunafuryDecodeDpiStages, lunafuryDecodeDpiStorage, lunafuryWriteDpiStorage, lunafuryValidateDpi, lunafuryWriteDpiStages, LUNAFURY_BUTTON_IDS, LUNAFURY_BUTTON_ACTIONS, lunafuryButtonActionWritable, lunafuryDecodeButton, lunafuryDecodeButtonAction, lunafuryIsMappedButton, lunafuryReadButton, lunafuryWriteButton, LUNAFURY_SLEEP_OPTIONS, lunafuryEncodeSleep, lunafuryDecodeSleep, lunafuryReceiverLightTarget, lunafuryReadReceiverLight, lunafuryWriteReceiverLight, lunafuryDecodeReceiverLight, lunafuryReadBottomButton, lunafuryWriteBottomButton, lunafuryDecodeBottomButton, MAGNETIC_CALIBRATION_ERRORS, MAGNETIC_CALIBRATION_STATE, MAGNETIC_CALIBRATION_STEPS, MAGNETIC_RAPID_TRIGGER_MAX_MS, MAGNETIC_RELEASE_FOLLOWS, MAGNETIC_SWITCH, MAGNETIC_TRAVEL_MAX, magneticCalibrationPrompt, magneticDecodeCalibration, magneticDecodeEid, magneticDecodeFault, magneticDecodeRapidTrigger, magneticDecodeSwitchTypes, magneticDecodeTravel, magneticRead, magneticWrite, } from "../../lamzu/index.js";
+import { COMPX_HEADER_LENGTH as HEADER_LENGTH, COMPX_PACKET_LENGTH as PACKET_LENGTH, COMPX_REPORT_ID as REPORT_ID, COMPX_STATUS as STATUS, compaxDecodeDpiStages, compaxDecodeFirmware, compaxDecodeLiftOff, compaxDecodePollingRate, compaxDecodeSleep, compaxEncodeRequest, LAMZU_POLLING_RATES as POLLING_RATES, LAMZU_INCA_VENDOR_ID, LAMZU_VENDOR_IDS, lamzuProduct, LUNAFURY_READ, LUNAFURY_WRITE, lunafuryDecodeAngle, lunafuryDecodeLightning, lunafuryDecodeButtonDebounce, lunafuryDecodeWheelGuard, LUNAFURY_ONBOARD_READ, LUNAFURY_ONBOARD_WRITE, LUNAFURY_DPI_DEFAULTS, lunafuryDecodeButtonRate, lunafuryDecodeSeparateAxes, lunafuryDecodeDpiStages, lunafuryDecodeDpiStorage, lunafuryWriteDpiStorage, lunafuryValidateDpi, lunafuryWriteDpiStages, LUNAFURY_BUTTON_IDS, LUNAFURY_BUTTON_ACTIONS, lunafuryButtonActionWritable, lunafuryDecodeButton, lunafuryDecodeButtonAction, lunafuryIsMappedButton, lunafuryReadButton, lunafuryWriteButton, LUNAFURY_SLEEP_OPTIONS, lunafuryEncodeSleep, lunafuryDecodeSleep, lunafuryReceiverLightTarget, lunafuryReadReceiverLight, lunafuryWriteReceiverLight, lunafuryDecodeReceiverLight, lunafuryReadBottomButton, lunafuryWriteBottomButton, lunafuryDecodeBottomButton, MAGNETIC_CALIBRATION_ERRORS, MAGNETIC_CALIBRATION_STATE, MAGNETIC_CALIBRATION_STEPS, MAGNETIC_RAPID_TRIGGER_MAX_MS, MAGNETIC_RELEASE_FOLLOWS, MAGNETIC_SWITCH, MAGNETIC_TRAVEL_MAX, magneticCalibrationPrompt, magneticDecodeCalibration, magneticDecodeEid, magneticDecodeFault, magneticDecodeRapidTrigger, magneticDecodeSwitchTypes, magneticDecodeTravel, magneticRead, magneticWrite, } from "../../lamzu/index.js";
 const SLEEP_SECONDS = [10, 30, 60, 300, 600, 1800];
 const RESPONSE_ATTEMPTS = 12;
 const RESPONSE_DELAY_MS = 30;
@@ -15,6 +15,7 @@ const NOTIFY_DEBOUNCE_MS = 200;
 const NOTIFY_KINDS = new Set([0x03, 0x06, 0x08]);
 const TARGET = {
     dongle: 0x00,
+    pairing: 0x01,
     mouse: 0x02,
 };
 const PAGE = {
@@ -32,6 +33,7 @@ const READ = {
     dongleFirmware: { target: TARGET.dongle, page: PAGE.device, command: 0x81, length: 0x10, args: [], attempts: 2 },
     battery: { target: TARGET.mouse, page: PAGE.device, command: 0x83, length: 0x02, args: [] },
     activeProfile: { target: TARGET.mouse, page: PAGE.device, command: 0x85, length: 0x01, args: [] },
+    pairedProduct: { target: TARGET.pairing, page: PAGE.device, command: 0x8b, length: 0x06, args: [0x02], attempts: 2 },
 };
 const PROFILE_READ = {
     sleepTimeout: (profile) => ({ target: TARGET.mouse, page: PAGE.device, command: 0x87, length: 0x03, args: [profile] }),
@@ -71,6 +73,8 @@ export class LamzuHidClient {
     notifyListener = null;
     activeProfile = 1;
     onboardQueue = Promise.resolve();
+    pairedProductId = null;
+    pairedVendorId = null;
     device;
     constructor(device) {
         this.device = device;
@@ -83,7 +87,26 @@ export class LamzuHidClient {
             && device.collections.some(search);
     }
     profile() {
-        return lamzuProduct(this.device.vendorId, this.device.productId);
+        const direct = lamzuProduct(this.device.vendorId, this.device.productId);
+        if (!direct)
+            return undefined;
+        if (this.pairedProductId !== null) {
+            const paired = lamzuProduct(this.pairedVendorId ?? this.device.vendorId, this.pairedProductId);
+            if (paired) {
+                return {
+                    ...paired,
+                    model: paired.model,
+                    wireless: direct.wireless,
+                    pollingRates: direct.pollingRates,
+                    dongleLed: direct.dongleLed ?? paired.dongleLed,
+                };
+            }
+        }
+        return direct;
+    }
+    isSharedReceiver() {
+        return this.device.vendorId === LAMZU_INCA_VENDOR_ID
+            && (this.device.productId === 0x0001 || this.device.productId === 0x0003);
     }
     async open() {
         if (!this.device.opened)
@@ -92,6 +115,8 @@ export class LamzuHidClient {
     async close() {
         this.staticReads.clear();
         this.lastStatus = null;
+        this.pairedProductId = null;
+        this.pairedVendorId = null;
         if (this.notifier && this.notifyListener) {
             this.notifier.removeEventListener("inputreport", this.notifyListener);
             if (this.notifier.opened)
@@ -191,6 +216,9 @@ export class LamzuHidClient {
         if (live && this.lastStatus)
             return await this.readLiveStatus(this.lastStatus);
         const wireless = this.isWireless();
+        if (this.isSharedReceiver() && this.pairedProductId === null) {
+            await this.readPairedProduct().catch(() => undefined);
+        }
         const firmware = await this.once("firmware", () => this.request(READ.firmware));
         if (!firmware)
             throw new Error("The mouse did not report a firmware version.");
@@ -966,6 +994,17 @@ export class LamzuHidClient {
         if (this.deviceBrand() === "LunaFury")
             return lunafuryDecodeSleep(payload);
         return compaxDecodeSleep(payload, SLEEP_DISABLED_MIN);
+    }
+    async readPairedProduct() {
+        const reply = await this.once("pairedProduct", () => this.request(READ.pairedProduct).catch(() => null));
+        if (!reply || reply.length < 6)
+            return;
+        const vendorId = (reply[2] << 8) | reply[3];
+        const productId = (reply[4] << 8) | reply[5];
+        if (lamzuProduct(vendorId, productId)) {
+            this.pairedVendorId = vendorId;
+            this.pairedProductId = productId;
+        }
     }
     readReceiverLight(attempts) {
         return this.request({ ...lunafuryReadReceiverLight(this.device.productId), attempts,

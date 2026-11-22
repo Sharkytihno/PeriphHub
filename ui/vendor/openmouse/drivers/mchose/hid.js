@@ -1,4 +1,4 @@
-import { MCHOSE_COMMAND, MCHOSE_CONFIG_USAGE, MCHOSE_CONFIG_USAGE_PAGE, MCHOSE_DPI_STAGES, MCHOSE_LONG_REPORT_ID, MCHOSE_LONG_TOKENS, MCHOSE_PRODUCTS, MCHOSE_PROFILE_COUNT, MCHOSE_SLEEP_OPTIONS, MCHOSE_DEBOUNCE_MAX_MS, MCHOSE_DOCK_PRODUCT_ID, MCHOSE_ANGLE_TUNING_MAX, MCHOSE_SHORT_REPORT_ID, MCHOSE_SHORT_TOKENS, mchoseDecodeBattery, mchoseDecodeConfig, mchoseDecodeIdentity, mchoseDecodeReply, mchoseDecodeVersion, mchoseEncodeCommand, mchoseEncodeConfigWrite, mchoseEncodeSetProfile, mchoseEncodeSleep, mchoseEncodePerformance, mchoseLiftOffLabels, mchoseDecodeButtons, mchoseDecodeButtonName, MCHOSE_BUTTON_TYPE, mchoseDecodeProfileName, mchoseModeNumber, MCHOSE_MODES, MCHOSE_ANGLE_TUNING_MIN, mchoseEncodeButton, mchoseFindButtonAction, MCHOSE_BUTTONS, MCHOSE_BUTTON_ACTIONS, mchoseFindProduct, mchoseV3IsProductId, mchosePollingRates, } from "../../mchose/index.js";
+import { MCHOSE_COMMAND, MCHOSE_CONFIG_USAGE, MCHOSE_CONFIG_USAGE_PAGE, MCHOSE_DPI_STAGES, MCHOSE_LONG_REPORT_ID, MCHOSE_LONG_TOKENS, MCHOSE_PRODUCTS, MCHOSE_PROFILE_COUNT, MCHOSE_SLEEP_OPTIONS, MCHOSE_DEBOUNCE_MAX_MS, MCHOSE_DOCK_PRODUCT_ID, MCHOSE_REALTEK_PRODUCT_IDS, MCHOSE_ANGLE_TUNING_MAX, MCHOSE_SHORT_REPORT_ID, MCHOSE_SHORT_TOKENS, mchoseDecodeBattery, mchoseDecodeConfig, mchoseDecodeIdentity, mchoseDecodeReply, mchoseDecodeVersion, mchoseEncodeCommand, mchoseEncodeConfigWrite, mchoseEncodeSetProfile, mchoseEncodeSleep, mchoseEncodePerformance, mchoseLiftOffLabels, mchoseDecodeButtons, mchoseDecodeButtonName, MCHOSE_BUTTON_TYPE, mchoseDecodeProfileName, mchoseModeNumber, MCHOSE_MODES, MCHOSE_ANGLE_TUNING_MIN, mchoseEncodeButton, mchoseFindButtonAction, MCHOSE_BUTTONS, MCHOSE_BUTTON_ACTIONS, mchoseFindProduct, mchoseV3IsProductId, mchosePollingRates, } from "../../mchose/index.js";
 import { VENDOR_ID } from "../vendors.js";
 /**
  * MCHOSE A7 V2 family, over the vendor `0xff01` collection.
@@ -36,6 +36,7 @@ export class MchoseHidClient {
     device;
     queue = Promise.resolve();
     cachedProduct = null;
+    unansweredCommands = new Set();
     constructor(device) {
         this.device = device;
     }
@@ -43,7 +44,10 @@ export class MchoseHidClient {
         const search = (collection) => (collection.usagePage === MCHOSE_CONFIG_USAGE_PAGE
             && collection.usage === MCHOSE_CONFIG_USAGE)
             || collection.children.some(search);
-        return device.vendorId === VENDOR_ID.mchose
+        const vendorMatches = device.vendorId === VENDOR_ID.mchose
+            || (device.vendorId === VENDOR_ID.mchoseRealtek
+                && MCHOSE_REALTEK_PRODUCT_IDS.includes(device.productId));
+        return vendorMatches
             // The MagDock is the same vendor but a different protocol entirely, and
             // has its own driver; it must never be claimed as a mouse.
             && device.productId !== MCHOSE_DOCK_PRODUCT_ID
@@ -93,9 +97,13 @@ export class MchoseHidClient {
      * battery reply.
      */
     request(reportId, command, tokenCount, accept, extraTokens = []) {
+        const key = [reportId, command, ...extraTokens].join(":");
         const run = async () => {
+            if (this.unansweredCommands.has(key))
+                return null;
             const body = mchoseEncodeCommand([command, ...extraTokens], tokenCount);
             let previous = null;
+            let onlyEmptyEchoes = true;
             for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
                 await this.device.sendFeatureReport(reportId, body);
                 await delay(POLL_DELAY_MS);
@@ -104,9 +112,14 @@ export class MchoseHidClient {
                     raw = await this.device.receiveFeatureReport(reportId);
                 }
                 catch {
+                    onlyEmptyEchoes = false;
                     continue;
                 }
                 const reply = mchoseDecodeReply(new Uint8Array(raw.buffer));
+                const empty = reply?.command === command
+                    && reply.payload.subarray(0, tokenCount - 1).every((byte) => byte === 0);
+                if (!empty)
+                    onlyEmptyEchoes = false;
                 if (!reply || reply.command !== command)
                     continue;
                 if (!accept(reply.payload))
@@ -115,6 +128,14 @@ export class MchoseHidClient {
                     return reply.payload;
                 }
                 previous = Uint8Array.from(reply.payload);
+            }
+            // The A7 Ultra's 0x5253 receiver acknowledges some commands with an
+            // empty payload every time. Once it has done so for a whole poll, skip
+            // that command for the rest of the session instead of polling it again.
+            // The 0x3837 receivers answer empty while waiting on the RF link, so
+            // they keep the full poll every time.
+            if (onlyEmptyEchoes && this.device.vendorId === VENDOR_ID.mchoseRealtek) {
+                this.unansweredCommands.add(key);
             }
             return null;
         };
@@ -163,6 +184,10 @@ export class MchoseHidClient {
     linkRates(product) {
         return product ? mchosePollingRates(product, this.device.productId) : [];
     }
+    /**
+     * Read identity, battery, config and profile names into a `MouseStatus`.
+     * Replies that never arrive leave their fields unset instead of throwing.
+     */
     async readStatus() {
         await this.open();
         // Identity and version answer from the receiver itself and are reliable;
@@ -184,6 +209,7 @@ export class MchoseHidClient {
         const stages = config?.dpiStages ?? [];
         const rates = this.linkRates(product);
         const liftOffSteps = product?.liftOffDistances.length ?? 3;
+        const liftOffBase = product?.liftOffIndexBase ?? 0;
         const buttons = configPayload ? mchoseDecodeButtons(configPayload) : null;
         if (buttons)
             await this.labelMacros(buttons);
@@ -211,7 +237,7 @@ export class MchoseHidClient {
             connectionDetail: identity && !identity.connected
                 ? "Receiver connected, mouse not linked"
                 : undefined,
-            liftOffDistance: config ? (mchoseLiftOffLabels(liftOffSteps)[config.liftOffIndex] ?? null) : null,
+            liftOffDistance: config ? (mchoseLiftOffLabels(liftOffSteps)[config.liftOffIndex - liftOffBase] ?? null) : null,
             motionSync: config ? config.processing.motionSync : null,
             angleSnapping: config ? config.processing.angleSnapping : null,
             rippleControl: config ? config.processing.rippleControl : null,
@@ -363,11 +389,16 @@ export class MchoseHidClient {
             throw new Error("The mouse did not return its configuration.");
         return config.liftOffIndex;
     }
+    /**
+     * Set lift-off by label. The label's position among the model's steps is
+     * offset by `liftOffIndexBase` to get the firmware index, then read back.
+     */
     async setLiftOffDistance(label) {
         const steps = this.cachedProduct?.liftOffDistances.length ?? 3;
-        const index = mchoseLiftOffLabels(steps).indexOf(label);
-        if (index < 0)
+        const step = mchoseLiftOffLabels(steps).indexOf(label);
+        if (step < 0)
             throw new Error(`This mouse does not offer a ${label} lift-off distance.`);
+        const index = step + (this.cachedProduct?.liftOffIndexBase ?? 0);
         const after = await this.writePerformance(index, {}, (c) => c.liftOffIndex === index);
         if (after.liftOffIndex !== index) {
             throw new Error("The mouse did not accept that lift-off distance.");

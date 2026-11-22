@@ -1,6 +1,7 @@
 import { VENDOR_ID } from "../vendors.js";
 import { LAMZU_PRODUCTS } from "../../lamzu/index.js";
 import { DELUX_M600_PRO_MODEL_ID, DELUX_UNBRANDED_PRODUCT_IDS } from "../../delux/index.js";
+import { REDRAGON_M719_PRO_PRODUCTS } from "../../redragon/index.js";
 import { buildX11DpiReport, decodeX11DpiReport, nearestX11Dpi, X11_DPI_DEFAULT_ACTIVE, X11_DPI_DEFAULT_STAGES, X11_DPI_MAX, X11_DPI_MIN, X11_DPI_REPORT_ID, X11_DPI_STAGE_COUNT, X11_DPI_STEP, X11_DPI_VALUES, } from "../../compx/x11-dpi.js";
 // Attack Shark mice ship from multiple OEMs with different VIDs and protocols:
 //
@@ -323,6 +324,8 @@ function detectFamily(device) {
         // Same native-adapter reasoning as VID_1D57 above: with no report
         // descriptor to inspect, the vendor id alone identifies the GearHub
         // family.
+        if (REDRAGON_M719_PRO_PRODUCTS.has(device.productId))
+            return null;
         if (device.collections.length === 0)
             return "25a7";
         return device.collections.some(hasVendorControl) ? "25a7" : null;

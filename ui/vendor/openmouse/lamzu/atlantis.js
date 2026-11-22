@@ -110,7 +110,7 @@ export const LAMZU_ATLANTIS_MAX_TIMER_SECONDS = 0xff * LAMZU_ATLANTIS_TIMER_STEP
 /** Sleep timeouts Lamzu's own configurator offers, in seconds. */
 export const LAMZU_ATLANTIS_SLEEP_OPTIONS = [10, 30, 60, 300, 600, 1800];
 const RATES_WIRED = [125, 250, 500, 1000];
-const RATES_4K = [500, 1000, 2000, 4000];
+const RATES_4K = [125, 250, 500, 1000, 2000, 4000];
 /**
  * Six models share these ids — Atlantis OG V2, Atlantis Mini, Atlantis Mini
  * Pro, Thorn, Maya and Paro of this generation — and nothing on the wire
@@ -120,10 +120,10 @@ const RATES_4K = [500, 1000, 2000, 4000];
  * by making the user pick the model from a list, so this catalog names the
  * family rather than pretending to identify one model.
  *
- * 0xf50f (the mouse on its cable) is confirmed on hardware. The two receiver
- * ids come from Lamzu's shipped device table and nothing more: no receiver has
- * been exercised, so neither their rate lists nor the transport itself is
- * established, and they stay `verified: false` until one is.
+ * 0xf50f (the mouse on its cable) is confirmed on hardware. The 1K receiver
+ * still has only vendor-table evidence. F510 has partial wireless read/write
+ * evidence and a corrected polling-rate family (docs/lamzu-atlantis-testing.md),
+ * but its OpenMouse hardware-test round-trip failed, so it stays unverified.
  *
  * 0xf517 was in that table too, but hardware showed it enumerating as a
  * "Scyrox Turbo 8k dongle" that speaks this same protocol; it moved to
@@ -132,7 +132,7 @@ const RATES_4K = [500, 1000, 2000, 4000];
 export const LAMZU_ATLANTIS_PRODUCTS = new Map([
     [0xf50f, { model: "Atlantis", wireless: false, pollingRates: RATES_WIRED, rateFamily: "wired", verified: true }],
     [0xf50d, { model: "Atlantis", wireless: true, pollingRates: RATES_WIRED, rateFamily: "wired", verified: false }],
-    [0xf510, { model: "Atlantis", wireless: true, pollingRates: RATES_4K, rateFamily: "receiver", verified: false }],
+    [0xf510, { model: "Atlantis", wireless: true, pollingRates: RATES_4K, rateFamily: "pulsar", verified: false }],
 ]);
 /**
  * The rate byte uses the encoding the other Lamzu generations use, where
@@ -245,6 +245,21 @@ export function lamzuAtlantisDecodeDpiStage(field) {
         x: axis(field[0] ?? 0, flags >> 2),
         y: axis(field[1] ?? 0, flags >> 6),
     };
+}
+/**
+ * Encodes one DPI as a legacy stage field, both axes in lockstep: the same
+ * bytes as `pulsarVgnEncodeDpi`, but over the whole ten bits the decoder above
+ * reads (50 to 51,200 DPI) rather than the Pulsar ceiling of 26,000. Each
+ * product's own maxDpi still bounds what a client writes.
+ */
+export function lamzuAtlantisEncodeDpiStage(dpi) {
+    const value = dpi / LAMZU_ATLANTIS_DPI_STEP - 1;
+    if (!Number.isInteger(value) || value < 0 || value > 0x3ff) {
+        throw new Error("A legacy DPI stage holds 50 to 51,200 DPI in 50 DPI steps.");
+    }
+    const low = value & 0xff;
+    const high = value >> 8;
+    return lamzuAtlantisSealField([low, low, (high << 2) | (high << 6)]);
 }
 /**
  * The 3955 sensor's two value bands, from the vendor configurator's sensor

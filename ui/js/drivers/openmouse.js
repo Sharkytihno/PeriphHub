@@ -1,5 +1,5 @@
 // PeriphHub — souris de dizaines de marques via les protocoles d'OpenMouse
-// (@openmouse/protocol, AGPL-3.0-or-later, copiés tels quels dans ui/vendor/openmouse).
+// (@openmouse/protocol, AGPL-3.0-or-later, importé dans ui/vendor/openmouse).
 // Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VGN, MCHOSE, Ninjutso, G-Wolves,
 // VAXEE, Glorious, HyperX, Corsair, SteelSeries, ASUS, Cooler Master, Redragon…
 //
@@ -8,8 +8,8 @@
 // PeriphHub n'appelle que la lecture de l'état et les réglages courants : jamais de
 // mise à jour de firmware, de remise à zéro d'usine ni d'appairage.
 import { createSupportedClient, clientSupportScore, deviceBrand } from '../../vendor/openmouse/drivers/registry.js';
-import { RoccatHidClient } from '../../vendor/openmouse-readonly/drivers/roccat/hid.js';
-import { AulaSc380ProHidClient } from '../../vendor/openmouse-readonly/drivers/aula/hid.js';
+import { RoccatHidClient } from '../../vendor/openmouse/drivers/roccat/hid.js';
+import { AulaSc380ProHidClient } from '../../vendor/openmouse/drivers/aula/hid.js';
 import * as kbReg from '../../vendor/openmouse-kb/drivers/registry.js';
 import { LamzuAtlantisHidClient } from '../../vendor/openmouse/drivers/lamzu-atlantis/hid.js';
 
@@ -24,6 +24,12 @@ const OM_VIDS = new Set([
 const OM_SKIP = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '1532:056E', '048D:5702']);
 const omHex = n => n.toString(16).toUpperCase().padStart(4, '0');
 const omId = d => omHex(d.vendorId) + ':' + omHex(d.productId);
+
+// En l’absence de conteneur, ne pas réunir des chemins qui peuvent appartenir à deux appareils.
+const omUnit = d => d.info?.unit ? 'unit:' + d.info.unit : 'path:' + (d.info?.path || '');
+const omSessionId = d => window.__TAURI__ ? omId(d) + ':' + omUnit(d) : omId(d);
+const omPeers = (d, group) => group.filter(other =>
+  omId(d) === omId(other) && (!window.__TAURI__ || omUnit(d) === omUnit(other)));
 
 // Clavier : son interface principale (le plus petit numéro, l'interface « boot ») porte un clavier
 // et pas de souris. Beaucoup de claviers exposent aussi une souris (macros) sur une autre interface.
@@ -109,13 +115,13 @@ class OmHIDDevice extends EventTarget {
   }
 }
 
-const omComposite = new Map(); // « vid:pid:interface » + chemins → même objet d'un passage à l'autre
+const omComposite = new Map(); // « vid:pid:appareil:interface » + chemins → même objet d'un passage à l'autre
 
 function omInterfaces(devices) {
   if (!window.__TAURI__) return devices; // vrai WebHID (navigateur) : déjà regroupé
   const byIf = new Map();
   for (const d of devices) {
-    const k = omId(d) + ':' + (d.info?.interface ?? -1);
+    const k = omId(d) + ':' + omUnit(d) + ':' + (d.info?.interface ?? -1);
     if (!byIf.has(k)) byIf.set(k, []);
     byIf.get(k).push(d);
   }
@@ -312,7 +318,7 @@ async function omConnect(group) {
     await new Promise(r => setTimeout(r, 1000));
   }
   if (OM_MISMATCH.test(err?.message || '')) {
-    omMismatch.add(omId(group[0]));
+    omMismatch.add(omSessionId(group[0]));
     // Page CompX de PeriphHub (souris 0x3554) : elle n'attendait que ce refus
     if (group[0].vendorId === 0x3554 && typeof autoConnect === 'function') setTimeout(() => autoConnect(), 0);
   }
@@ -609,6 +615,7 @@ function omReader(d) {
 
 const omReadOnly = {
   id: 'openmouse-readonly',
+  isolatePhysical: true,
   priority: 16,
   match: d => !!omReader(d),
   async connect(d) {
@@ -660,9 +667,9 @@ window.omApi = {
   vids: OM_VIDS,
   // La page Scyrox (CompX) laisse à OpenMouse les souris qu'il reconnaît
   claims(dev, all) {
-    if (!OM_VIDS.has(dev.vendorId) || OM_SKIP.has(omId(dev))) return false;
-    const peers = all.filter(d => omId(d) === omId(dev));
-    if (omKeyboardOnOdm(dev, peers) || omMismatch.has(omId(dev))) return false;
+    if (!OM_VIDS.has(dev.vendorId) || OM_SKIP.has(omId(dev)) || OM_READERS.has(omId(dev))) return false;
+    const peers = omPeers(dev, all);
+    if (omKeyboardOnOdm(dev, peers) || omMismatch.has(omSessionId(dev))) return false;
     try { return !!omBest(peers); } catch { return false; }
   },
   driver: {
@@ -671,17 +678,19 @@ window.omApi = {
     // Seulement les modèles qu'OpenMouse connaît : sinon il réclame tout appareil de la marque (casque
     // Arctis Nova…), échoue, et l'appareil est marqué « muet » puis réessayé toutes les quelques minutes
     match: d => {
-      if (!OM_VIDS.has(d.vendorId) || OM_SKIP.has(omId(d)) || omKeyboardOnOdm(d) || omMismatch.has(omId(d))) return false;
+      if (!OM_VIDS.has(d.vendorId) || OM_SKIP.has(omId(d)) || OM_READERS.has(omId(d))
+        || omKeyboardOnOdm(d) || omMismatch.has(omSessionId(d))) return false;
       try { return clientSupportScore(window.__TAURI__ ? new OmHIDDevice([d]) : d) > 0; } catch { return false; }
     },
-    connect: (_dev, group) => omConnect(group),
+    isolatePhysical: true,
+    connect: (dev, group) => omConnect(omPeers(dev, group)),
   },
   keyboardDrivers: [
     // Wooting, SteelSeries Apex : passent avant tout le reste
-    { id: 'openmouse-kb', priority: 15, match: kbMatch(true), connect: (_dev, group) => kbConnect(group) },
+    { id: 'openmouse-kb', priority: 15, match: kbMatch(true), isolatePhysical: true, connect: (dev, group) => kbConnect(omPeers(dev, group)) },
     // Keychron à effet Hall : avant le pilote VIA (priorité 20), qui reprend la main si on ne peut rien régler
-    { id: 'openmouse-kb-keychron', priority: 25, match: kcMatch, connect: (_dev, group) => kbConnect(group) },
+    { id: 'openmouse-kb-keychron', priority: 25, match: kcMatch, isolatePhysical: true, connect: (dev, group) => kbConnect(omPeers(dev, group)) },
     // Razer, Logitech : nos pilotes d'abord ; OpenMouse en secours (claviers analogiques…)
-    { id: 'openmouse-kb2', priority: -5, match: kbMatch(false), connect: (_dev, group) => kbConnect(group) },
+    { id: 'openmouse-kb2', priority: -5, match: kbMatch(false), isolatePhysical: true, connect: (dev, group) => kbConnect(omPeers(dev, group)) },
   ],
 };

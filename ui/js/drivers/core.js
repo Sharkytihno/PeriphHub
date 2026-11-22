@@ -326,6 +326,10 @@ async function driversScan() {
             throw Object.assign(e instanceof Error ? e : new Error(String(e)), { ms: Date.now() - t0 });
           });
           if (!list?.length) throw new Error('aucune réponse');
+          if (NATIVE && drv.isolatePhysical) {
+            const claimed = new Set(list.flatMap(inst => [inst.dev, ...(inst.devs || [])]));
+            for (const dev of group) if (!claimed.has(dev)) drvBusy.delete(dev.info?.path);
+          }
           for (const inst of list) drvAdd(inst, drv);
           ok = true;
           break;

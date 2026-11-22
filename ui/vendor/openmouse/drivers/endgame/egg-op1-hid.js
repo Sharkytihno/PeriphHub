@@ -1,3 +1,4 @@
+import { isStaleHandleError } from "./stale-handle.js";
 import { EGG_4K_DONGLE_PID, EGG_4K_OFFSET, EGG_4K_POLLING_RATES, EGG_4K_V1_POLLING_RATES, EGG_BUTTON_ACTION_OPTIONS, EGG_COMMAND_SIZE, EGG_CONFIG_SIZE, EGG_DEVICE_PROFILES, EGG_OFFSET, EGG_OPERATION, EGG_POLLING_RATES, EGG_REPORT, EGG_VENDOR_ID, eggBlockWrites, eggButtonActionLabel, eggButtonControlOffset, eggButtonMappingOffset, eggClampCpi, eggDecodeButtonAction, eggDpiOptions, eggEncodeButtonAction, eggFormatFirmwareVersion, eggIsPlainLeftAction, eggIsValidCpi, eggLodOptions, eggNormalizeFeatureReport, eggProfileForPid, eggReadUint16LE, eggWriteEnabledCpiStages, eggWriteUint16LE, } from "../../endgame-gear/op1.js";
 const STATUS_OK = 0x01;
 const STATUS_BUSY = 0x03;
@@ -546,7 +547,9 @@ export class EggOp1HidClient {
         let lastError;
         for (let attempt = 0; attempt < 4; attempt += 1) {
             try {
-                await this.device.sendFeatureReport(EGG_REPORT.config, payload);
+                // Only the first attempt may close/reopen; later attempts are plain retries so
+                // recovery does not stack with this loop.
+                await this.sendFeatureRecovering(EGG_REPORT.config, payload, attempt === 0);
                 lastError = undefined;
                 break;
             }
@@ -629,7 +632,24 @@ export class EggOp1HidClient {
         // Payload sits at wire offset 16, i.e. 15 once the report ID is stripped.
         if (payload)
             command.set(payload, 15);
-        await this.device.sendFeatureReport(EGG_REPORT.command, command);
+        await this.sendFeatureRecovering(EGG_REPORT.command, command);
+    }
+    /**
+     * A handle left stale (sleep/resume, USB hiccup, an earlier page) rejects
+     * every write with "Failed to write the feature report" until the device is
+     * re-enumerated. Close and reopen it once and retry before giving up.
+     */
+    async sendFeatureRecovering(reportId, data, recover = true) {
+        try {
+            await this.device.sendFeatureReport(reportId, data);
+        }
+        catch (error) {
+            if (!recover || !isStaleHandleError(error))
+                throw error;
+            await this.device.close().catch(() => undefined);
+            await this.open();
+            await this.device.sendFeatureReport(reportId, data);
+        }
     }
     async pollCommandOk(attempts) {
         let backoff = 60;

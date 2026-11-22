@@ -23,6 +23,11 @@ import { LAMZU_ATLANTIS_FLASH as FLASH, LAMZU_ATLANTIS_SENSOR3955_STAGE_STRIDE a
  * the 3955 records when their seal holds, else the legacy four-byte fields
  * when theirs does — and a non-Scyrox mouse drops the Scyrox-only extras
  * (20K switch, 3955 lift-off scale, 50,000 DPI ceiling).
+ *
+ * The older V8's "SCYROX 8K Dongle" (0x3554:0xf5f7) answers the same
+ * sequence; its 3950 sensor keeps the stages in the legacy fields, which the
+ * catalog entry selects. Its full read and a polling-rate round trip are
+ * verified (see docs/scyrox-v8-testing.md).
  */
 export class ScyroxHidClient extends LamzuAtlantisHidClient {
     constructor(device) {

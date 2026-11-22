@@ -40,20 +40,24 @@ export const GWOLVES_PRODUCTS = new Map([
     [0x5617, { model: "HTXU", wireless: true, verified: false, protocol: "xvi-new" }],
     [0x3608, { model: "Fenrir Pro", wireless: false, verified: false, protocol: "xvi-new" }],
     [0x3617, { model: "Fenrir Pro", wireless: true, verified: false, protocol: "xvi-new" }],
-    [0x3908, { model: "VUK", wireless: false, verified: false, protocol: "xvi" }],
-    [0x3917, { model: "VUK", wireless: true, verified: false, protocol: "xvi" }],
+    [0x3908, { model: "VUK", wireless: false, verified: false, protocol: "xvi", shortLiftOff: true }],
+    [0x3917, { model: "VUK", wireless: true, verified: false, protocol: "xvi", shortLiftOff: true }],
     [0x7904, { model: "HT-S2", wireless: false, verified: false, protocol: "xvi" }],
     [0x7913, { model: "HT-S2", wireless: true, verified: false, protocol: "xvi" }],
-    [0x3708, { model: "Fenir Max", wireless: false, verified: false, protocol: "xvi" }],
-    [0x3717, { model: "Fenir Max", wireless: true, verified: false, protocol: "xvi" }],
-    [0x5308, { model: "HTS Ultra", wireless: false, verified: false, protocol: "xvi" }],
-    [0x5317, { model: "HTS Ultra", wireless: true, verified: false, protocol: "xvi" }],
+    [0x3708, { model: "Fenir Max", wireless: false, verified: false, protocol: "xvi", shortLiftOff: true }],
+    [0x3717, { model: "Fenir Max", wireless: true, verified: false, protocol: "xvi", shortLiftOff: true }],
+    [0x5308, { model: "HTS Ultra", wireless: false, verified: false, protocol: "xvi", shortLiftOff: true }],
+    [0x5317, { model: "HTS Ultra", wireless: true, verified: false, protocol: "xvi", shortLiftOff: true }],
     [0x7704, { model: "HTR", wireless: false, verified: false, protocol: "xvi" }],
     [0x7713, { model: "HTR", wireless: true, verified: false, protocol: "xvi" }],
-    [0x3508, { model: "Fenrir", wireless: false, verified: false, protocol: "xvi" }],
-    [0x3517, { model: "Fenrir", wireless: true, verified: false, protocol: "xvi" }],
-    [0x7908, { model: "HT-S2 Pro", wireless: false, verified: false, protocol: "xvi" }],
-    [0x7917, { model: "HT-S2 Pro", wireless: true, verified: false, protocol: "xvi" }],
+    // Verified wired and through its 8K receiver on a unit whose USB product
+    // string is "G-Wolves Fenrir Asym 8K Wireless Mouse-N" (mouse and receiver
+    // firmware 1.0.39.0): G-Wolves' config lists it as "Fenrir" with UIFolder
+    // "Fenir_asym".
+    [0x3508, { model: "Fenrir", wireless: false, verified: true, protocol: "xvi", shortLiftOff: true }],
+    [0x3517, { model: "Fenrir", wireless: true, verified: true, protocol: "xvi", shortLiftOff: true }],
+    [0x7908, { model: "HT-S2 Pro", wireless: false, verified: false, protocol: "xvi", shortLiftOff: true }],
+    [0x7917, { model: "HT-S2 Pro", wireless: true, verified: false, protocol: "xvi", shortLiftOff: true }],
     [0x5808, { model: "HSK Pro", wireless: false, verified: false, protocol: "xvi" }],
     [0x5817, { model: "HSK Pro", wireless: true, verified: false, protocol: "xvi" }],
     [0x2708, { model: "HTX Mini", wireless: false, verified: false, protocol: "xvi" }],
@@ -86,6 +90,9 @@ export const GWOLVES_PRODUCTS = new Map([
     [0x5703, { model: "HTX ACE", wireless: true, verified: false, protocol: "xvi" }],
     [0x5904, { model: "HSK Plus ACE", wireless: false, verified: false, protocol: "xvi" }],
     [0x5903, { model: "HSK Plus ACE", wireless: true, verified: false, protocol: "xvi" }],
+    // G-Wolves HT-S ACE Wireless (Verified via hardware analysis and reverse engineering)
+    [0x001a, { model: "HT-S ACE", wireless: false, verified: true, protocol: "xvi" }],
+    [0x00aa, { model: "HT-S ACE", wireless: true, verified: true, protocol: "xvi" }],
     // "TEST HTS Plus" in that config (wired 0x5428, wireless 0x3854) is
     // deliberately skipped: its own name marks it a dev/test entry, and its
     // wireless id collides with the already-verified HTX Ultra's 0x3854.
