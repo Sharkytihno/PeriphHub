@@ -13,6 +13,7 @@ Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette vers
 - Huit identifiants de modèles Pulsar et Wraith sont reconnus. La catégorie de 21 références Cooler
   Master a été précisée.
 - La configuration WebView2 conserve SmartScreen et les choix de processus par défaut de Microsoft.
+- La dépendance Rust `url` passe en 2.5.9 pour corriger RUSTSEC-2026-0592.
 
 ## 2.1.0
 

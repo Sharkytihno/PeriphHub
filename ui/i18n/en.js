@@ -41,13 +41,10 @@ const I18N_EN = {
   'Expérimental': 'Experimental',
   'Pas encore pris en charge': 'Not supported yet',
   'Autres appareils détectés': 'Other detected devices',
-  '{} appareil disponible': '{} device available',
-  '{} appareils disponibles': '{} devices available',
   'Périphérique composite': 'Composite device',
   'Rechercher un appareil': 'Find a device',
   'Nom, fabricant ou VID:PID': 'Name, manufacturer or VID:PID',
   'Aucun appareil ne correspond à la recherche.': 'No devices match your search.',
-  '{} exemplaires détectés': '{} units detected',
   'Fabricant inconnu': 'Unknown manufacturer',
   'Non connectée': 'Not connected',
   'Non connecté': 'Not connected',
@@ -1114,6 +1111,9 @@ const I18N_EN = {
 
 // {} = variable part (translated in turn when it is a known text)
 const I18N_EN_T = {
+  '{} appareil disponible': '{} device available',
+  '{} appareils disponibles': '{} devices available',
+  '{} exemplaires détectés': '{} units detected',
   'Éclairage de la carte mère {}': 'Motherboard lighting {}',
   'PeriphHub {} · vous avez la {}': 'PeriphHub {} · you have {}',
   'Installer PeriphHub {}': 'Install PeriphHub {}',
