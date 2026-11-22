@@ -3,7 +3,11 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
-## 2.1.1
+## 2.1.2
+
+- La passerelle Windows transmet désormais au pilote OpenMouse la collection de configuration
+  des souris VGN Dragonfly CompX répertoriées (16 identifiants USB, câble ou dongle).
+  La prise en charge reste expérimentale en attendant des essais sur le matériel.
 
 - Les collections HID sont regroupées par appareil physique lorsque Windows fournit un conteneur.
   Les périphériques ambigus sont identifiés comme composites et les règles génériques d'un fabricant

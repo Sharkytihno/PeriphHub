@@ -54,6 +54,10 @@ fn allowed_info(d: &HidIface) -> bool {
     if bootloader(d) || d.usage_page == FIDO_PAGE {
         return false;
     }
+    // Souris VGN CompX : le pilote ne connaît que les modèles et la collection déclarés.
+    if d.vid == 0x391D {
+        return (d.usage_page, d.usage) == (0xFF02, 2) && allowed(d.vid, d.pid);
+    }
     allowed(d.vid, d.pid)
         || (d.usage_page, d.usage) == VIA_USAGE
         || OPENMOUSE_VIDS.contains(&d.vid)
@@ -504,4 +508,34 @@ pub async fn hid_get_feature(app: AppHandle, handle: u32, report_id: u8, len: us
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vgn_seuls_les_modeles_connus_et_la_collection_de_configuration() {
+        let mut iface = HidIface {
+            path: String::new(),
+            vid: 0x391D,
+            pid: 0x1A30,
+            usage_page: 0xFF02,
+            usage: 2,
+            interface: 1,
+            product: "VGN Dragonfly F2 Turbo".into(),
+            container: None,
+        };
+        assert!(allowed_info(&iface));
+        iface.usage = 1;
+        assert!(!allowed_info(&iface));
+        (iface.usage_page, iface.usage) = (1, 6);
+        assert!(!allowed_info(&iface));
+        (iface.usage_page, iface.usage) = (0xFF02, 2);
+        iface.pid = 0xFFFF;
+        assert!(!allowed_info(&iface));
+        iface.pid = 0x1A30;
+        iface.product = "VGN DFU bootloader".into();
+        assert!(!allowed_info(&iface));
+    }
 }

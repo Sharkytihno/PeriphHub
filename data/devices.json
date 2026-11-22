@@ -1980,5 +1980,133 @@
     "kind": "casque",
     "status": "experimental",
     "plugin": "batteries"
+  },
+  {
+    "vid": "391D",
+    "pid": "1005",
+    "name": "VGN Dragonfly 3 Master (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A05",
+    "name": "VGN Dragonfly 3 Master (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "101D",
+    "name": "VGN Dragonfly 3 MasterGT (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A1A",
+    "name": "VGN Dragonfly 3 MasterGT (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1034",
+    "name": "VGN Dragonfly Y2 V2 MasterGT (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A2F",
+    "name": "VGN Dragonfly Y2 V2 MasterGT (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1032",
+    "name": "VGN Dragonfly F2 MasterGT (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "102D",
+    "name": "VGN Dragonfly F2 MasterGT (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1038",
+    "name": "VGN Dragonfly F1 V2 SE+ (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A32",
+    "name": "VGN Dragonfly F1 V2 SE+ (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1036",
+    "name": "VGN Dragonfly F2 Turbo+ (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A31",
+    "name": "VGN Dragonfly F2 Turbo+ (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1035",
+    "name": "VGN Dragonfly F2 Turbo (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A30",
+    "name": "VGN Dragonfly F2 Turbo (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1039",
+    "name": "VGN Dragonfly 3 MINI SE+ (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "391D",
+    "pid": "1A33",
+    "name": "VGN Dragonfly 3 MINI SE+ (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
   }
 ]
