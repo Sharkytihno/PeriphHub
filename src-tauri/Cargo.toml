@@ -20,7 +20,7 @@ webview2-com = "0.39"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hidapi = { version = "2", default-features = false, features = ["windows-native"] }
-libloading = "0.8"
+libloading = "0.9"
 sha2 = "0.10"
 winreg = "0.56"
 # Son, webcams et manettes : API Windows (COM). Même version que celle qu'embarque déjà Tauri.
