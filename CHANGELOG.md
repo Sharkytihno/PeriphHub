@@ -3,6 +3,22 @@
 Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette version
 (`.github/workflows/release.yml`).
 
+## 2.1.7
+
+- Nouvelles souris, en expérimental (protocoles d'OpenMouse déjà intégrés, pas encore essayés sur
+  le matériel dans PeriphHub) : AJAZZ AJ200 et AJ200P AI (MC, PRO+, ULTRA, ULTRA+, ULTRA-3955,
+  AI MASTER, S ULTRA ; filaire et récepteurs, 22 identifiants) et Redgear X13 Pro. DPI, fréquence,
+  et pour les AJAZZ distance de décollage, Motion Sync, correction d'angle, mode performance,
+  anti-rebond, veille et batterie. Chaque réglage est relu après écriture. La passerelle Windows
+  n'ouvre que leur collection de configuration, comme pour les VGN.
+- Au réveil, les AJAZZ relisent leur état sans écrire. La restauration conserve les deux axes
+  du palier DPI et les deux délais de veille. La Redgear X13 Pro affiche ses sept valeurs de DPI
+  et réessaie la connexion après une première lecture infructueuse.
+- Prise en charge expérimentale en USB de 14 identifiants de claviers via OpenMouse. PeriphHub
+  règle la fréquence d’interrogation des Wuque Studio BABAO60 HE, BABAO80 HE et ZOOM TIGA HE, bascule
+  le Kochi Hummingbird 68 entre Windows et macOS et allume ou éteint le rétroéclairage des Arbiter
+  Studio Polar 65, 65+, 65 PRO, 75 PRO et Nimbus 65 en conservant l’effet en cours.
+
 ## 2.1.6
 
 - Souris sans fil prises pour un clavier : beaucoup de dongles exposent un clavier pour les touches
@@ -16,12 +32,6 @@ Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette vers
 - Éclairage des cartes mères Gigabyte (RGB Fusion 2) : les commandes partent toujours vers la
   collection d'éclairage du contrôleur ITE. Selon l'ordre de Windows, elles pouvaient viser l'autre
   collection et échouer à chaque fois (« Fonction incorrecte »).
-- Nouvelles souris, en expérimental (protocoles d'OpenMouse déjà intégrés, pas encore essayés sur
-  le matériel dans PeriphHub) : AJAZZ AJ200 et AJ200P AI (MC, PRO+, ULTRA, ULTRA+, ULTRA-3955,
-  AI MASTER, S ULTRA ; filaire et récepteurs, 22 identifiants) et Redgear X13 Pro. DPI, fréquence,
-  et pour les AJAZZ distance de décollage, Motion Sync, correction d'angle, mode performance,
-  anti-rebond, veille et batterie. Chaque réglage est relu après écriture. La passerelle Windows
-  n'ouvre que leur collection de configuration, comme pour les VGN.
 
 ## 2.1.5
 

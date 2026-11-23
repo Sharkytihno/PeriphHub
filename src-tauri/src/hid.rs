@@ -35,12 +35,28 @@ const OPENMOUSE_VIDS: &[u16] = &[
 // Souris dont le pilote OpenMouse ne parle qu'à une collection de configuration : seuls les modèles
 // déclarés dans data/devices.json, et sur cette seule collection (page, usage).
 // VGN CompX, Redgear X13 Pro (rapport de fonction 3), AJAZZ AJ200 / AJ200P AI (rapports 0x0A / 0x0B).
-const CONFIG_ONLY: &[(u16, (u16, u16))] =
-    &[(0x391D, (0xFF02, 2)), (0x1B80, (0xFF00, 1)), (0x363C, (0xFFA0, 2))];
+const CONFIG_ONLY: &[(u16, (u16, u16))] = &[
+    (0x391D, (0xFF02, 2)),
+    (0x1B80, (0xFF00, 1)),
+    (0x363C, (0xFFA0, 2)),
+];
 
 // Manettes PlayStation (ui/js/drivers/playstation.js) : DualShock 4 (v1, v2, adaptateur sans fil),
 // DualSense, DualSense Edge. Seulement la collection manette (page 0x01, usage 0x05).
 const PLAYSTATION: &[u16] = &[0x05C4, 0x09CC, 0x0BA0, 0x0CE6, 0x0DF2];
+
+// Claviers Wuque, Kochi et Arbiter : ouvrir uniquement leur collection de configuration.
+// Pages et rapports non numérotés d'après ui/vendor/openmouse-kb.
+fn extra_keyboard_pages(vid: u16, pid: u16) -> Option<&'static [u16]> {
+    match (vid, pid) {
+        (0x1CA6, 0x1B09 | 0x1B0A | 0x1B10) | (0x36B5, 0x75D2 | 0x75D4) => Some(&[0xFF80, 0xFFB0]),
+        (0x1CA2, 0x0901) => Some(&[0xFFA0]),
+        (0x1A81, 0x2072) => Some(&[0xFF01, 0xFF02]),
+        (0x1A81, 0x2077) | (0x371C, 0xA006) => Some(&[0xFF01]),
+        (0x1A81, 0x208E) | (0x371C, 0xA001 | 0xA003 | 0xA005 | 0xA009) => Some(&[0xFF02]),
+        _ => None,
+    }
+}
 
 // Clés de sécurité FIDO / U2F : jamais visibles, même chez un fabricant de la liste
 const FIDO_PAGE: u16 = 0xF1D0;
@@ -113,6 +129,9 @@ fn allowed_info(d: &HidIface) -> bool {
     }
     if let Some(protocol) = read_only_device(d.vid, d.pid) {
         return protocol.matches_collection(d);
+    }
+    if let Some(pages) = extra_keyboard_pages(d.vid, d.pid) {
+        return d.usage == 1 && pages.contains(&d.usage_page) && allowed(d.vid, d.pid);
     }
     // VGN CompX, Redgear, AJAZZ AJ200 AI : seulement les modèles et la collection déclarés.
     if let Some(&(_, collection)) = CONFIG_ONLY.iter().find(|(vid, _)| *vid == d.vid) {
@@ -436,7 +455,8 @@ fn open_now(app: AppHandle, path: String, unnumbered: bool) -> Result<u32, Strin
     let unnumbered = match read_only {
         Some(ReadOnlyDevice::Roccat { .. }) => true,
         Some(ReadOnlyDevice::Aula) => false,
-        None => unnumbered,
+        // Le descripteur reconstruit peut manquer : ces protocoles utilisent toujours le rapport 0.
+        None => unnumbered || extra_keyboard_pages(interface.vid, interface.pid).is_some(),
     };
     if lk(&hid.stuck).contains(&path) {
         return Err(WEDGED.into());
@@ -671,7 +691,10 @@ mod tests {
             };
             assert!(allowed_info(&iface), "{vid:04X}:{pid:04X}");
             (iface.usage_page, iface.usage) = other;
-            assert!(!allowed_info(&iface), "{vid:04X}:{pid:04X} autre collection");
+            assert!(
+                !allowed_info(&iface),
+                "{vid:04X}:{pid:04X} autre collection"
+            );
             (iface.usage_page, iface.usage) = config;
             iface.pid = 0x0001;
             assert!(!allowed_info(&iface), "{vid:04X} modèle inconnu");
@@ -679,5 +702,44 @@ mod tests {
             (iface.usage_page, iface.usage) = VIA_USAGE;
             assert!(allowed_info(&iface), "{vid:04X} VIA");
         }
+    }
+
+    #[test]
+    fn claviers_openmouse_supplementaires_seules_les_collections_de_configuration() {
+        let devices: Vec<_> = crate::vendors::support()
+            .into_iter()
+            .filter(|device| device.plugin == "openmouse-kb-extra")
+            .collect();
+        assert_eq!(devices.len(), 14);
+        for device in devices {
+            let vid = u16::from_str_radix(&device.vid, 16).unwrap();
+            let pid = u16::from_str_radix(&device.pid, 16).unwrap();
+            let pages = extra_keyboard_pages(vid, pid).unwrap();
+            let mut iface = HidIface {
+                path: String::new(),
+                vid,
+                pid,
+                usage_page: 1,
+                usage: 6,
+                interface: 1,
+                product: device.name,
+                container: None,
+                keyboard_leds: None,
+            };
+            assert!(!allowed_info(&iface));
+            iface.usage = 1;
+            for page in [0xFF01, 0xFF02, 0xFF80, 0xFFA0, 0xFFB0, FIDO_PAGE] {
+                iface.usage_page = page;
+                assert_eq!(allowed_info(&iface), pages.contains(&page));
+            }
+            iface.usage_page = pages[0];
+            iface.usage = 2;
+            assert!(!allowed_info(&iface));
+            iface.usage = 1;
+            iface.product = "DFU bootloader".into();
+            assert!(!allowed_info(&iface));
+        }
+        assert_eq!(extra_keyboard_pages(0x371C, 0xA009), Some(&[0xFF02][..]));
+        assert!(extra_keyboard_pages(0x1CA6, 0x75D4).is_none());
     }
 }

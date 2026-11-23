@@ -118,6 +118,118 @@
     "plugin": "nzxt-kraken"
   },
   {
+    "vid": "1CA6",
+    "pid": "1B10",
+    "name": "Wuque Studio BABAO60 HE",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1CA6",
+    "pid": "1B0A",
+    "name": "Wuque Studio BABAO60 HE (test)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "36B5",
+    "pid": "75D4",
+    "name": "Wuque Studio BABAO80 HE",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "36B5",
+    "pid": "75D2",
+    "name": "Wuque Studio BABAO80 HE (test)",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1CA6",
+    "pid": "1B09",
+    "name": "Wuque Studio ZOOM TIGA HE",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1CA2",
+    "pid": "0901",
+    "name": "Kochi Hummingbird 68",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1A81",
+    "pid": "2072",
+    "name": "Arbiter Polar 65",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1A81",
+    "pid": "208E",
+    "name": "Arbiter Polar 65",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "1A81",
+    "pid": "2077",
+    "name": "Arbiter Nimbus 65",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "371C",
+    "pid": "A005",
+    "name": "Arbiter Polar 65",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "371C",
+    "pid": "A006",
+    "name": "Arbiter Polar 65",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "371C",
+    "pid": "A003",
+    "name": "Arbiter Polar 65 PRO",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "371C",
+    "pid": "A009",
+    "name": "Arbiter Polar 65+",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
+    "vid": "371C",
+    "pid": "A001",
+    "name": "Arbiter Polar 75 PRO",
+    "kind": "clavier",
+    "status": "experimental",
+    "plugin": "openmouse-kb-extra"
+  },
+  {
     "vid": "3532",
     "pid": "A0A1",
     "name": "Ranked Nova 60 %",

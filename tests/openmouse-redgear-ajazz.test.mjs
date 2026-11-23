@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { X13_NATIVE_STATUS_HEX } from '../ui/vendor/openmouse/drivers/redgear/status-fixture.js';
-import { AJ200P_PRODUCTS } from '../ui/vendor/openmouse/ajazz/aj200p-products.js';
+import { AJ200P_PRODUCTS, aj200pSettingsLength } from '../ui/vendor/openmouse/ajazz/aj200p-products.js';
 
 globalThis.window = {};
 await import('../ui/js/drivers/openmouse.js');
@@ -91,12 +91,13 @@ test('Redgear X13 Pro : lecture puis DPI et fréquence écrits et relus', async 
   assert.match(mouse.source, /pas encore confirmé sur ce modèle/);
   assert.deepEqual(mouse.state, { dpi: 4000, rate: 1000 });
   assert.deepEqual(Object.keys(mouse.caps), ['dpi', 'rate']);
-  assert.deepEqual(mouse.caps.dpi, { min: 400, max: 4800, step: 400, presets: [400, 800, 1600, 3200], options: [400, 800, 1200, 2400, 3200, 4000, 4800] });
+  assert.deepEqual(mouse.caps.dpi, { discrete: true, options: [400, 800, 1200, 2400, 3200, 4000, 4800] });
   assert.deepEqual(mouse.caps.rate, [125, 250, 500, 1000]);
   assert.equal(sim.writes.length, 0, 'rien n’est écrit à la connexion');
 
-  // 1600 n'existe pas sur cette souris : la valeur la plus proche (1200, code 2)
-  await mouse.set('dpi', 1600);
+  await assert.rejects(mouse.set('dpi', 1600), /non prise en charge/);
+  assert.equal(sim.writes.length, 0);
+  await mouse.set('dpi', 1200);
   await mouse.set('rate', 500);
   const expected = X13_STATUS.slice(1);
   expected[0] = 2;
@@ -115,11 +116,45 @@ test('Redgear X13 Pro : un réglage que la souris ne garde pas est signalé', as
   assert.equal(sim.writes.length, 1);
 });
 
+test('Redgear X13 Pro : une lecture initiale ratée ferme le transport puis déclenche un nouvel essai', async t => {
+  tauri(t);
+  const { dev, sim } = x13Mouse();
+  const read = dev.receiveFeatureReport;
+  const close = dev.close;
+  let reads = 0, closes = 0;
+  dev.receiveFeatureReport = async (...args) => {
+    if (++reads === 1) throw new Error('lecture simulée indisponible');
+    return read(...args);
+  };
+  dev.close = async () => { closes++; await close.call(dev); };
+  const [mouse] = await om.driver.connect(dev, [dev]);
+  assert.equal(reads, 2);
+  assert.equal(closes, 1);
+  assert.equal(mouse.state.dpi, 4000);
+  assert.equal(sim.writes.length, 0);
+});
+
+test('OpenMouse : deux rebranchements sur le même chemin utilisent le nouveau transport', async t => {
+  tauri(t);
+  const devices = Array.from({ length: 3 }, () => x13Mouse());
+  for (const [i, { dev, sim }] of devices.entries()) {
+    dev.info.path = 'même chemin';
+    dev.info.unit = 'même appareil';
+    const [mouse] = await om.driver.connect(dev, [dev]);
+    await mouse.set('dpi', 800);
+    assert.equal(sim.writes.length, 1);
+    assert.deepEqual(devices.map(d => d.dev.opened === true), devices.map((_, j) => i === j));
+    await mouse.client.close();
+    assert.equal(dev.opened, false);
+  }
+  assert.deepEqual(devices.map(d => d.sim.writes.length), [1, 1, 1]);
+});
+
 // ---------- AJAZZ AJ200 / AJ200P AI : sortie 0x0B [cmd, longueur, données], réponses 0x0A / 0x0B ----------
 
 const AJ = { info: 0x13, keys: 0x15, setKeys: 0x16, settings: 0x17, setSettings: 0x18, dpi: 0x19, setDpi: 0x1A };
 
-function ajMouse(pid, blocks) {
+function ajMouse(pid, blocks, responseId = 0x0B) {
   const dev = member(0x363C, pid, {
     usagePage: 0xFFA0, usage: 2,
     inputReports: [report(0x0A, 127), report(0x0B, 127)], outputReports: [report(0x0B, 127)],
@@ -148,7 +183,7 @@ function ajMouse(pid, blocks) {
     // Longueur : données seules pour la table DPI, données + octet d'état pour le reste
     r.set([cmd, cmd === AJ.dpi ? out.length : out.length + 1, 0]);
     r.set(out, 3);
-    reply(0x0B, r);
+    reply(responseId, r);
   };
   return { dev, sim };
 }
@@ -269,4 +304,65 @@ test('AJAZZ AJ200P AI MASTER (PAW3955, molette) : DPI au point près jusqu’à 
   sim.keepWrites = false;
   await assert.rejects(mouse.set('dpi', 12345), /read-back differed/);
   assert.deepEqual([...sim.dpi], [...dpiAfter]);
+});
+
+for (const [pid, product] of AJ200P_PRODUCTS) {
+  test(`AJAZZ ${pid.toString(16)} : rapports complets de lecture et d’écriture`, async t => {
+    tauri(t);
+    const settings = ajSettings(aj200pSettingsLength(product), { 0: 1, 1: 1, 2: 2, 3: 1, 6: 1, 7: 4, 25: 6, 26: 15 });
+    const initialDpi = Array(8).fill(800);
+    const encode = product.sensor === 'PAW3955' ? ajDpi8 : ajDpi6;
+    const { dev, sim } = ajMouse(pid, {
+      settings, info: ajInfo(!product.wired, 76), dpi: encode(initialDpi),
+      keys: Uint8Array.from(product.flywheel ? AJ_KEYS_WHEEL : AJ_KEYS),
+    }, product.wired ? 0x0A : 0x0B);
+    const [mouse] = await om.driver.connect(dev, [dev]);
+    assert.equal(mouse.state.rate, 1000);
+    await mouse.set('rate', 500);
+    await mouse.set('dpi', 1600);
+    await mouse.refresh();
+    assert.equal(mouse.state.rate, 500);
+    assert.equal(mouse.state.dpi, 1600);
+    const settingsAfter = settings.slice();
+    settingsAfter[product.wired ? 1 : 0] = 2;
+    assert.deepEqual(sim.settings, settingsAfter);
+    const dpiAfter = sim.dpi.slice();
+    const stageSize = dpiAfter.length / initialDpi.length;
+    const changed = encode([1600]).slice(0, product.sensor === 'PAW3955' ? 5 : 3);
+    const expected = encode(initialDpi);
+    expected.set(changed, stageSize);
+    assert.deepEqual(dpiAfter, expected);
+  });
+}
+
+test('AJAZZ : le réveil relit sans écrire et la restauration est limitée au contexte d’origine', async t => {
+  tauri(t);
+  const settings = ajSettings(31, { 0: 1, 1: 1, 2: 2, 3: 1, 6: 1, 25: 6, 26: 21 });
+  const dpi = ajDpi6(Array(8).fill(800));
+  dpi[7] = 19; // axe Y du palier actif : 1000 DPI
+  const { dev, sim } = ajMouse(0xED0A, { settings, dpi, info: ajInfo(true, 76), keys: Uint8Array.from(AJ_KEYS) });
+  const [mouse] = await om.driver.connect(dev, [dev]);
+  let origin = await mouse.prepareOrigin(null, 'dpi');
+  await mouse.set('dpi', 1600, origin.context);
+  origin = await mouse.prepareOrigin(origin, 'sleep');
+  await mouse.set('sleep', 120, origin.context);
+  assert.equal(sim.settings[25], 12);
+  assert.equal(sim.settings[26], 18);
+  sim.info = sim.info.slice();
+  sim.info[17] = 1;
+  sim.settings[3] = 0;
+  const beforeWake = sim.log.length;
+  await mouse.reapply();
+  assert.equal(mouse.state.dpi, 800);
+  await assert.rejects(mouse.restoreOrigin(origin), /profil, le palier DPI/);
+  await assert.rejects(mouse.prepareOrigin(origin, 'rate'), /profil, le palier DPI/);
+  assert.ok(!sim.log.slice(beforeWake).some(cmd => [AJ.setDpi, AJ.setSettings].includes(cmd)));
+  sim.info[17] = 0;
+  sim.settings[3] = 1;
+  await mouse.restoreOrigin(origin);
+  await mouse.refresh();
+  assert.equal(mouse.status.dpiY, 1000);
+  assert.equal(mouse.status.deepSleepTimeout, 210);
+  assert.deepEqual(sim.settings, settings);
+  assert.deepEqual(sim.dpi, dpi);
 });

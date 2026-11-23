@@ -408,10 +408,15 @@ function drvStatus(inst, text, kind = '') {
 // Pastille du pilote, sinon « Confirmé » si des utilisateurs l'ont confirmé (js/drivers/confirm.js)
 const drvChip = inst => inst.chip || (typeof confirmChip === 'function' ? confirmChip(inst) : null);
 const drvConfirm = (...a) => { if (typeof drvConfirmSend === 'function') try { drvConfirmSend(...a); } catch {} };
-const origKey = inst => 'orig:' + inst.key;
+const origKey = inst => 'orig:' + (inst.originId || inst.key);
 const wantKey = inst => 'want:' + inst.key;
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
-const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const lsSet = (k, v) => {
+  try {
+    v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v));
+    return true;
+  } catch { return false; }
+};
 
 // Réglages choisis dans PeriphHub, réappliqués au branchement (appareils sans mémoire intégrée).
 // Seuls ceux qui diffèrent de l'état relu sont renvoyés (pas d'écriture inutile dans l'appareil).
@@ -434,15 +439,22 @@ function drvFail(inst, cap, e, what = 'réglage') {
   drvFails.set(id, [...(drvFails.get(id) || []), msg].slice(-6));
 }
 const drvOrigin = inst => lsGet(origKey(inst));
+const drvOriginBusy = new WeakSet();
 
 async function drvSet(inst, label, cap, value) {
-  // État d'origine gardé avant la toute première modification
-  if (!drvOrigin(inst)) {
-    lsSet(origKey(inst), { date: Date.now(), state: structuredClone(inst.state) });
-  }
+  if (drvOriginBusy.has(inst)) return;
+  if (inst.prepareOrigin) drvOriginBusy.add(inst);
   drvStatus(inst, label + '…');
   try {
-    await inst.set(cap, value);
+    const origin = drvOrigin(inst);
+    if (inst.prepareOrigin) {
+      const next = await inst.prepareOrigin(origin, cap);
+      if (!lsSet(origKey(inst), next)) throw new Error('Impossible de sauvegarder les réglages d’origine.');
+      await inst.set(cap, value, next.context);
+    } else {
+      if (!origin) lsSet(origKey(inst), { date: Date.now(), state: structuredClone(inst.state) });
+      await inst.set(cap, value);
+    }
     lsSet(wantKey(inst), { ...lsGet(wantKey(inst)), [cap]: value });
     await inst.refresh();
     drvStatus(inst, label + ' ✔', 'ok');
@@ -451,25 +463,34 @@ async function drvSet(inst, label, cap, value) {
   } catch (e) {
     drvFail(inst, cap, e);
     drvConfirm(inst, cap, false, e?.message || e);
-    drvStatus(inst, 'Erreur : ' + e.message, 'err');
+    drvStatus(inst, 'Erreur : ' + (inst.settingError?.(e) || e.message), 'err');
+  } finally {
+    drvOriginBusy.delete(inst);
   }
   drvRender(inst);
 }
 
 async function drvRestore(inst) {
   const o = drvOrigin(inst);
-  if (!o) return;
+  if (!o || drvOriginBusy.has(inst)) return;
+  if (inst.restoreOrigin) drvOriginBusy.add(inst);
   drvStatus(inst, 'Retour aux réglages d’origine…');
   try {
-    for (const cap of ['dpi', 'rate', 'smartshift', 'hires', 'invert', 'light', ...(inst.restoreCaps || [])]) {
-      if (o.state[cap] != null && inst.caps[cap] && JSON.stringify(o.state[cap]) !== JSON.stringify(inst.state[cap])) await inst.set(cap, structuredClone(o.state[cap]));
+    if (inst.restoreOrigin) await inst.restoreOrigin(o);
+    else {
+      for (const cap of ['dpi', 'rate', 'smartshift', 'hires', 'invert', 'light', ...(inst.restoreCaps || [])]) {
+        if (o.state[cap] != null && inst.caps[cap] && JSON.stringify(o.state[cap]) !== JSON.stringify(inst.state[cap])) await inst.set(cap, structuredClone(o.state[cap]));
+      }
     }
     await inst.refresh();
     lsSet(origKey(inst), null);
     lsSet(wantKey(inst), null);
     drvStatus(inst, 'Réglages d’origine remis', 'ok');
   } catch (e) {
-    drvStatus(inst, 'Erreur : ' + e.message, 'err');
+    if (inst.settingError) drvFail(inst, 'origine', e, 'restauration');
+    drvStatus(inst, 'Erreur : ' + (inst.settingError?.(e) || e.message), 'err');
+  } finally {
+    drvOriginBusy.delete(inst);
   }
   drvRender(inst);
 }
@@ -488,16 +509,19 @@ function drvRender(inst) {
   const rows = [];
   if (c.dpi && s.dpi != null) {
     const d = c.dpi;
-    rows.push(field('Sensibilité (DPI)',
+    const selectDpi = v => drvSet(inst, `${v} DPI`, 'dpi', v);
+    if (d.discrete) rows.push(field('Sensibilité (DPI)',
+      segmented(d.options.map(v => ({ v, label: v + ' DPI' })), s.dpi, selectDpi)));
+    else rows.push(field('Sensibilité (DPI)',
       h('div', { class: 'row-inline' }, ...(d.presets || []).filter(p => p >= d.min && p <= d.max).map(p =>
         h('button', { class: 'mini ' + (p === s.dpi ? '' : 'ghost'), onclick: () => p !== s.dpi && drvSet(inst, `${p} DPI`, 'dpi', p) }, String(p)))),
-      slider(d.min, d.max, d.step, s.dpi, ' DPI', v => drvSet(inst, `${v} DPI`, 'dpi', v)),
+      slider(d.min, d.max, d.step, s.dpi, ' DPI', selectDpi),
       h('div', { class: 'muted small' }, `De ${d.min} à ${d.max} DPI, par pas de ${d.step}.`)));
   }
   if (c.rate?.length && s.rate) {
     rows.push(field('Fréquence d’interrogation',
       segmented(c.rate.map(r => ({ v: r, label: r >= 1000 ? (r / 1000) + ' kHz' : r + ' Hz' })), s.rate, v => drvSet(inst, `${v} Hz`, 'rate', v)),
-      h('div', { class: 'muted small' }, 'Plus elle est haute, plus le curseur est fluide (et plus la batterie s’use vite).')));
+      inst.kind === 'souris' ? h('div', { class: 'muted small' }, 'Plus elle est haute, plus le curseur est fluide (et plus la batterie s’use vite).') : null));
   }
   const wheel = [];
   if (c.smartshift && s.smartshift) wheel.push(toggle('Molette crantée (SmartShift)', s.smartshift.mode === 2, on => drvSet(inst, 'Molette', 'smartshift', { ...s.smartshift, mode: on ? 2 : 1 })));

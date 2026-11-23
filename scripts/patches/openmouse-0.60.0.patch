@@ -144,3 +144,160 @@
      if (vendorId !== SCYROX_VENDOR_ID)
          return undefined;
      return SCYROX_PRODUCTS.get(productId);
+diff --git a/ui/vendor/openmouse/drivers/ajazz/aj200p-hid.js b/ui/vendor/openmouse/drivers/ajazz/aj200p-hid.js
+index 59ada8f..30b0634 100644
+--- a/ui/vendor/openmouse/drivers/ajazz/aj200p-hid.js
++++ b/ui/vendor/openmouse/drivers/ajazz/aj200p-hid.js
+@@ -181,12 +181,15 @@ export class AjazzAj200pHidClient {
+             throw new Error("The AJ200P did not keep the new setting; read-back differed.");
+         await this.checkProfile(profile);
+     }
+-    updateSettings(patch) {
++    updateSettings(patch, context) {
+         return this.transaction(async () => {
+             const profile = await this.beginEdit();
+             const current = await this.settings();
+             const next = current.raw.slice();
+-            patch(next, current, (await this.info()).wireless);
++            const info = await this.info();
++            if (context && (context.profile !== profile || context.stage !== current.active || context.wireless !== info.wireless))
++                throw new Error("The AJ200P settings context changed.");
++            patch(next, current, info.wireless);
+             aj200pDecodeSettings(next);
+             if (!equal(next, current.raw))
+                 await this.writeBlock(AJ200P_COMMAND.setSettings, AJ200P_COMMAND.settings, next, profile);
+@@ -270,6 +273,7 @@ export class AjazzAj200pHidClient {
+                     angleSnapping: config.angleSnapping,
+                     performanceMode: config.performanceMode,
+                     sleepTimeout: config.sleepSeconds,
++                    deepSleepTimeout: config.deepSleepSeconds,
+                     buttonMappings: Object.fromEntries(this.buttonNames.map((name, i) => [
+                         name,
+                         aj200pBindingLabel(keys[AJ200P_BUTTON_SLOTS[i]]),
+@@ -329,13 +333,13 @@ export class AjazzAj200pHidClient {
+                 await this.writeBlock(AJ200P_COMMAND.setKeys, AJ200P_COMMAND.keys, next, profile);
+         });
+     }
+-    async setPollingRate(hz) {
++    async setPollingRate(hz, context) {
+         const code = aj200pEncodeRate(hz);
+         await this.updateSettings((raw, _config, wireless) => {
+             if (!(wireless ? this.product.wirelessRates : this.product.wiredRates).includes(hz))
+                 throw new RangeError("This model does not support that polling rate on this connection.");
+             raw[wireless ? 0 : 1] = code;
+-        });
++        }, context);
+         return hz;
+     }
+     async setActiveDpiStage(stage) {
+@@ -383,7 +387,7 @@ export class AjazzAj200pHidClient {
+             return count;
+         });
+     }
+-    editDpi(stage, patch, axesTogether = false) {
++    editDpi(stage, patch, axesTogether = false, context) {
+         if (patch.x !== undefined)
+             this.validateDpi(patch.x);
+         if (patch.y !== undefined)
+@@ -393,6 +397,8 @@ export class AjazzAj200pHidClient {
+         return this.transaction(async () => {
+             const profile = await this.beginEdit();
+             const config = await this.settings();
++            if (context && (context.profile !== profile || context.stage !== config.active || context.wireless !== (await this.info()).wireless))
++                throw new Error("The AJ200P settings context changed.");
+             const index = stage ?? config.active;
+             aj200pInteger(index, 0, config.count - 1, "DPI stage");
+             const data = await this.dpiTable();
+@@ -401,70 +407,76 @@ export class AjazzAj200pHidClient {
+                 await this.writeBlock(AJ200P_COMMAND.setDpi, AJ200P_COMMAND.dpi, next, profile);
+         });
+     }
+-    async setDpi(dpi) {
+-        await this.editDpi(null, { x: dpi }, true);
++    async setDpi(dpi, context) {
++        await this.editDpi(context?.stage, { x: dpi }, true, context);
+         return dpi;
+     }
+     async setDpiStageValue(stage, dpi) {
+         await this.editDpi(stage, { x: dpi }, true);
+         return dpi;
+     }
+-    async setDpiStageAxes(stage, x, y) {
+-        await this.editDpi(stage, { x, y });
++    async setDpiStageAxes(stage, x, y, context) {
++        await this.editDpi(stage, { x, y }, false, context);
+     }
+     async setDpiStageColor(stage, color) {
+         await this.editDpi(stage, { color });
+     }
+-    async setLiftOffDistance(lod) {
++    async setLiftOffDistance(lod, context) {
+         const code = LODS.indexOf(lod);
+         if (code < 0 || !this.product.lodCodes.includes(code))
+             throw new RangeError("Unsupported AJ200P lift-off distance.");
+         await this.updateSettings((raw) => {
+             raw[6] = code;
+-        });
++        }, context);
+     }
+-    async setDebounceTime(ms) {
++    async setDebounceTime(ms, context) {
+         aj200pInteger(ms, 0, 20, "Debounce time");
+         await this.updateSettings((raw) => {
+             raw[7] = ms;
+-        });
++        }, context);
+         return ms;
+     }
+-    async setMotionSync(enabled) {
++    async setMotionSync(enabled, context) {
+         if (typeof enabled !== "boolean")
+             throw new TypeError("Motion Sync must be a boolean.");
+         await this.updateSettings((raw) => {
+             raw[8] = Number(enabled);
+-        });
++        }, context);
+         return enabled;
+     }
+-    async setAngleSnapping(enabled) {
++    async setAngleSnapping(enabled, context) {
+         if (typeof enabled !== "boolean")
+             throw new TypeError("Angle snapping must be a boolean.");
+         await this.updateSettings((raw) => {
+             raw[10] = Number(enabled);
+-        });
++        }, context);
+         return enabled;
+     }
+-    async setPerformanceMode(enabled) {
++    async setPerformanceMode(enabled, context) {
+         if (typeof enabled !== "boolean")
+             throw new TypeError("Performance mode must be a boolean.");
+         await this.updateSettings((raw, config) => {
+             if (config.performanceMode === null)
+                 throw new Error("Unknown AJ200P sensor power mode.");
+             raw[15] = Number(!enabled);
+-        });
++        }, context);
+         return enabled;
+     }
+-    async setSleepTimeout(seconds) {
++    async setSleepTimeout(seconds, context) {
+         if (!AJ200P_SLEEP_SECONDS.includes(seconds))
+             throw new RangeError("Unsupported AJ200P sleep timeout.");
+         await this.updateSettings((raw) => {
+             raw[25] = seconds / 10;
+             raw[26] = (seconds + 60) / 10;
+-        });
++        }, context);
+         return seconds;
+     }
++    async restoreSleepTimeouts(seconds, deepSeconds, context) {
++        await this.updateSettings((raw) => {
++            raw[25] = aj200pInteger(seconds / 10, 0, 255, "Sleep timeout");
++            raw[26] = aj200pInteger(deepSeconds / 10, 0, 255, "Deep sleep timeout");
++        }, context);
++    }
+     async setLighting(lighting) {
+         if (lighting.zone !== "DPI indicator" || lighting.mode === null)
+             throw new RangeError("Unsupported AJ200P lighting zone or mode.");

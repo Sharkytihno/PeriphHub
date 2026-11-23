@@ -9,7 +9,8 @@ const ST_SKIP = new Set(['battery', 'profile', 'buttons', 'macros', 'keys', 'key
 const ST_NAME = { dpi: 'DPI', rate: 'Fréquence', lod: 'Distance de levée', sleep: 'Mise en veille', debounce: 'Anti-rebond',
   motionSync: 'Motion Sync', angleSnapping: 'Correction d’angle', ripple: 'Anti-ondulation', performance: 'Mode performance',
   smartshift: 'Molette crantée', hires: 'Défilement haute résolution', invert: 'Défilement inversé', light: 'Éclairage',
-  actuation: 'Course d’activation', travel: 'Course d’activation', rt: 'Rapid Trigger', rtSens: 'Sensibilité du Rapid Trigger', brightness: 'Luminosité' };
+  actuation: 'Course d’activation', travel: 'Course d’activation', rt: 'Rapid Trigger', rtSens: 'Sensibilité du Rapid Trigger', brightness: 'Luminosité',
+  systemMode: 'Mode du clavier', backlight: 'Rétroéclairage' };
 
 const stEq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const stOther = (list, cur) => {
@@ -28,6 +29,7 @@ const stStep = (cur, min, max, step) => {
 function selfTestValue(cap, c, cur) {
   if (cur == null || c == null || c === false || ST_SKIP.has(cap)) return;
   if (cap === 'dpi' && typeof cur === 'number') {
+    if (c.discrete) return stOther(c.options, cur);
     const opts = (c.options || []).filter(v => v >= c.min && v <= c.max);
     if (opts.length > 1 && opts.length < 200) return stOther(opts, cur);
     return stStep(cur, c.min, c.max, Math.max(c.step || 50, 50));
@@ -62,7 +64,7 @@ function selfTestPlan(inst) {
   return plan;
 }
 
-function selfTestable(inst) { return !!inst?.dev && !inst.system && !inst.noOrigin && inst.kind !== 'webcam' && selfTestPlan(inst).length > 0; }
+function selfTestable(inst) { return !!inst?.dev && !inst.system && !inst.noOrigin && !inst.noSelfTest && inst.kind !== 'webcam' && selfTestPlan(inst).length > 0; }
 
 // Relu « comme demandé » : égalité, ou nombre arrondi au palier près par l'appareil
 function stRead(got, want, from, c) {

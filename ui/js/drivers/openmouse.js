@@ -13,6 +13,7 @@ import { RoccatHidClient } from '../../vendor/openmouse/drivers/roccat/hid.js';
 import { AulaSc380ProHidClient } from '../../vendor/openmouse/drivers/aula/hid.js';
 import * as kbReg from '../../vendor/openmouse-kb/drivers/registry.js';
 import { LamzuAtlantisHidClient } from '../../vendor/openmouse/drivers/lamzu-atlantis/hid.js';
+import { extraKeyboardMatch, extraKeyboardConnect } from './openmouse-keyboards.js';
 
 const OM_VIDS = new Set([
   0x03EB, 0x03F0, 0x0483, 0x045E, 0x046D, 0x04D9, 0x04F3, 0x093A, 0x0951, 0x0B05, 0x0BDA,
@@ -141,9 +142,11 @@ function omInterfaces(devices) {
     byIf.get(k).push(d);
   }
   return [...byIf].map(([k, members]) => {
-    const key = k + '|' + members.map(m => m.info?.path).sort().join('|');
-    if (!omComposite.has(key)) omComposite.set(key, new OmHIDDevice(members));
-    return omComposite.get(key);
+    const cached = omComposite.get(k);
+    if (cached?.members.length === members.length && members.every(m => cached.members.includes(m))) return cached;
+    const composite = new OmHIDDevice(members);
+    omComposite.set(k, composite);
+    return composite;
   });
 }
 
@@ -190,6 +193,7 @@ function omMap(inst, st) {
     const min = ed?.minDpi ?? opts[0] ?? 100, max = ed?.maxDpi ?? opts[opts.length - 1] ?? 26000;
     const step = ed?.stepDpi ?? (opts.length > 1 ? Math.max(1, opts[1] - opts[0]) : 50);
     caps.dpi = { min, max, step, presets: [400, 800, 1600, 3200, 6400].filter(p => p >= min && p <= max), options: opts };
+    if (ui.family === 'redgear-x13') caps.dpi = { options: opts, discrete: true };
   }
   if (st.pollingRateHz && typeof c.setPollingRate === 'function' && !ui.pollingReadOnly) {
     s.rate = st.pollingRateHz;
@@ -223,7 +227,9 @@ function omMap(inst, st) {
   inst.note = ui.valuesVerified === false
     ? 'Cette souris ne sait pas indiquer ses réglages actuels : les valeurs affichées sont les dernières envoyées par PeriphHub, ou celles par défaut. '
       + 'Choisir un DPI ici remplace les paliers du bouton DPI de la souris par cette seule valeur.'
-    : undefined;
+    : ui.family === 'ajazz-aj200p'
+      ? 'Restaurez les réglages sauvegardés avant de modifier un autre profil, palier DPI ou mode de liaison.'
+      : undefined;
   inst.meta = [st.connectionType === 'Wireless' ? 'Sans fil' : st.connectionType === 'Wired' ? 'Filaire' : null,
     st.firmware?.length ? 'firmware ' + st.firmware.join(' / ') : null].filter(Boolean).join(' · ');
 }
@@ -284,16 +290,75 @@ function deviceBrandSafe(client) {
 }
 
 const OM_SETTERS = {
-  dpi: (c, v, inst) => c.setDpi(inst.caps.dpi.options?.length > 1 && inst.caps.dpi.options.length < 200 ? omNear(inst.caps.dpi.options, v) : v),
-  rate: (c, v) => c.setPollingRate(v),
-  lod: (c, v) => c.setLiftOffDistance(v),
-  motionSync: (c, v) => c.setMotionSync(v),
-  angleSnapping: (c, v) => c.setAngleSnapping(v),
+  dpi: (c, v, inst, context) => {
+    const dpi = inst.caps.dpi;
+    if (dpi.discrete) {
+      if (!dpi.options.includes(v)) throw new Error('Valeur de DPI non prise en charge.');
+      return c.setDpi(v);
+    }
+    return c.setDpi(dpi.options?.length > 1 && dpi.options.length < 200 ? omNear(dpi.options, v) : v, context);
+  },
+  rate: (c, v, _inst, context) => c.setPollingRate(v, context),
+  lod: (c, v, _inst, context) => c.setLiftOffDistance(v, context),
+  motionSync: (c, v, _inst, context) => c.setMotionSync(v, context),
+  angleSnapping: (c, v, _inst, context) => c.setAngleSnapping(v, context),
   ripple: (c, v) => c.setRippleControl(v),
-  performance: (c, v) => c.setPerformanceMode(v),
-  debounce: (c, v) => c.setDebounceTime(v),
-  sleep: (c, v) => c.setSleepTimeout(v),
+  performance: (c, v, _inst, context) => c.setPerformanceMode(v, context),
+  debounce: (c, v, _inst, context) => c.setDebounceTime(v, context),
+  sleep: (c, v, _inst, context) => c.setSleepTimeout(v, context),
 };
+
+function ajazzContext(status) {
+  return { profile: status.activeProfile, stage: status.activeDpiStage, wireless: status.connectionType === 'Wireless' };
+}
+
+function ajazzValue(inst, cap) {
+  if (cap === 'dpi') return [inst.status.dpi, inst.status.dpiY];
+  if (cap === 'sleep') return [inst.status.sleepTimeout, inst.status.deepSleepTimeout];
+  return inst.state[cap];
+}
+
+function ajazzCheckContext(actual, expected) {
+  if (!expected || Object.keys(actual).some(k => actual[k] !== expected[k])) {
+    throw new Error('Retrouvez le profil, le palier DPI et le mode de liaison d’origine sur la souris.');
+  }
+}
+
+function ajazzRestoreHooks(inst, client) {
+  inst.reapply = inst.refresh;
+  inst.noSelfTest = true;
+  if (inst.dev.info?.unit) inst.originId = inst.key + ':' + inst.dev.info.unit;
+  inst.prepareOrigin = async (origin, cap) => {
+    const shown = ajazzContext(inst.status);
+    await inst.refresh();
+    const context = ajazzContext(inst.status);
+    ajazzCheckContext(context, shown);
+    if (origin) ajazzCheckContext(context, origin.context);
+    const changes = { ...origin?.changes };
+    if (!Object.hasOwn(changes, cap)) changes[cap] = ajazzValue(inst, cap);
+    return { date: origin?.date ?? Date.now(), context, changes };
+  };
+  inst.restoreOrigin = async ({ context, changes }) => {
+    await inst.refresh();
+    ajazzCheckContext(ajazzContext(inst.status), context);
+    for (const [cap, original] of Object.entries(changes)) {
+      if (JSON.stringify(ajazzValue(inst, cap)) === JSON.stringify(original)) continue;
+      if (cap === 'dpi') await client.setDpiStageAxes(context.stage, ...original, context);
+      else if (cap === 'sleep') await client.restoreSleepTimeouts(...original, context);
+      else await inst.set(cap, original, context);
+    }
+  };
+}
+
+function omErrorText(error) {
+  const raw = error?.message || String(error);
+  if (raw.startsWith('Retrouvez le profil') || raw === 'Valeur de DPI non prise en charge.'
+    || raw === 'Impossible de sauvegarder les réglages d’origine.') return raw;
+  if (/profile .*chang|settings context changed/i.test(raw)) return 'Le profil, le palier DPI ou la liaison a changé. Actualisez la fiche.';
+  if (/read.back (?:mismatch|differed)/i.test(raw)) return 'La souris n’a pas conservé le réglage après vérification.';
+  if (/timed? out|time.?out/i.test(raw)) return 'Délai dépassé pendant la lecture de la souris.';
+  return 'Le réglage a échoué. Les détails sont disponibles dans le diagnostic.';
+}
 
 function omRows(inst) {
   const s = inst.state, c = inst.caps, rows = [];
@@ -353,17 +418,26 @@ async function omTry(dev, group) {
     source: 'Protocole d’OpenMouse (projet libre, AGPL-3.0), pas encore confirmé sur ce modèle dans PeriphHub. ' +
       'Les réglages sont écrits dans la souris ; ceux d’origine sont gardés avant la première modification.',
   };
-  inst.refresh = async () => omMap(inst, await client.readStatus());
+  inst.refresh = async () => {
+    const status = await client.readStatus();
+    if (status.ui?.family === 'redgear-x13' && !status.ui.settingsReady) {
+      throw new Error(client.lastError || 'État de la souris indisponible.');
+    }
+    omMap(inst, status);
+  };
   inst.refreshBattery = inst.refresh;
   inst.r3light = { effect: 'mouse', color: '#ffffff', brightness: null, zones: Array(4).fill('#ffffff') };
-  inst.set = async (cap, v) => {
+  inst.set = async (cap, v, context) => {
     if (cap === 'light' && inst.caps.light) return r3SetLight(inst, v);
     const f = OM_SETTERS[cap];
     if (!f) throw new Error('réglage inconnu : ' + cap);
-    await f(client, v, inst);
+    await f(client, v, inst, context);
   };
   inst.rows = () => [...r3Rows(inst), ...omRows(inst)];
   try { await inst.refresh(); } catch (e) { await client.close?.().catch(() => {}); throw e; }
+  if (inst.status.ui?.family === 'ajazz-aj200p') ajazzRestoreHooks(inst, client);
+  if (inst.status.ui?.family === 'redgear-x13') inst.reapply = inst.refresh;
+  if (inst.reapply) inst.settingError = omErrorText;
   // Éclairage du Rival 3 : rien n'est gardé par la souris, on renvoie le choix (le reste est dans sa mémoire)
   const want = inst.caps.light && lsGet(wantKey(inst))?.light;
   if (want && want.effect !== 'mouse') {
@@ -378,7 +452,7 @@ async function omTry(dev, group) {
 // Keychron à effet Hall : point d'activation et rapid trigger communs à toutes les touches, seulement
 // quand toutes les touches ont déjà le même réglage (sinon on n'écrase pas un réglage touche par touche :
 // le clavier retombe sur le pilote VIA, éclairage seul).
-// Wuque, Kochi, Arbiter : protocoles encore trop partiels pour être exposés sans risque.
+// Wuque, Kochi et Arbiter ont des réglages dédiés dans openmouse-keyboards.js.
 const KB_FAMILIES = new Set(['Wooting', 'SteelSeries', 'Razer', 'Logitech', 'Keychron']);
 const KB_FIRST = new Set(['Wooting', 'SteelSeries']); // aucun autre pilote dans PeriphHub
 const WOOT_ZERO = 16384, WOOT_PER_MM = 4096;
@@ -702,6 +776,8 @@ window.omApi = {
     connect: (dev, group) => omConnect(omPeers(dev, group)),
   },
   keyboardDrivers: [
+    { id: 'openmouse-kb-extra', priority: 25, match: extraKeyboardMatch, isolatePhysical: true,
+      connect: (dev, group) => extraKeyboardConnect(omPeers(dev, group)) },
     // Wooting, SteelSeries Apex : passent avant tout le reste
     { id: 'openmouse-kb', priority: 15, match: kbMatch(true), isolatePhysical: true, connect: (dev, group) => kbConnect(omPeers(dev, group)) },
     // Keychron à effet Hall : avant le pilote VIA (priorité 20), qui reprend la main si on ne peut rien régler
