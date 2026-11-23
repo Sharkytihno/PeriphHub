@@ -41,7 +41,7 @@ PeriphHub vise à les remplacer par une seule petite application :
 | Claviers VIA / Vial (Keychron, Akko, NuPhy, REKT…) | Protocole VIA | Éclairage enregistré dans le clavier ; REKT : touches, rapid trigger, macros | ✅ REKT · 🧪 autres |
 | Claviers SteelSeries Apex 3 / 3 TKL, Turtle Beach Vulcan II TKL Pro | Pilotes intégrés | Éclairage (Apex 3 : couleurs par zone, effets animés) | 🧪 |
 | Logitech (HID++ 2.0) | D'après Solaar / libratbag | DPI, fréquence, SmartShift, molette, batterie | 🧪 |
-| Souris de ~50 marques : Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE, Ninjutso, Glorious, HyperX, Corsair, SteelSeries, ASUS… | Bibliothèque [OpenMouse](https://github.com/OpenMouse-Project/mouse-protocol) (AGPL-3.0) | DPI, fréquence, LOD, Motion Sync, correction d'angle, lissage, anti-rebond, veille, batterie | 🧪 |
+| Souris de ~50 marques : Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VXE, MCHOSE, G-Wolves, VAXEE, Ninjutso, Glorious, HyperX, Corsair, SteelSeries, ASUS, AJAZZ AJ200 AI, Redgear X13 Pro… | Bibliothèque [OpenMouse](https://github.com/OpenMouse-Project/mouse-protocol) (AGPL-3.0) | DPI, fréquence, LOD, Motion Sync, correction d'angle, lissage, anti-rebond, veille, batterie | 🧪 |
 | Claviers à effet Hall Wooting (ARM), SteelSeries Apex Pro et Keychron HE ; claviers Razer et Logitech en secours | Bibliothèque OpenMouse (`@openmouse/keyboard-protocol`) | Point d'activation, rapid trigger, fréquence, luminosité (réglages globaux) | 🧪 |
 | Razer souris et claviers | D'après OpenRazer | DPI, fréquence, éclairage, batterie | 🧪 |
 | Casques Razer Kraken filaires (7.1, V2, Tournament Edition, Ultimate, Kitty V2, Classic) | D'après OpenRazer | Éclairage (fixe, respiration, cycle, éteint) | 🧪 |

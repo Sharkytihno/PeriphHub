@@ -2116,5 +2116,189 @@
     "kind": "souris",
     "status": "experimental",
     "plugin": "openmouse-readonly"
+  },
+  {
+    "vid": "1B80",
+    "pid": "B412",
+    "name": "Redgear X13 Pro",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED03",
+    "name": "AJAZZ AJ200 NL AI MC (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED05",
+    "name": "AJAZZ AJ200 NL AI MC (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED06",
+    "name": "AJAZZ AJ200P NL AI MC (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED00",
+    "name": "AJAZZ AJ200P NL AI MC (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED07",
+    "name": "AJAZZ AJ200 NL AI PRO+ (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED08",
+    "name": "AJAZZ AJ200 NL AI PRO+ (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC08",
+    "name": "AJAZZ AJ200 NL AI PRO+ (autre récepteur)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED09",
+    "name": "AJAZZ AJ200P NL AI ULTRA (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED0A",
+    "name": "AJAZZ AJ200P NL AI ULTRA (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC0A",
+    "name": "AJAZZ AJ200P NL AI ULTRA (autre récepteur)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED0B",
+    "name": "AJAZZ AJ200P NL AI ULTRA+ (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED0C",
+    "name": "AJAZZ AJ200P NL AI ULTRA+ (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC0C",
+    "name": "AJAZZ AJ200P NL AI ULTRA+ (autre récepteur)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED1D",
+    "name": "AJAZZ AJ200P NL AI ULTRA-3955 (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED1E",
+    "name": "AJAZZ AJ200P NL AI ULTRA-3955 (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC1E",
+    "name": "AJAZZ AJ200P NL AI ULTRA (récepteur nano 8K)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED1B",
+    "name": "AJAZZ AJ200P AI MASTER (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED1C",
+    "name": "AJAZZ AJ200P AI MASTER (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC1C",
+    "name": "AJAZZ AJ200P AI MASTER (autre récepteur)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED25",
+    "name": "AJAZZ AJ200P NL AI S ULTRA (filaire)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "ED26",
+    "name": "AJAZZ AJ200P NL AI S ULTRA (dongle)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
+  },
+  {
+    "vid": "363C",
+    "pid": "FC26",
+    "name": "AJAZZ AJ200P NL AI S ULTRA (autre récepteur)",
+    "kind": "souris",
+    "status": "experimental",
+    "plugin": "openmouse"
   }
 ]

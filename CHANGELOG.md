@@ -16,6 +16,12 @@ Chaque section `## x.y.z` sert aussi de notes à la Release GitHub de cette vers
 - Éclairage des cartes mères Gigabyte (RGB Fusion 2) : les commandes partent toujours vers la
   collection d'éclairage du contrôleur ITE. Selon l'ordre de Windows, elles pouvaient viser l'autre
   collection et échouer à chaque fois (« Fonction incorrecte »).
+- Nouvelles souris, en expérimental (protocoles d'OpenMouse déjà intégrés, pas encore essayés sur
+  le matériel dans PeriphHub) : AJAZZ AJ200 et AJ200P AI (MC, PRO+, ULTRA, ULTRA+, ULTRA-3955,
+  AI MASTER, S ULTRA ; filaire et récepteurs, 22 identifiants) et Redgear X13 Pro. DPI, fréquence,
+  et pour les AJAZZ distance de décollage, Motion Sync, correction d'angle, mode performance,
+  anti-rebond, veille et batterie. Chaque réglage est relu après écriture. La passerelle Windows
+  n'ouvre que leur collection de configuration, comme pour les VGN.
 
 ## 2.1.5
 

@@ -1,7 +1,8 @@
 // PeriphHub — souris de dizaines de marques via les protocoles d'OpenMouse
 // (@openmouse/protocol, AGPL-3.0-or-later, importé dans ui/vendor/openmouse).
 // Pulsar, Lamzu, WLMouse, Endgame Gear, Finalmouse, ATK, VGN, MCHOSE, Ninjutso, G-Wolves,
-// VAXEE, Glorious, HyperX, Corsair, SteelSeries, ASUS, Cooler Master, Redragon…
+// VAXEE, Glorious, HyperX, Corsair, SteelSeries, ASUS, Cooler Master, Redragon, AJAZZ AJ200 AI,
+// Redgear X13 Pro…
 //
 // Module ES (le seul de l'interface) : il expose window.omApi, qu'utilisent devices.js
 // (la page Scyrox laisse ces souris à OpenMouse) et shell.js (enregistrement du pilote).
@@ -19,6 +20,10 @@ const OM_VIDS = new Set([
   0x258A, 0x25A7, 0x260D, 0x2FE3, 0x3057, 0x3151, 0x31E3, 0x320F, 0x33E4, 0x3367, 0x3434,
   0x3554, 0x361D, 0x362D, 0x391D, 0x36A7, 0x3710, 0x372E, 0x373B, 0x373E, 0x3770, 0x3794, 0x37B0,
   0x3837, 0x3879, 0xA8A4, 0xA8A5,
+  // Modèles déclarés un par un dans data/devices.json (la passerelle n'ouvre que leur collection de
+  // configuration, voir src-tauri/src/hid.rs) : Redgear X13 Pro (1B80:B412, rapport de fonction 3),
+  // AJAZZ AJ200 / AJ200P AI (363C, collection 0xFFA0/2, rapports 0x0A / 0x0B de 127 octets)
+  0x1B80, 0x363C,
 ]);
 // Appareils qui ont leur page dédiée (js/devices.js), vérifiée sur le matériel
 const OM_SKIP = new Set(['3554:F5F7', '3554:F5F6', '373B:1194', '1532:0565', '1532:056E', '048D:5702']);

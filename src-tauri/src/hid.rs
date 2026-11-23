@@ -32,6 +32,12 @@ const OPENMOUSE_VIDS: &[u16] = &[
     0x3837, 0x3879, 0xA8A4, 0xA8A5,
 ];
 
+// Souris dont le pilote OpenMouse ne parle qu'à une collection de configuration : seuls les modèles
+// déclarés dans data/devices.json, et sur cette seule collection (page, usage).
+// VGN CompX, Redgear X13 Pro (rapport de fonction 3), AJAZZ AJ200 / AJ200P AI (rapports 0x0A / 0x0B).
+const CONFIG_ONLY: &[(u16, (u16, u16))] =
+    &[(0x391D, (0xFF02, 2)), (0x1B80, (0xFF00, 1)), (0x363C, (0xFFA0, 2))];
+
 // Manettes PlayStation (ui/js/drivers/playstation.js) : DualShock 4 (v1, v2, adaptateur sans fil),
 // DualSense, DualSense Edge. Seulement la collection manette (page 0x01, usage 0x05).
 const PLAYSTATION: &[u16] = &[0x05C4, 0x09CC, 0x0BA0, 0x0CE6, 0x0DF2];
@@ -108,9 +114,12 @@ fn allowed_info(d: &HidIface) -> bool {
     if let Some(protocol) = read_only_device(d.vid, d.pid) {
         return protocol.matches_collection(d);
     }
-    // Souris VGN CompX : le pilote ne connaît que les modèles et la collection déclarés.
-    if d.vid == 0x391D {
-        return (d.usage_page, d.usage) == (0xFF02, 2) && allowed(d.vid, d.pid);
+    // VGN CompX, Redgear, AJAZZ AJ200 AI : seulement les modèles et la collection déclarés.
+    if let Some(&(_, collection)) = CONFIG_ONLY.iter().find(|(vid, _)| *vid == d.vid) {
+        // La collection VIA d'un clavier QMK / Vial de ces fabricants reste visible (sauf chez VGN,
+        // comme avant)
+        let via = d.vid != 0x391D && (d.usage_page, d.usage) == VIA_USAGE;
+        return via || ((d.usage_page, d.usage) == collection && allowed(d.vid, d.pid));
     }
     allowed(d.vid, d.pid)
         || (d.usage_page, d.usage) == VIA_USAGE
@@ -638,5 +647,37 @@ mod tests {
         iface.pid = 0x1A30;
         iface.product = "VGN DFU bootloader".into();
         assert!(!allowed_info(&iface));
+    }
+
+    #[test]
+    fn redgear_et_ajazz_seulement_sur_la_collection_de_configuration() {
+        // (vid, pid, collection de configuration, autre collection du même appareil)
+        for (vid, pid, config, other) in [
+            (0x1B80, 0xB412, (0xFF00, 1), (1, 2)),
+            (0x363C, 0xED1C, (0xFFA0, 2), (0xFFA0, 1)),
+            (0x363C, 0xED03, (0xFFA0, 2), (1, 6)),
+            (0x363C, 0xFC26, (0xFFA0, 2), (1, 2)),
+        ] {
+            let mut iface = HidIface {
+                path: String::new(),
+                vid,
+                pid,
+                usage_page: config.0,
+                usage: config.1,
+                interface: 1,
+                product: "Gaming Mouse".into(),
+                container: None,
+                keyboard_leds: None,
+            };
+            assert!(allowed_info(&iface), "{vid:04X}:{pid:04X}");
+            (iface.usage_page, iface.usage) = other;
+            assert!(!allowed_info(&iface), "{vid:04X}:{pid:04X} autre collection");
+            (iface.usage_page, iface.usage) = config;
+            iface.pid = 0x0001;
+            assert!(!allowed_info(&iface), "{vid:04X} modèle inconnu");
+            // Comme avant : la collection VIA d'un clavier du même fabricant reste visible
+            (iface.usage_page, iface.usage) = VIA_USAGE;
+            assert!(allowed_info(&iface), "{vid:04X} VIA");
+        }
     }
 }
